@@ -1,0 +1,1 @@
+# Future sections settings

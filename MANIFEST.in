@@ -1,0 +1,19 @@
+# MANIFEST.in
+
+include LICENSE
+include README.md
+include requirements.txt
+
+# Include templates
+recursive-include future_sections/templates *
+
+# Include static files
+recursive-include future_sections/staticfiles *
+
+# Include migrations
+recursive-include future_sections/migrations *.py
+
+# Exclude compiled Python files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.pyo

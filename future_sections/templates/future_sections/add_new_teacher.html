@@ -1,0 +1,79 @@
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% if messages %}
+{% for message in messages %}
+<p class="alert alert-success">{{ message }}</p>
+{% endfor %}
+{% endif %}
+
+<script>
+    $(function () {
+
+    function toggle_new_administrator_info() {
+        let element = $("#id_administrator_not_listed")
+
+        if ($(element).is(":checked")) {
+            $("#div_id_new_administrator_first_name, #div_id_new_administrator_last_name, #div_id_new_administrator_email").show()
+
+            $("#id_new_administrator_name").focus()
+
+            $('#id_administrator').multipleSelect('uncheckAll');
+        } else {
+            $("#div_id_new_administrator_first_name, #div_id_new_administrator_last_name, #div_id_new_administrator_email").hide()
+        }
+    }
+
+    function toggle_new_teacher_info() {
+        let element = $("#id_teacher_not_listed")
+
+        if ($(element).is(":checked")) {
+            $("#div_id_teacher_first_name, #div_id_teacher_last_name, #div_id_teacher_email").show()
+        } else {
+            $("#div_id_teacher_first_name, #div_id_teacher_last_name, #div_id_teacher_email").hide()
+        }
+    }
+
+    $(document).on('click', '#id_administrator_not_listed', function () {
+        toggle_new_administrator_info()
+    })
+
+    $(document).on('click', '#id_teacher_not_listed', function () {
+        toggle_new_teacher_info()
+    })
+
+    toggle_new_administrator_info()
+    toggle_new_teacher_info()
+
+    $('#id_administrator').multipleSelect({
+        filter: true,
+        selectAll: false,
+        single: true,
+    })
+})
+</script>
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                {{ new_teacher_message|safe }}
+
+                <form method="post" enctype="multipart/form-data" action="{{ form_action_url }}" class="frm_ajax">
+
+                    {% csrf_token %}
+                    {{ form|crispy }}
+
+                    <div class="clearfix">&nbsp;</div>
+                    <div class="">
+                        <div class="col-12">
+                            <input type="submit" value="Save" class="btn btn-primary">
+                            <input type="button" class="btn btn-sm" onclick="window.closeTeachingModal()"
+                                value="Cancel & Close">
+                        </div>
+                    </div>
+                </form>
+
+            </div>
+        </div>
+    </div>
+</div>

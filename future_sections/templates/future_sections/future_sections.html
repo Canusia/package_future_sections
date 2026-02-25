@@ -1,0 +1,165 @@
+{% extends base_template %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ page_name }}{% endblock %}
+
+{% block page_header %}
+{{intro|safe}}
+{% if portal_key == 'highschool_admin' %}
+{% include "highschool_admin/partials/_breadcrumb.html" with page_name=page_name %}
+{% else %}
+{% include "instructor/partials/_breadcrumb.html" with page_name=page_name %}
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Configuration data for JavaScript -->
+<div id="future-sections-config"
+     data-mark-teaching-url="{% url 'future_sections:actions-mark-teaching' %}"
+     data-mark-not-teaching-url="{% url 'future_sections:actions-mark-not-teaching' %}"
+     data-remove-teaching-status-url="{% url 'future_sections:actions-remove-teaching-status' %}"
+     data-add-teacher-url="{% url 'future_sections:actions-add-teacher' %}"
+     data-admin-assign-url="{% url 'future_sections:admin-positions-assign' %}"
+     data-admin-positions-url="{% url 'future_sections:admin-positions-list' %}"
+     data-course-requests-url="{% url 'future_sections:course-requests-list' %}"
+     data-confirm-sections-url="{% url 'future_sections:actions-confirm-sections' %}"
+     data-confirm-administrators-url="{% url 'future_sections:actions-confirm-administrators' %}"
+     data-highschool-ids="{% for hs in highschools %}{{ hs.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+     data-role-ids="{% for role in hs_roles %}{{ role.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
+     data-window-is-open="{% if window_is_open %}true{% else %}false{% endif %}"
+     data-allow-teacher-create="{% if allow_teacher_create %}true{% else %}false{% endif %}"
+     data-academic-year-id="{{ academic_year.id }}"
+     data-is-admin="{% if is_admin %}true{% else %}false{% endif %}"
+     style="display: none;"></div>
+
+<ul class="nav nav-tabs">
+    <li class="nav-item">
+        <a class="nav-link active" data-toggle="tab" href="#class_requests">
+            <h5 class="mb-0"><i class="fa fa-file"></i>&nbsp;&nbsp;{{ tab_course_requests }}</h5>
+        </a>
+    </li>
+    {% if hs_roles.count > 0 %}
+    <li class="nav-item">
+        <a class="nav-link" data-toggle="tab" href="#school_personnel">
+            <h5 class="mb-0"><i class="fa fa-users"></i>&nbsp;&nbsp;{{ tab_school_personnel }}</h5>
+        </a>
+    </li>
+    {% endif %}
+</ul>
+
+<!-- Tab panes -->
+<div class="tab-content">
+    <!-- Course Requests Tab -->
+     
+    <div class="tab-pane active" id="class_requests">
+        <div class="card border-top-0">
+            <div class="card-body">
+                {% if not window_is_open %}
+                    {{window_closed_message|safe}}
+                {% else %}
+                    {{welcome_message|safe}}
+                {% endif %}
+
+                    <table class="table table-striped" style="width: 100%;" id="tbl_course_requests">
+                        <thead>
+                            <tr>
+                                <th>Course</th>
+                                <th>Teacher</th>
+                                <th>Status</th>
+                                <th>School</th>
+                                <th>Offering Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        </tbody>
+                    </table>
+
+                {% if window_is_open and allow_teacher_create %}
+                    <div class="mt-3">
+                        {{new_teacher_create_label|safe}}<br>
+                        <button type="button"
+                            class="btn btn-sm btn-primary mt-3 course-action"
+                            data-toggle="modal"
+                            data-academic_year="{{academic_year.id}}"
+                            data-action="add_new_teacher"
+                            data-id="-1"
+                            data-target="#teachingModal">
+                            <i class="fa fa-plus"></i>&nbsp;Add New Course
+                        </button>
+                    </div>
+                {% endif %}
+
+                {% if window_is_open %}
+                    <div class="card mt-4">
+                        <div class="card-body">
+                            {{confirm_administrators_header|safe}}
+                            <form action="{% url 'future_sections:actions-confirm-sections' %}" method="post" class="frm_ajax">
+                                {% csrf_token %}
+                                {{confirm_sections_form|crispy}}
+                                <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">
+                            </form>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- School Personnel Tab -->
+    <div class="tab-pane" id="school_personnel">
+        <div class="card border-top-0">
+            <div class="card-body">
+                {% if not window_is_open %}
+                    {{window_closed_message|safe}}
+                {% else %}
+                    {{welcome_message_personnel|safe}}
+                {% endif %}
+
+                <table class="table table-striped" style="width: 100%;" id="tbl_school_personnel_list"
+                       data-window-is-open="{% if window_is_open %}true{% else %}false{% endif %}">
+                    <thead>
+                        <tr>
+                            <th>School</th>
+                            <th>Role</th>
+                            <th>Administrator</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+
+                {% if window_is_open %}
+                <div class="card mt-4">
+                    <div class="card-body">
+                        {{confirm_administrators_header|safe}}
+                        <form action="{% url 'future_sections:actions-confirm-administrators' %}" method="post" class="frm_ajax">
+                            {% csrf_token %}
+                            {{confirm_admins_form|crispy}}
+                            <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" data-backdrop="static" data-keyboard="false" id="teachingModal" tabindex="-1" role="dialog" aria-labelledby="teachingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-body"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.19.0/jquery.validate.min.js"
+    integrity="sha256-bu/BP02YMudBc96kI7yklc639Mu4iKGUNNcam8D2nLc=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery.formset/1.2.2/jquery.formset.min.js"
+    integrity="sha512-ltwjKsDTo3hW/wV66ZaEkf2wOAFxmg7rWM76J8kOcYKLSKy44WBYO/BFaNNH3NGDS8BSz3meB9wtSnm41oL+pA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{% static 'future_sections/js/future_sections.js' %}"></script>
+{% endblock %}
