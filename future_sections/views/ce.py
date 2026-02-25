@@ -15,7 +15,7 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 
 from mailer import send_html_mail
 
-from cis.forms.future_sections import (
+from ..forms import (
     TeacherCourseBaseLinkFormSet,
     TeacherCourseSectionForm,
     TeacherCourseTeachingForm,

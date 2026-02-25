@@ -56,7 +56,7 @@ If you have existing FutureCourse data from a legacy system, you can migrate it 
 python manage.py migrate_future_sections_data
 ```
 
-#### 5.1 
+#### 5.1
 
 Add this to header-includes.html
 
@@ -64,16 +64,6 @@ Add this to header-includes.html
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
-cis/forms/future_sections.py
-highschool_admin/urls.py 
-    remove urls to future sections
-    copy
-        partials
-        base_hsadmin.html
-
-cis/urls.py
-    comment out future section urls
-    
 This command loads existing data from the old `cis_futurecourse` table into the new models.
 
 ### 6. Configure Settings
