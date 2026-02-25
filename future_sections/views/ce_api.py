@@ -7,7 +7,7 @@ import logging
 from rest_framework import viewsets, serializers
 
 from cis.utils import CIS_user_only
-from cis.serializers.class_section import FutureCourseSerializer, FutureProjectionSerializer
+from ..serializers import FutureCourseSerializer, FutureProjectionSerializer
 from cis.serializers.teacher import TeacherCourseCertificateSerializer
 
 from cis.models.crontab import CronLog
