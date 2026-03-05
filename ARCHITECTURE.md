@@ -118,6 +118,45 @@ sequenceDiagram
 
 > **Note:** The `mark_as_reviewed` bulk action uses `QuerySet.update()`, which bypasses Django's `pre_save` signal. This means the `future_course_status_changed` signal handler (which sends review notification emails) is **not triggered** by the bulk review action. The signal only fires when individual `FutureCourse` instances are saved via `.save()`.
 
+### Confirmation Flow
+
+```mermaid
+flowchart TD
+    A[HS Admin opens section requests page] --> B{Window open?}
+    B -->|No| C[Show window closed message]
+    B -->|Yes| D[Show Course Requests & School Personnel tabs]
+
+    D --> E{Require Personnel Confirmation?}
+    E -->|Yes| F[Show roles to verify]
+    F --> G{Require All Roles Confirmed?}
+    G -->|Yes| H[Validate all roles have active admins]
+    G -->|No| I[Allow submission without full confirmation]
+    E -->|No| I
+
+    D --> J{Submit Course Offerings?}
+    J --> K{Require All Teachers Confirmed?}
+    K -->|Yes| L[Validate all teachers have course info]
+    K -->|No| M[Allow submission without full confirmation]
+
+    H --> N[Confirm & Continue]
+    I --> N
+    L --> N
+    M --> N
+```
+
+### New Teacher / Instructor Application Flow
+
+```mermaid
+flowchart TD
+    A{Allow HS Admin to create new teachers?} -->|No| B[Hide new teacher options]
+    A -->|Yes| C[Show Add New Teacher button]
+    C --> D[HS Admin fills teacher info]
+    D --> E{Teacher course status in 'Create New Instructor App For'?}
+    E -->|Yes| F[Create TeacherApplication]
+    F --> G[Set status from 'Default Status of Instructor Apps' setting]
+    E -->|No| H[Skip application creation]
+```
+
 ### Pending Request Notification Flow
 
 ```mermaid
@@ -143,7 +182,8 @@ sequenceDiagram
         Model->>Model: Get HS admins filtered by pending_notification_roles
 
         loop For each admin
-            Model->>Model: Render email template
+            Model->>Model: Render email template with shortcodes
+            Note over Model: Includes start_date, end_date from settings
             Model->>Email: Send notification
         end
 
@@ -170,6 +210,7 @@ erDiagram
     CustomUser ||--o{ FutureProjection : "created by"
 
     FutureCourse ||--o{ FutureSection : "sections"
+    FutureCourse ||--o| TeacherApplication : "creates app"
 
     FutureCourse {
         uuid id PK
@@ -275,12 +316,12 @@ Unique: (teacher_course, academic_year)
 - `get_by_property(index, key)` - Get section property by index for exports
 - `get_export_labels()` - Returns field labels for report headers
 - `is_window_open()` - Check if submission window is active
-- `create_teacher_application()` - Creates TeacherApplication from FutureCourse, fetches section files from S3
+- `create_teacher_application()` - Creates TeacherApplication with status from `default_instructor_app_status` setting (falls back to 'In Progress')
 - `send_confirmation_email(mode)` - Sends confirmation email to instructor using settings templates
 - `has_completed_all_courses()` - Checks if instructor responded to all eligible courses
 - `as_string(mode)` - Returns future section info as formatted string (text or HTML)
 - `welcome_message(highschools)` - Static method rendering welcome message template with shortcodes
-- `notify_pending_section_requests()` - Sends reminder emails to HS admins with pending requests
+- `notify_pending_section_requests()` - Sends reminder emails to HS admins with pending requests (includes `start_date`, `end_date` shortcodes)
 - `get_setting_value(key)` - Static method retrieving values from Setting model
 - `get_active_academic_year()` - Static method returning configured academic year ID
 - `get_active_term()` - Static method returning configured term ID
@@ -445,25 +486,27 @@ Both portals share identical URL structure, differing only in auth guard:
 
 Key: `cis_future_sections` in the Setting model.
 
+Settings are rendered as a Django form with conditional field visibility controlled by JavaScript toggles in `staticfiles/future_sections/js/settings.js`.
+
 ### Configuration Fields
 
-#### Survey Window & Academic Year
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `starting_date` | DateField | Window open date |
-| `ending_date` | DateField | Window close date |
-| `academic_year` | FK | Target academic year |
-| `previous_academic_year` | FK | For comparison display |
-
-#### UI & Page Configuration
+#### General Settings
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `page_name` | Text | Breadcrumb/title display (default: "Future Section Requests") |
-| `tab_title_course_requests` | Text | Label for Course Requests tab |
-| `tab_title_school_personnel` | Text | Label for School Personnel tab |
+| `tab_course_requests` | Text | Label for Course Requests tab |
+| `tab_school_personnel` | Text | Label for School Personnel tab |
+| `academic_year` | FK | Target academic year ("Requesting Information For") |
+| `previous_academic_year` | FK | Prior year for comparison ("Previous Year Reference") |
+| `starting_date` | DateField | Window open date |
+| `ending_date` | DateField | Window close date |
 | `course_display_template` | Text | Course column format (placeholders: `{course_name}`, `{course_title}`, `{credit_hours}`) |
+
+#### Portal Messages
+
+| Field | Type | Purpose |
+|-------|------|---------|
 | `welcome_message` | HTML | Displayed on main form (shortcodes: `{{academic_year}}`, `{{previous_academic_year}}`, `{{start_date}}`, `{{end_date}}`, `{{previous_year_classes}}`) |
 | `welcome_message_personnel` | HTML | Displayed on personnel review tab |
 | `window_closed_message` | HTML | Shown when survey window is closed |
@@ -471,56 +514,73 @@ Key: `cis_future_sections` in the Setting model.
 | `new_teacher_message` | HTML | Instructions on add-teacher form |
 | `edit_role_message` | HTML | Instructions on admin role edit form |
 
-#### Course & Instructor Filters
-
-| Field | Type | Purpose |
-|-------|------|---------|
-| `course_status` | MultiSelect | Which courses to include |
-| `teacher_course_status` | MultiSelect | Which teacher statuses to include |
-
 #### School Personnel
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `school_admin_roles` | MultiSelect | Roles to verify |
-| `allow_new_teacher_create` | Yes/No | Allow HS Admin to add teachers |
-| `new_teacher_create_label` | Text | Label above "Add New Teacher" button |
-| `create_new_instructor_app_for` | Select | Status for teacher applications created from new teachers |
-| `confirm_checkbox_language` | HTML | Text for confirming staff/course additions |
-| `confirm_administrators_language` | HTML | Text for confirming review completion |
-| `confirm_administrators_header` | Text | Text displayed before confirmation boxes |
+| Field | Type | Visibility | Purpose |
+|-------|------|------------|---------|
+| `require_personnel_confirmation` | Yes/No | Always | Controls visibility of personnel confirmation fields |
+| `school_admin_roles` | MultiSelect | When confirmation required | Roles to verify |
+| `confirm_new_personnel` | HTML | When confirmation required | Checkbox text for confirming personnel review |
+| `require_all_roles_confirmed` | Yes/No | When confirmation required | If Yes, all roles must have active admins before submission |
+| `require_all_teachers_confirmed` | Yes/No | Always | If Yes, all teachers must have course info before submission |
+| `confirm_administrators` | HTML | Always | Checkbox text for confirming course offerings review |
+| `confirm_administrators_header` | HTML | Always | Header above "Confirm & Continue" checkboxes |
+
+#### Course & Instructor Configuration
+
+| Field | Type | Visibility | Purpose |
+|-------|------|------------|---------|
+| `course_status` | MultiSelect | Always | Which course statuses to include ("Eligible Course Status") |
+| `teacher_course_status` | MultiSelect | Always | Which teacher course statuses to include ("Eligible Instructor Course Status") |
+| `allow_new_teacher_create` | Yes/No | Always | Controls visibility of new teacher fields |
+| `new_teacher_create_label` | Text | When new teacher allowed | Label above "Add New Teacher" button |
+| `create_new_instructor_app` | MultiSelect | When new teacher allowed | Which statuses trigger a new instructor application |
+| `default_instructor_app_status` | Select | When new teacher allowed | Default status for new TeacherApplication (uses `TeacherApplication.STATUS_OPTIONS`) |
 
 #### Form Configuration
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `teaching_form_config` | JSON | Dynamic form configuration (see below) |
-| `add_teacher_form_config` | JSON | Labels and help text for add-teacher form |
+| `teaching_form_config` | JSON (hidden) | Dynamic form configuration with visual UI |
+| `add_teacher_form_config` | JSON (hidden) | Add teacher form configuration with visual UI |
 
 #### Reviewed Status Email
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `send_reviewed_notification` | Yes/No | Enable review notifications |
-| `reviewed_email_subject` | Text | Notification email subject |
-| `reviewed_email_message` | HTML | Notification email template |
+| Field | Type | Visibility | Purpose |
+|-------|------|------------|---------|
+| `send_reviewed_notification` | Yes/No | Always | Controls visibility of review email fields |
+| `reviewed_email_subject` | Text | When enabled | Notification email subject |
+| `reviewed_email_message` | HTML | When enabled | Notification email template (shortcodes: `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}`) |
 
 #### Pending Request Notifications
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `pending_notification_dates` | Multi-Date | Dates to send pending reminders |
+| `pending_notification_dates` | Multi-Date | Dates to send pending reminders (flatpickr widget) |
 | `pending_notification_cron` | Cron | Time of day to send reminders |
 | `pending_notification_roles` | MultiSelect | HS admin roles to receive pending reminders |
 | `pending_notification_subject` | Text | Reminder email subject |
-| `pending_notification_message` | HTML | Reminder email template |
+| `pending_notification_message` | HTML | Reminder email template (shortcodes: `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}`, `{{academic_year}}`, `{{pending_count}}`, `{{link}}`, `{{start_date}}`, `{{end_date}}`) |
 
 #### Post-Submission Confirmation Email
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `confirmation_email_subject` | Text | Subject (shortcodes: `{{academic_year}}`) |
-| `confirmation_email_message` | HTML | Body (shortcodes: `{{future_sections}}`, `{{academic_year}}`, `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}`) |
+| `confirmation_subject` | Text | Subject (shortcodes: `{{academic_year}}`) |
+| `confirmation_message` | HTML | Body (shortcodes: `{{future_sections}}`, `{{academic_year}}`, `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}`) |
+
+### Settings JS Toggle Logic
+
+The settings page uses JavaScript functions in `staticfiles/future_sections/js/settings.js` to conditionally show/hide fields:
+
+| Toggle Function | Trigger Field | Fields Shown/Hidden |
+|----------------|---------------|---------------------|
+| `initPersonnelConfirmationToggle` | `require_personnel_confirmation` | `school_admin_roles`, `confirm_new_personnel`, `require_all_roles_confirmed` |
+| `initNewTeacherToggle` | `allow_new_teacher_create` | `new_teacher_create_label`, `create_new_instructor_app`, `default_instructor_app_status` |
+| `initReviewedNotificationToggle` | `send_reviewed_notification` | `reviewed_email_subject`, `reviewed_email_message` |
+| `initTeachingFormConfig` | Always | Visual UI for teaching form field configuration |
+| `initAddTeacherFormConfig` | Always | Visual UI for add teacher form field configuration |
+| `initPendingNotificationDatesPicker` | Always | Flatpickr multi-date picker |
 
 ### teaching_form_config JSON Structure
 
@@ -535,6 +595,10 @@ Key: `cis_future_sections` in the Setting model.
     },
     "help_texts": {
         "class_period": "e.g., 1st period, 2nd hour"
+    },
+    "weights": {
+        "estimated_enrollment": 1,
+        "class_period": 2
     },
     "display_template": "{term_name} | {syllabus_link} | Enrollment: {estimated_enrollment}"
 }
@@ -585,14 +649,6 @@ python manage.py migrate_future_sections_data --execute --clear
 python manage.py migrate_future_sections_data --execute --verify
 ```
 
-**Behavior:**
-1. Checks source tables exist: `cis_futureprojection`, `cis_futurecourse`, `cis_futuresection`
-2. Checks destination tables exist: `future_sections_futureprojection`, `future_sections_futurecourse`, `future_sections_futuresection`
-3. Optionally clears destination tables (`--clear`)
-4. Migrates tables in order: FutureProjection, FutureCourse, FutureSection
-5. Uses `ON CONFLICT DO NOTHING` to handle duplicates
-6. Optionally verifies counts match (`--verify`)
-
 ### notify_pending_section_requests
 
 Sends reminder emails to HS administrators for schools that have not responded to section requests.
@@ -611,13 +667,8 @@ python manage.py notify_pending_section_requests -t "2024-01-15 08:00:00"
 2. If not a notification date, skips with log entry
 3. Finds schools with pending (unanswered) section requests
 4. Gets HS administrators for those schools based on `pending_notification_roles`
-5. Sends templated email to each administrator
+5. Sends templated email to each administrator (includes `start_date` and `end_date` from settings)
 6. Logs summary and detailed_log to CronLog model
-
-**CronTab Integration:**
-- When settings are saved, creates/updates CronTab entry with command `notify_pending_section_requests`
-- Cron expression from `pending_notification_cron` field (e.g., `0 8 * * *` for 8 AM daily)
-- Sends `cron_task_started` and `cron_task_done` signals for logging
 
 **Shortcodes for pending_notification_message:**
 
@@ -629,22 +680,8 @@ python manage.py notify_pending_section_requests -t "2024-01-15 08:00:00"
 | `{{academic_year}}` | Target academic year name |
 | `{{pending_count}}` | Number of pending course requests |
 | `{{link}}` | URL to the section requests page |
-
-**Model Method:**
-
-`FutureCourse.notify_pending_section_requests()` returns `(summary, detailed_log)`:
-
-```python
-summary = "Sent 15 email(s), 0 error(s)"
-detailed_log = {
-    'emails_sent': [
-        {'email': 'admin@school.edu', 'highschool': 'Example HS', 'pending_count': 5},
-        ...
-    ],
-    'errors': [],
-    'skipped': []
-}
-```
+| `{{start_date}}` | Survey window start date from settings |
+| `{{end_date}}` | Survey window end date from settings |
 
 ---
 
@@ -686,8 +723,8 @@ Exports HSAdministratorPosition records for schools with pending requests.
 
 | Form | Purpose |
 |------|---------|
-| `ConfirmHighSchoolAdministratorsForm` | Confirm school personnel; validates all required admin roles are assigned |
-| `ConfirmClassSectionsForm` | Confirm class sections; validates all courses have FutureCourse entries |
+| `ConfirmHighSchoolAdministratorsForm` | Confirm school personnel; validates all required admin roles are assigned when `require_all_roles_confirmed` is Yes |
+| `ConfirmClassSectionsForm` | Confirm class sections; validates all courses have FutureCourse entries when `require_all_teachers_confirmed` is Yes |
 | `TeacherCourseSectionForm` | Section details (term, enrollment, etc.); dynamic fields from `teaching_form_config` |
 | `TeacherCourseTeachingForm` | Hidden fields (certificate ID, academic year) for teaching form submission |
 | `TeacherCourseNotTeachingForm` | Not-teaching form with reason selection (another instructor, not taught, not sure) |
@@ -697,6 +734,11 @@ Exports HSAdministratorPosition records for schools with pending requests.
 | `SearchInstructorByCohortForm` | Search instructors by cohort |
 | `CourseTitleChoiceField` | Custom ModelChoiceField displaying course title only |
 
+### Conditional Validation
+
+- **ConfirmHighSchoolAdministratorsForm**: Only enforces role validation when `require_all_roles_confirmed` setting is `'1'` (Yes)
+- **ConfirmClassSectionsForm**: Only enforces teacher course completion when `require_all_teachers_confirmed` setting is `'1'` (Yes)
+
 ### Dynamic Form Configuration
 
 Forms read `teaching_form_config` to dynamically show/hide fields:
@@ -705,6 +747,18 @@ visible_fields = form_config.get('fields', ['term', 'estimated_enrollment'])
 required_fields = form_config.get('required', ['term'])
 custom_labels = form_config.get('labels', {})
 ```
+
+---
+
+## Serializers
+
+### Location: `future_sections/serializers.py`
+
+| Serializer | Model | Notes |
+|------------|-------|-------|
+| `FutureProjectionSerializer` | FutureProjection | Includes nested AcademicYear, HighSchool, CustomUser serializers |
+| `FutureCourseSerializer` | FutureCourse | Includes nested Term, AcademicYear, TeacherCourseCertificate serializers |
+| `FutureSectionSerializer` | FutureSection | Includes nested FutureCourse serializer |
 
 ---
 
@@ -751,70 +805,16 @@ custom_labels = form_config.get('labels', {})
 
 ---
 
-## Data Flow Diagrams
+## Static Files
 
-### Submission Flow
+### Location: `future_sections/staticfiles/future_sections/js/`
 
-```
-Instructor/HS Admin
-        │
-        ▼
-┌───────────────────┐
-│  FutureSections   │ ──► Check is_window_open()
-│    Page View      │
-└───────────────────┘
-        │
-        ▼
-┌───────────────────┐
-│  mark_teaching()  │ ──► Validate certificate access
-│   API Action      │
-└───────────────────┘
-        │
-        ▼
-┌───────────────────┐
-│ FutureCourse.     │ ──► Store submitter in meta
-│  get_or_add()     │
-└───────────────────┘
-        │
-        ▼
-┌───────────────────┐
-│ Save section_info │ ──► {teaching: 'yes', sections: [...]}
-└───────────────────┘
-        │
-        ▼
-┌───────────────────┐
-│ FutureProjection  │ ──► Track school's progress
-│    history        │
-└───────────────────┘
-```
+| File | Purpose |
+|------|---------|
+| `future_sections.js` | Frontend JavaScript for the section requests page |
+| `settings.js` | Settings page JS: conditional field toggles, teaching form config UI, add teacher form config UI, flatpickr date picker |
 
-### Review Flow
-
-```
-CE Staff
-    │
-    ▼
-┌───────────────────┐
-│  CE Index Page    │ ──► DataTable with checkboxes
-└───────────────────┘
-    │
-    ▼
-┌───────────────────┐
-│  bulk_actions()   │ ──► mark_as_reviewed / mark_as_submitted
-│    Endpoint       │
-└───────────────────┘
-    │
-    ▼
-┌───────────────────┐
-│ QuerySet.update() │ ──► Sets status directly in DB
-│                   │     (pre_save signal NOT triggered)
-└───────────────────┘
-    │
-    ▼
-┌───────────────────┐
-│  JSON response    │ ──► Count of records updated
-└───────────────────┘
-```
+> **Note:** The `staticfiles/` directory must be registered in `STATICFILES_DIRS` in Django settings.
 
 ---
 
@@ -826,6 +826,11 @@ CE Staff
 - Uses utils: `user_has_highschool_admin_role()`, `user_has_instructor_role()`, `export_to_excel()`, `get_field()`
 - Uses storage: `PrivateMediaStorage`
 - Uses templates: `cis/email.html`
+
+### With Instructor App
+
+- Uses models: `TeacherApplication`, `TeacherApplicant`, `ApplicantSchoolCourse`, `ApplicationUpload`
+- Creates `TeacherApplication` records via `FutureCourse.create_teacher_application()` with configurable default status
 
 ### With Report App
 

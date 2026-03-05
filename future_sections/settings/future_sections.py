@@ -18,6 +18,7 @@ from cis.models.term import AcademicYear, Term
 from cis.models.course import Course
 from cis.models.teacher import TeacherCourseCertificate
 from cis.models.highschool_administrator import HSPosition
+from cis.models.teacher_applicant import TeacherApplication
 from cis.models.crontab import CronTab
 
 from crispy_forms.helper import FormHelper
@@ -50,23 +51,6 @@ class future_sections(forms.Form):
         widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
     )
 
-    academic_year = forms.ModelChoiceField(
-        queryset=None,
-        label="Academic Year",
-        help_text='Year for which the information is being requested',
-        required=True
-    )
-
-    previous_academic_year = forms.ModelChoiceField(
-        queryset=None,
-        label="Previous Academic Year",
-        help_text='This can be used to show what was offered at the high school in the past',
-        required=True
-    )
-
-    starting_date = forms.DateField()
-    ending_date = forms.DateField()
-
     page_name = forms.CharField(
         max_length=200,
         required=False,
@@ -90,6 +74,23 @@ class future_sections(forms.Form):
         help_text='Label for the School Personnel tab (default: "School Personnel").',
         initial='School Personnel',
     )
+
+    academic_year = forms.ModelChoiceField(
+        queryset=None,
+        label="Requesting Information For",
+        help_text='Select the academic year you are collecting section request information for',
+        required=True
+    )
+
+    previous_academic_year = forms.ModelChoiceField(
+        queryset=None,
+        label="Previous Year Reference",
+        help_text='Select a prior academic year to show what was previously offered at the high school',
+        required=True
+    )
+
+    starting_date = forms.DateField()
+    ending_date = forms.DateField()
 
     course_display_template = forms.CharField(
         max_length=500,
@@ -161,6 +162,12 @@ class future_sections(forms.Form):
         widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
     )
 
+    require_personnel_confirmation = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        label='Require School Personnel Confirmation?',
+        help_text='If enabled, high school administrators will be asked to review and confirm their school personnel during the section request process.'
+    )
+
     school_admin_roles = forms.ModelMultipleChoiceField(
         queryset=None,
         required=False,
@@ -172,26 +179,40 @@ class future_sections(forms.Form):
     confirm_new_personnel = forms.CharField(
         max_length=None,
         widget=forms.Textarea,
-        label="Checkbox Language for Adding Confirming School Personnel / Course Offerings",
+        label="School Personnel Confirmation Checkbox Text",
         validators=[validate_html_short_code],
-        help_text='This is the text for the checkbox which they have to confirm to add new school administrator and teacher.'
+        help_text='Text for the checkbox the HS admin must check to confirm they have reviewed and updated their school personnel list.'
+    )
+
+    require_all_roles_confirmed = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        label='Require All Roles Confirmed Before Submission',
+        help_text='If set to Yes, the HS admin must confirm all selected roles before they can submit. They will not be able to proceed without verifying every role.',
+        required=False
+    )
+
+    require_all_teachers_confirmed = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        label='Require All Teachers Confirmed Before Submission',
+        help_text='If set to Yes, the HS admin must indicate course information for every teacher before they can submit. They will not be able to proceed without responding for all teachers.',
+        required=False
     )
 
     confirm_administrators = forms.CharField(
         max_length=None,
         required=False,
         widget=forms.Textarea,
-        label="Checkbox Language for Confirming School Personnel / Course Offerings",
+        label="Course Offerings Confirmation Checkbox Text",
         validators=[validate_html_short_code],
-        help_text='This is the text for the checkbox which they have to confirm saying they have completed the school personnel and course offering review.'
+        help_text='Text for the checkbox the HS admin must check to confirm they have completed reviewing course offerings and section requests.'
     )
 
     confirm_administrators_header = forms.CharField(
         max_length=None,
         widget=forms.Textarea,
-        label="Confirm School Personnel / Course Offerings",
+        label="Confirmation Section Header",
         validators=[validate_html_short_code],
-        help_text='This is displayed before the Confirm and Continue boxes.'
+        help_text='Header text displayed above the "Confirm & Continue" checkboxes on both the Course Requests and School Personnel tabs. This is shown on both tabs regardless of the personnel confirmation setting.'
     )
 
     # ── Course & Instructor Configuration ────────────────────────────────
@@ -205,14 +226,16 @@ class future_sections(forms.Form):
     course_status = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple,
         choices=Course.STATUS_OPTIONS,
-        label="Course Status",
+        label="Eligible Course Status",
+        help_text='Only courses with the selected status(es) will be available for section requests. For example, select "Active" to limit requests to currently active courses.',
         required=True
     )
 
     teacher_course_status = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple,
         choices=TeacherCourseCertificate.STATUS_OPTIONS,
-        label="Instructor Course Status",
+        label="Eligible Instructor Course Status",
+        help_text='Only instructor-course assignments with the selected status(es) will appear in section requests. For example, select "Teaching" to only show instructors actively approved to teach a course.',
         required=True
     )
 
@@ -232,6 +255,13 @@ class future_sections(forms.Form):
         widget=forms.CheckboxSelectMultiple,
         choices=TeacherCourseCertificate.STATUS_OPTIONS,
         label="Create New Instructor App For",
+        required=False
+    )
+
+    default_instructor_app_status = forms.ChoiceField(
+        choices=TeacherApplication.STATUS_OPTIONS,
+        label="Default Status of Instructor Apps",
+        help_text='Select the default status assigned to new instructor applications created during the section request process.',
         required=False
     )
 
@@ -346,7 +376,7 @@ class future_sections(forms.Form):
         widget=forms.Textarea,
         validators=[validate_html_short_code],
         label='Pending Request Notification Message',
-        help_text='Email template for pending request reminders. Shortcodes: {{admin_first_name}}, {{admin_last_name}}, {{highschool}}, {{academic_year}}, {{pending_count}}, {{link}}. <a href="#" class="float-right" onClick="do_bulk_action(\'future_sections\', \'pending_notification_message\')" >See Preview</a>'
+        help_text='Email template for pending request reminders. Shortcodes: {{admin_first_name}}, {{admin_last_name}}, {{highschool}}, {{academic_year}}, {{pending_count}}, {{link}}, {{start_date}}, {{end_date}}. <a href="#" class="float-right" onClick="do_bulk_action(\'future_sections\', \'pending_notification_message\')" >See Preview</a>'
     )
 
     # ── Confirmation Email (sent to HS Admin after submission) ───────────
@@ -585,7 +615,6 @@ class future_sections(forms.Form):
             layout_fields.append(key)
 
         self.helper.layout = Layout(
-            HTML('<script src="/static/future_sections/js/settings.js"></script>'),
             *layout_fields
         )
 
@@ -717,6 +746,9 @@ class future_sections(forms.Form):
             site_url = getattr(settings, 'SITE_URL', '')
             link = f"{site_url}/highschool_admin/future_sections/"
 
+            start_date = fs_config.get('starting_date', '')
+            end_date = fs_config.get('ending_date', '')
+
             message = Template(message_template)
             context = Context({
                 'admin_first_name': request.user.first_name,
@@ -725,6 +757,8 @@ class future_sections(forms.Form):
                 'academic_year': academic_year_name,
                 'pending_count': pending_count,
                 'link': link,
+                'start_date': start_date,
+                'end_date': end_date,
             })
 
             text_body = message.render(context)

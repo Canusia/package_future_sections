@@ -314,10 +314,60 @@ function initAddTeacherFormConfig() {
     $hidden.closest('form').on('submit', syncToHidden);
 }
 
+function initNewTeacherToggle() {
+    var $toggle = $('select[name="allow_new_teacher_create"]');
+    if (!$toggle.length) return;
+
+    var $form = $toggle.closest('form');
+    var $label = $form.find('input[name="new_teacher_create_label"]')
+        .closest('.form-group');
+    var $appFor = $form.find('input[name="create_new_instructor_app"]')
+        .first()
+        .closest('.form-group');
+    var $defaultStatus = $form.find('select[name="default_instructor_app_status"]')
+        .closest('.form-group');
+
+    function toggleFields() {
+        var show = $toggle.val() === '1';
+        $label.toggle(show);
+        $appFor.toggle(show);
+        $defaultStatus.toggle(show);
+    }
+
+    toggleFields();
+    $toggle.on('change', toggleFields);
+}
+
+function initPersonnelConfirmationToggle() {
+    var $toggle = $('select[name="require_personnel_confirmation"]');
+    if (!$toggle.length) return;
+
+    var $form = $toggle.closest('form');
+    var $roles = $form.find('input[name="school_admin_roles"]')
+        .first()
+        .closest('.form-group');
+    var $confirmPersonnel = $form.find('textarea[name="confirm_new_personnel"]')
+        .closest('.form-group');
+    var $requireAllRoles = $form.find('select[name="require_all_roles_confirmed"]')
+        .closest('.form-group');
+
+    function toggleFields() {
+        var show = $toggle.val() === '1';
+        $roles.toggle(show);
+        $confirmPersonnel.toggle(show);
+        $requireAllRoles.toggle(show);
+    }
+
+    toggleFields();
+    $toggle.on('change', toggleFields);
+}
+
 // Initialize on AJAX complete (for settings forms loaded dynamically)
 $(document).ajaxComplete(function() {
     initPendingNotificationDatesPicker();
     initReviewedNotificationToggle();
+    initPersonnelConfirmationToggle();
+    initNewTeacherToggle();
     initTeachingFormConfig();
     initAddTeacherFormConfig();
 });
@@ -326,6 +376,8 @@ $(document).ajaxComplete(function() {
 $(document).ready(function() {
     initPendingNotificationDatesPicker();
     initReviewedNotificationToggle();
+    initPersonnelConfirmationToggle();
+    initNewTeacherToggle();
     initTeachingFormConfig();
     initAddTeacherFormConfig();
 });

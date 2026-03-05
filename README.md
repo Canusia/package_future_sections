@@ -15,20 +15,31 @@ INSTALLED_APPS = [
 ]
 ```
 
-### 2. Run Migrations
+### 2. Add Static Files
+
+Add the future_sections staticfiles directory to `STATICFILES_DIRS` in `settings.py`:
+
+```python
+STATICFILES_DIRS = [
+    # ... other dirs
+    os.path.join(BASE_DIR, 'future_sections', 'staticfiles'),
+]
+```
+
+### 3. Run Migrations
 
 ```bash
 python manage.py migrate future_sections
 ```
 
-### 3. Register Settings and Reports
+### 4. Register Settings and Reports
 
 ```bash
 python manage.py register_settings
 python manage.py register_reports
 ```
 
-### 4. Include URLs
+### 5. Include URLs
 
 In your main `urls.py` (e.g., `myce/urls.py`), add the URL configurations:
 
@@ -48,46 +59,111 @@ urlpatterns = [
 ]
 ```
 
-### 5. Load Initial Data (Optional)
+### 6. Add Flatpickr to header-includes.html
 
-If you have existing FutureCourse data from a legacy system, you can migrate it using:
+```html
+<!-- Flatpickr for multi-date selection -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+```
+
+### 7. Load Initial Data (Optional)
+
+If you have existing FutureCourse data from a legacy system:
 
 ```bash
 python manage.py migrate_future_sections_data
 ```
 
-#### 5.1
+### 8. Configure Settings
 
-Add this to header-includes.html
+Navigate to **CE Portal > Settings > Classes > Section Requests** to configure the app.
 
-<!-- Flatpickr for multi-date selection -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+## Settings Reference
 
-This command loads existing data from the old `cis_futurecourse` table into the new models.
+### General Settings
 
-### 6. Configure Settings
+| Setting | Description |
+|---------|-------------|
+| **Page Name** | Name displayed in the breadcrumb and page title |
+| **Course Requests Tab Title** | Label for the Course Requests tab |
+| **School Personnel Tab Title** | Label for the School Personnel tab |
+| **Requesting Information For** | The academic year you are collecting section requests for |
+| **Previous Year Reference** | A prior academic year to show what was previously offered |
+| **Starting Date / Ending Date** | Survey window for submissions |
+| **Course Column Display Template** | Template for the Course column. Placeholders: `{course_name}`, `{course_title}`, `{credit_hours}` |
 
-Navigate to **CE Portal → Settings → Classes → Section Requests** to configure:
+### Portal Messages
 
-- **Academic Year**: Select the active academic year for section requests
-- **Previous Academic Year**: For comparison display of last year's offerings
-- **Survey Window**: Starting and ending dates for the submission window
-- **Course Status Filter**: Which course statuses to include
-- **Teacher Course Status Filter**: Which teacher course certificate statuses to include
-- **HS Admin Roles to Verify**: Roles shown in the personnel verification step
-- **Allow New Teacher Creation**: Whether HS admins can add new instructors
-- **Teaching Form Configuration**: JSON config for the section request form fields
-- **Add Teacher Form Configuration**: JSON config for labels/help text on the add-teacher form
-- **UI Messages**: Welcome message, window closed message, teaching/add teacher/edit role instructions
-- **Review Notification**: Enable/disable email notifications when requests are reviewed
-- **Pending Notifications**: Dates, cron schedule, roles, and email template for pending reminders
-- **Confirmation Email**: Subject and template for post-submission confirmation emails
+| Setting | Description |
+|---------|-------------|
+| **Welcome Message** | Displayed on the main page. Shortcodes: `{{academic_year}}`, `{{previous_academic_year}}`, `{{start_date}}`, `{{end_date}}`, `{{previous_year_classes}}` |
+| **Welcome Message - School Personnel Review Tab** | Displayed on the personnel review tab |
+| **Window Closed Message** | Displayed when the submission window is closed |
+| **Message in 'Teaching' Page** | Displayed on the section info form |
+| **Message in 'Add New Teacher' Page** | Displayed on the add teacher form |
+| **Message in 'Edit Role' Page** | Displayed on the school admin edit form |
+
+### School Personnel
+
+| Setting | Description |
+|---------|-------------|
+| **Require School Personnel Confirmation?** | If Yes, HS admins must review and confirm school personnel. Toggles visibility of the fields below |
+| **High School Roles to Verify** | Roles shown in the personnel verification step (hidden if confirmation not required) |
+| **School Personnel Confirmation Checkbox Text** | Checkbox text for confirming personnel review (hidden if confirmation not required) |
+| **Require All Roles Confirmed Before Submission** | If Yes, all selected roles must have an active administrator before the HS admin can submit (hidden if confirmation not required) |
+| **Require All Teachers Confirmed Before Submission** | If Yes, all teachers must have course information indicated before submission |
+| **Course Offerings Confirmation Checkbox Text** | Checkbox text for confirming course offerings review |
+| **Confirmation Section Header** | Header text above the "Confirm & Continue" checkboxes on both tabs |
+
+### Course & Instructor Configuration
+
+| Setting | Description |
+|---------|-------------|
+| **Eligible Course Status** | Only courses with selected status(es) are available for section requests |
+| **Eligible Instructor Course Status** | Only instructor-course assignments with selected status(es) appear in requests |
+| **Allow HS Administrators to create new teachers?** | If Yes, shows the fields below |
+| **'Add New Teacher' Prompt** | Text displayed above the add teacher button (hidden if not allowed) |
+| **Create New Instructor App For** | Which instructor course statuses trigger a new instructor application (hidden if not allowed) |
+| **Default Status of Instructor Apps** | Default status assigned to new instructor applications created during section requests (hidden if not allowed) |
+
+### Form Configuration
+
+| Setting | Description |
+|---------|-------------|
+| **Teaching Form Configuration** | Visual UI for configuring which fields appear on the teaching form, their labels, required status, and display order |
+| **Add Teacher Form Configuration** | Visual UI for configuring the add teacher form fields |
+
+### Reviewed Status Email
+
+| Setting | Description |
+|---------|-------------|
+| **Send Email When Status Changes to Reviewed** | Enable/disable review notification emails. Toggles visibility of the fields below |
+| **Reviewed Notification Email Subject** | Subject line for the review email |
+| **Reviewed Notification Email Message** | Email template. Shortcodes: `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}` |
+
+### Pending Request Notifications
+
+| Setting | Description |
+|---------|-------------|
+| **Pending Request Notification Dates** | Specific dates to send reminder notifications |
+| **Notification Time (Cron Expression)** | Cron schedule for notification timing |
+| **Pending Request Notification Roles** | Which HS admin roles receive reminders |
+| **Pending Request Notification Subject** | Subject line for the reminder email |
+| **Pending Request Notification Message** | Email template. Shortcodes: `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}`, `{{academic_year}}`, `{{pending_count}}`, `{{link}}`, `{{start_date}}`, `{{end_date}}` |
+
+### Confirmation Email
+
+| Setting | Description |
+|---------|-------------|
+| **Confirmation Email Subject** | Subject line for post-submission email. Shortcodes: `{{academic_year}}` |
+| **Confirmation Email Message** | Email template. Shortcodes: `{{future_sections}}`, `{{academic_year}}`, `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}` |
 
 ## Dependencies
 
 The app depends on these Django apps:
 - `cis` - Core models (Course, Teacher, HighSchool, etc.)
+- `instructor_app` - Teacher application models
 - `setting` - Settings framework
 - `report` - Reporting framework
 
@@ -96,126 +172,6 @@ Python packages:
 - `djangorestframework` - API endpoints
 - `model-utils` - FieldTracker for change detection
 
-## Features
-
-- Course section request management
-- Teaching status tracking (teaching/not teaching)
-- School personnel management
-- Configurable form fields via JSON settings
-- Section display formatting via templates
-
-## URL Structure
-
-### Portal-Specific URLs
-
-The app provides URL configurations for each portal:
-
-```python
-# In myce/urls.py
-path('highschool_admin/future_sections/', include('future_sections.urls.highschool_admin')),
-path('instructor/future_sections/', include('future_sections.urls.instructor')),
-path('ce/future_sections/', include('future_sections.urls.ce')),
-```
-
-**High School Admin Portal:**
-- `/highschool_admin/future_sections/` - Main page
-- `/highschool_admin/future_sections/api/...` - API endpoints
-
-**Instructor Portal:**
-- `/instructor/future_sections/` - Main page
-- `/instructor/future_sections/api/...` - API endpoints
-
-**CE Admin Portal:**
-- `/ce/future_sections/` - Main page (Course Requests dashboard)
-- `/ce/future_sections/settings/` - Settings management
-- `/ce/future_sections/ajax/` - AJAX dispatcher for teaching/not-teaching actions
-- `/ce/future_sections/<uuid:record_id>/` - Record detail
-- `/ce/future_sections/delete/` - Delete a FutureSection record
-- `/ce/future_sections/bulk_actions/` - Bulk operations (mark as reviewed/submitted)
-- `/ce/future_sections/get_highschool_admins/` - Return admins for a highschool
-- `/ce/future_sections/send_pending_reminder/` - Send ad-hoc reminder to HS admins
-- `/ce/future_sections/api/future_class_section/` - API endpoint for future class sections
-- `/ce/future_sections/api/future_projection/` - API endpoint for future projections
-- `/ce/future_sections/api/pending_future_class_sections/` - API endpoint for pending sections
-- `/ce/future_sections/api/notification_logs/` - API endpoint for notification history
-
-### Shared API URLs
-
-The app also provides a global namespace for API access:
-
-```python
-# In myce/urls.py
-path('future_sections/', include('future_sections.urls')),
-```
-
-- `/future_sections/` - Shared page (requires authentication)
-- `/future_sections/api/actions/mark-teaching/` - Mark course as teaching
-- `/future_sections/api/actions/mark-not-teaching/` - Mark course as not teaching
-- `/future_sections/api/actions/remove-teaching-status/` - Remove teaching status
-- `/future_sections/api/actions/add-teacher/` - Add new teacher course
-- `/future_sections/api/actions/confirm-sections/` - Confirm class sections
-- `/future_sections/api/actions/confirm-administrators/` - Confirm administrators
-- `/future_sections/api/course-requests/` - List course requests
-- `/future_sections/api/admin-positions/` - List/manage admin positions
-
-## Configuration
-
-### Teaching Form Configuration
-
-The teaching form fields can be configured via the `teaching_form_config` setting in the Future Sections settings:
-
-```json
-{
-    "fields": ["term", "estimated_enrollment", "class_period"],
-    "required": ["term"],
-    "show_syllabus": true,
-    "labels": {
-        "estimated_enrollment": "Expected Number of Students",
-        "class_period": "Period/Hour"
-    },
-    "help_texts": {
-        "class_period": "e.g., 1st period, 2nd hour"
-    },
-    "display_template": "{term_name} | {syllabus_link}"
-}
-```
-
-**Configuration Options:**
-
-- `fields` - List of fields to display (options: `term`, `estimated_enrollment`, `class_period`, `instruction_mode`, `highschool_course_name`, `number_of_sections`, `full_year`, `trimester`, `fall_only`, `spring_only`, `notes`, `teacher_changed`)
-- `required` - List of required fields
-- `show_syllabus` - Whether to show syllabus upload field
-- `labels` - Custom labels for fields
-- `help_texts` - Custom help text for fields
-- `display_template` - Template for displaying section info (placeholders: `{term_name}`, `{estimated_enrollment}`, `{class_period}`, `{syllabus_link}`, etc.)
-
-### Add Teacher Form Configuration
-
-The add teacher form fields can be configured via the `add_teacher_form_config` setting:
-
-```json
-{
-    "labels": {
-        "teacher": "Select Instructor",
-        "highschool": "School",
-        "course": "Course to Teach",
-        "term": "Starting Term",
-        "estimated_enrollment": "Expected Students"
-    },
-    "help_texts": {
-        "teacher": "Select an existing instructor or check the box to add a new one",
-        "course": "Select the course this instructor will teach"
-    }
-}
-```
-
-**Configuration Options:**
-
-- `labels` - Custom labels for fields
-- `help_texts` - Custom help text for fields
-
-**Available Fields:** `teacher`, `teacher_first_name`, `teacher_last_name`, `teacher_email`, `highschool`, `course`, `term`, `estimated_enrollment`, `class_period`, `instruction_mode`, `highschool_course_name`, `number_of_sections`
-
 ## Directory Structure
 
 ```
@@ -223,24 +179,26 @@ future_sections/
 ├── apps.py               # App config with CONFIGURATORS and REPORTS
 ├── forms.py              # Form classes
 ├── models.py             # FutureCourse, FutureSection, FutureProjection
-├── permissions.py        # Permission classes (IsHSAdminOrInstructor, IsHSAdminOnly, IsInstructorOnly, CanAccessCourseRequest)
+├── serializers.py        # DRF serializers
+├── permissions.py        # Permission classes
+├── schemas.py            # TeachingSectionFieldSchema
 ├── signals.py            # Django signals (review notification)
 ├── utils.py              # Shared utilities
 ├── reports/
-│   ├── __init__.py
 │   ├── future_classes.py                # Section Requests Export
 │   ├── pending_future_classes.py        # Pending - HS Admin Export
 │   └── pending_future_classes_courses.py # Pending - Courses Export
 ├── settings/
-│   └── future_sections.py  # App settings configuration
-├── static/
+│   └── future_sections.py  # App settings form
+├── staticfiles/
 │   └── future_sections/
 │       └── js/
-│           └── future_sections.js  # Frontend JavaScript
+│           ├── future_sections.js  # Frontend JavaScript
+│           └── settings.js         # Settings page toggle logic
 ├── templates/
 │   └── future_sections/
 │       ├── future_sections.html    # Main page template (HS Admin/Instructor)
-│       ├── teaching_course.html    # Teaching form modal (shared by all portals)
+│       ├── teaching_course.html    # Teaching form modal
 │       ├── add_new_teacher.html    # Add teacher form modal
 │       └── ce/
 │           ├── index.html          # CE portal main page
@@ -258,124 +216,127 @@ future_sections/
 │       └── notify_pending_section_requests.py # Pending reminder emails
 └── views/
     ├── __init__.py
-    ├── api.py            # ViewSets (FutureSectionsActionViewSet, CourseRequestViewSet, AdminPositionViewSet)
-    ├── pages.py          # FutureSectionsPageView (unified for HS Admin/Instructor)
-    ├── hs_admin.py       # Wrapper (delegates to FutureSectionsPageView)
-    ├── instructor.py     # Wrapper (delegates to FutureSectionsPageView)
-    ├── ce.py             # CE portal views (index, settings, bulk_actions, AJAX handlers, reminders)
-    └── ce_api.py         # CE portal API ViewSets (FutureClassSection, FutureProjection, Pending, NotificationLog)
+    ├── api.py            # Action and data ViewSets
+    ├── pages.py          # Unified page view (HS Admin/Instructor)
+    ├── hs_admin.py       # HS Admin wrapper
+    ├── instructor.py     # Instructor wrapper
+    ├── ce.py             # CE portal views
+    └── ce_api.py         # CE portal API ViewSets
 ```
 
-## ViewSets
+## URL Structure
 
-### FutureSectionsActionViewSet
+### Portal-Specific URLs
 
-Handles all future sections actions:
-- `mark-teaching` - Mark a course as teaching with section details
-- `mark-not-teaching` - Mark a course as not being taught
-- `remove-teaching-status` - Remove teaching/not-teaching status
-- `add-teacher` - Add a new teacher course certificate
-- `confirm-sections` - Confirm class sections
-- `confirm-administrators` - Confirm school administrators
+**High School Admin Portal** (`/highschool_admin/future_sections/`):
+- Main page and API endpoints
 
-### CourseRequestViewSet
+**Instructor Portal** (`/instructor/future_sections/`):
+- Main page and API endpoints
 
-Returns course requests with merged offering status from FutureCourse. Includes `section_display` for formatted output based on settings.
+**CE Admin Portal** (`/ce/future_sections/`):
+- Main page (Course Requests dashboard)
+- Settings management
+- AJAX dispatcher for teaching/not-teaching actions
+- Record detail, delete, bulk actions
+- Admin lookup and ad-hoc reminder sending
+- API endpoints for future class sections, projections, pending sections, notification logs
 
-### AdminPositionViewSet
-
-Manages school administrator positions:
-- `list` - Returns all highschool x role combinations
-- `assign` - Assign an administrator to a position
-
-### CE Portal ViewSets (ce_api.py)
-
-**FutureClassSectionViewSet** - Lists all future class sections with filtering:
-- Filter by academic year, high school, teacher, offering type, teacher course type, status
-
-**FutureProjectionViewSet** - Lists future projections by high school:
-- Shows confirmation status for administrators and class sections
-
-**PendingFutureClassSectionViewSet** - Lists teacher course certificates pending response:
-- Filters out already responded courses based on settings
-
-**NotificationLogViewSet** - Read-only access to notification history:
-- Returns CronLog entries for the `notify_pending_section_requests` command
-- Includes run times, summary, and detailed log (emails sent, errors, skipped)
+### Shared API URLs (`/future_sections/`):
+- `api/actions/mark-teaching/` - Mark course as teaching
+- `api/actions/mark-not-teaching/` - Mark course as not teaching
+- `api/actions/remove-teaching-status/` - Remove teaching status
+- `api/actions/add-teacher/` - Add new teacher course
+- `api/actions/confirm-sections/` - Confirm class sections
+- `api/actions/confirm-administrators/` - Confirm administrators
+- `api/course-requests/` - List course requests
+- `api/admin-positions/` - List/manage admin positions
 
 ## Permissions
 
-The app provides four permission classes in `permissions.py`:
-
 | Class | Access |
 |-------|--------|
-| `IsHSAdminOrInstructor` | HS Admin OR Instructor (used by shared API ViewSets) |
+| `IsHSAdminOrInstructor` | HS Admin OR Instructor |
 | `IsHSAdminOnly` | HS Admin only |
 | `IsInstructorOnly` | Instructor only |
-| `CanAccessCourseRequest` | Object-level: verifies the user owns or manages the specific certificate |
-
-- High School Administrators can manage all courses at their schools
-- Instructors can only manage their own course certificates
+| `CanAccessCourseRequest` | Object-level: verifies user owns or manages the certificate |
 
 ## Signals
 
-The app uses Django signals for event-driven behavior:
+### Review Notification
 
-### Review Notification Signal
+When a `FutureCourse` is saved via `.save()` and the status changes to `'reviewed'`, an email is sent to the instructor and the original submitter. Controlled by `send_reviewed_notification` setting.
 
-When a `FutureCourse` instance is saved via `.save()` and the status changes to `'reviewed'`, an email notification is sent to:
-- The instructor (teacher) associated with the course
-- The person who originally submitted the section request (if different from the instructor)
-
-This is controlled by the `send_reviewed_notification` setting.
-
-> **Note:** The bulk "Mark as Reviewed" action uses `QuerySet.update()`, which does **not** trigger this signal. The notification only fires when individual instances are saved via `.save()`.
-
-**Shortcodes available in email template:**
-- `{{course}}` - Course name
-- `{{highschool}}` - High school name
-- `{{instructor_first_name}}` - Instructor's first name
-- `{{instructor_last_name}}` - Instructor's last name
+> **Note:** Bulk "Mark as Reviewed" uses `QuerySet.update()` which does **not** trigger this signal.
 
 ## Reports
 
-The app provides three export reports available in the CE Portal:
-
 | Report | Description |
 |--------|-------------|
-| **Section Requests Export** | Exports all FutureCourse records with dynamic fields from `teaching_form_config` |
-| **Pending Section Requests - Course(s) Export** | Exports TeacherCourseCertificate records that haven't submitted requests |
-| **Pending Section Requests - High School Admin Export** | Exports HSAdministratorPosition records for schools with pending requests |
+| **Section Requests Export** | Exports FutureCourse records with dynamic fields from `teaching_form_config` |
+| **Pending - Course(s) Export** | Exports TeacherCourseCertificate records that haven't submitted requests |
+| **Pending - HS Admin Export** | Exports HSAdministratorPosition records for schools with pending requests |
 
-Reports use the `teaching_form_config.labels` setting for dynamic column headers.
+## Configuration
+
+### Teaching Form Configuration
+
+Configure via the visual UI in settings or as JSON in `teaching_form_config`:
+
+```json
+{
+    "fields": ["term", "estimated_enrollment", "class_period"],
+    "required": ["term"],
+    "show_syllabus": true,
+    "labels": {
+        "estimated_enrollment": "Expected Number of Students"
+    },
+    "help_texts": {
+        "class_period": "e.g., 1st period, 2nd hour"
+    },
+    "weights": {
+        "estimated_enrollment": 1,
+        "class_period": 2
+    },
+    "display_template": "{term_name} | {syllabus_link}"
+}
+```
+
+### Add Teacher Form Configuration
+
+Configure via the visual UI in settings or as JSON in `add_teacher_form_config`:
+
+```json
+{
+    "fields": ["highschool", "course", "term", "teacher", "teacher_first_name"],
+    "required": ["highschool", "course", "term", "teacher"],
+    "labels": {
+        "teacher": "Select Instructor"
+    }
+}
+```
 
 ## Troubleshooting
 
+### Settings JS not loading
+
+Ensure `future_sections/staticfiles` is in `STATICFILES_DIRS` in your Django settings. Run `collectstatic` if in production.
+
 ### Reports not appearing
 
-1. Ensure `register_reports` has been run:
-   ```bash
-   python manage.py register_reports
-   ```
-
-2. Verify the app is in `INSTALLED_APPS`
+```bash
+python manage.py register_reports
+```
 
 ### Settings not appearing
 
-1. Ensure `register_settings` has been run:
-   ```bash
-   python manage.py register_settings
-   ```
+```bash
+python manage.py register_settings
+```
 
 ### Email notifications not sending
 
 1. Check that `send_reviewed_notification` is set to "Yes" in settings
 2. Verify email configuration in Django settings
 3. Check that the instructor has a valid email address
-4. The bulk "Mark as Reviewed" action uses `QuerySet.update()` which bypasses the `pre_save` signal — review notifications are only sent when individual records are saved via `.save()`
-
-## See Also
-
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture documentation with diagrams
-- [PRODUCT_GUIDE.md](PRODUCT_GUIDE.md) - Configuration guide for product managers
-- [cis app](/cis/) - Core models and business logic
+4. Bulk "Mark as Reviewed" bypasses `pre_save` signal — notifications only fire on `.save()`

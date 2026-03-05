@@ -61,17 +61,19 @@ class ConfirmHighSchoolAdministratorsForm(forms.Form):
             from cis.models.highschool_administrator import HSAdministratorPosition
 
             config = future_sections.from_db()
-            role_ids = config.get('school_admin_roles', [])
 
-            for role_id in role_ids:
-                for hs in self.fields['highschools'].queryset:
-                    if not HSAdministratorPosition.objects.filter(
-                        position__id=role_id,
-                        highschool=hs,
-                        status__iexact='active'
-                    ).exists():
-                        raise ValidationError('One ore more administrator(s) are missing. Please assign an administrator for each role.')
-            
+            if config.get('require_all_roles_confirmed') == '1':
+                role_ids = config.get('school_admin_roles', [])
+
+                for role_id in role_ids:
+                    for hs in self.fields['highschools'].queryset:
+                        if not HSAdministratorPosition.objects.filter(
+                            position__id=role_id,
+                            highschool=hs,
+                            status__iexact='active'
+                        ).exists():
+                            raise ValidationError('One or more administrator(s) are missing. Please assign an administrator for each role.')
+
         return data
 
 
@@ -152,12 +154,13 @@ class ConfirmClassSectionsForm(ConfirmHighSchoolAdministratorsForm, forms.Form):
                 course__stream__in=['pathways', 'dual_enrollment']
             )
 
-        for ht_course in ht_courses:
-            if not FutureCourse.objects.filter(
-                academic_year=data.get('academic_year'),
-                teacher_course=ht_course
-            ).exists():
-                raise ValidationError('You have not indicated course informatin for one or more teacher. Please correct that and try again')
+        if fs_config.get('require_all_teachers_confirmed') == '1':
+            for ht_course in ht_courses:
+                if not FutureCourse.objects.filter(
+                    academic_year=data.get('academic_year'),
+                    teacher_course=ht_course
+                ).exists():
+                    raise ValidationError('You have not indicated course information for one or more teachers. Please correct that and try again.')
 
         return data
 

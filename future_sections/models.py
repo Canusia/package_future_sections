@@ -111,15 +111,20 @@ class FutureCourse(models.Model):
         return f"{self.teacher_course.teacher_highschool.teacher} - {self.teacher_course.course} ({self.academic_year})"
 
     def create_teacher_application(self):
-        from cis.models.teacher_applicant import (
+        from instructor_app.models.teacher_applicant import (
             TeacherApplicant, TeacherApplication,
             ApplicantSchoolCourse, ApplicationUpload
         )
 
+        from future_sections import future_sections as fs_settings
+
+        fs_config = fs_settings.from_db()
+        default_status = fs_config.get('default_instructor_app_status', 'In Progress')
+
         teacher_app = TeacherApplication(
             user=self.teacher_course.teacher_highschool.teacher.user,
             highschool=self.teacher_course.teacher_highschool.highschool,
-            status='Submitted',
+            status=default_status,
             createdon=datetime.datetime.now()
         )
 
