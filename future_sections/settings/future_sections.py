@@ -18,7 +18,12 @@ from cis.models.term import AcademicYear, Term
 from cis.models.course import Course
 from cis.models.teacher import TeacherCourseCertificate
 from cis.models.highschool_administrator import HSPosition
-from cis.models.teacher_applicant import TeacherApplication
+
+try:
+    from instructor_app.instructor_app.models import TeacherApplication
+except ImportError:
+    from instructor_app.models import TeacherApplication
+
 from cis.models.crontab import CronTab
 
 from crispy_forms.helper import FormHelper
