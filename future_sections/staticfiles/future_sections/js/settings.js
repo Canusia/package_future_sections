@@ -362,22 +362,24 @@ function initPersonnelConfirmationToggle() {
     $toggle.on('change', toggleFields);
 }
 
+function initAll() {
+    var inits = [
+        initTeachingFormConfig,
+        initAddTeacherFormConfig,
+        initReviewedNotificationToggle,
+        initPersonnelConfirmationToggle,
+        initNewTeacherToggle,
+        initPendingNotificationDatesPicker,
+    ];
+    for (var i = 0; i < inits.length; i++) {
+        try { inits[i](); } catch (e) {
+            console.warn('Settings init error (' + inits[i].name + '):', e.message);
+        }
+    }
+}
+
 // Initialize on AJAX complete (for settings forms loaded dynamically)
-$(document).ajaxComplete(function() {
-    initPendingNotificationDatesPicker();
-    initReviewedNotificationToggle();
-    initPersonnelConfirmationToggle();
-    initNewTeacherToggle();
-    initTeachingFormConfig();
-    initAddTeacherFormConfig();
-});
+$(document).ajaxComplete(initAll);
 
 // Initialize on document ready
-$(document).ready(function() {
-    initPendingNotificationDatesPicker();
-    initReviewedNotificationToggle();
-    initPersonnelConfirmationToggle();
-    initNewTeacherToggle();
-    initTeachingFormConfig();
-    initAddTeacherFormConfig();
-});
+$(document).ready(initAll);

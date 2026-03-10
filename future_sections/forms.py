@@ -213,18 +213,53 @@ class TeacherCourseSectionForm(forms.Form):
 
         visible_fields = form_config.get('fields', ['term', 'estimated_enrollment'])
         required_fields = form_config.get('required', ['term'])
-        show_syllabus = form_config.get('show_syllabus', True)
+        show_syllabus = form_config.get('show_syllabus', False)
         custom_labels = form_config.get('labels', {})
         custom_help_texts = form_config.get('help_texts', {})
 
+        # Build instruction mode choices from settings
+        instruction_mode_choices = None
+        raw_modes = fs_config.get('instruction_modes', '')
+        if raw_modes:
+            instruction_mode_choices = [
+                (m.strip(), m.strip())
+                for m in raw_modes.split('|')
+                if m.strip()
+            ]
+
+        # If editing existing data, ensure stored instruction_mode value is in choices
+        initial = kwargs.get('initial') or {}
+        stored_mode = initial.get('instruction_mode', '')
+        if stored_mode and instruction_mode_choices:
+            choice_values = {c[0] for c in instruction_mode_choices}
+            if stored_mode not in choice_values:
+                instruction_mode_choices.append((stored_mode, stored_mode))
+
         # Generate configurable fields from schema
+        # Dependent fields are always visible when their parent is visible
+        dependent_fields = {
+            'new_teacher_name': 'teacher_changed',
+            'new_highschool_title': 'highschool_title_changed',
+        }
+
         for field_name in TeachingSectionFieldSchema.get_available_field_names():
+            extra_kwargs = {}
+            if field_name == 'instruction_mode' and instruction_mode_choices:
+                extra_kwargs['choices'] = instruction_mode_choices
+
+            is_visible = field_name in visible_fields
+            if field_name in dependent_fields:
+                parent = dependent_fields[field_name]
+                if parent in visible_fields:
+                    is_visible = True
+
             self.fields[field_name] = TeachingSectionFieldSchema.make_django_form_field(
                 field_name,
-                visible=field_name in visible_fields,
+                visible=is_visible,
                 required=field_name in required_fields,
                 label_override=custom_labels.get(field_name),
                 help_text_override=custom_help_texts.get(field_name),
+                **extra_kwargs,
             )
 
         # Set initial value for highschool_course_name if provided
@@ -269,10 +304,10 @@ class TeacherCourseSectionForm(forms.Form):
 
         data = self.cleaned_data
 
-        data['term_name'] = str(data.get('term'))
-        data['term'] = str(data.get('term').id)
-        data['start_date'] = str(data.get('start_date'))
-        data['end_date'] = str(data.get('end_date'))
+        term = data.get('term')
+        if term:
+            data['term_name'] = str(term)
+            data['term'] = str(term.id)
 
         return data
 

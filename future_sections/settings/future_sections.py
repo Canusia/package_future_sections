@@ -303,6 +303,28 @@ class future_sections(forms.Form):
         label="Add Teacher Form Configuration",
     )
 
+    # ── Instruction Modes ─────────────────────────────────────────────────
+    instruction_modes_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Instruction Modes</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    instruction_modes = forms.CharField(
+        max_length=500,
+        required=False,
+        label="Available Instruction Modes",
+        help_text='Enter a pipe-delimited list of instruction modes. '
+                  'Example: Traditional (face-to-face)|Hybrid (F2F &amp; Online)|Online. '
+                  'These will appear as dropdown options when the Instruction Mode field is enabled.',
+        initial='',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Traditional (face-to-face)|Hybrid (F2F & Online)|Online'
+        })
+    )
+
     # ── Reviewed Status Email ────────────────────────────────────────────
     reviewed_email_header = FFields.ReadOnlyField(
         required=False,

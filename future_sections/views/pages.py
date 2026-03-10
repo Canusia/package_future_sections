@@ -38,11 +38,13 @@ class FutureSectionsPageView(View):
             menu = draw_menu(HS_ADMIN_MENU, 'section_requests', '', 'highschool_admin')
             portal_key = 'highschool_admin'
             base_template = 'highschool_admin/base_hsadmin.html'
+            url_namespace = 'future_sections_highschool_admin'
         else:
             from cis.menu import draw_menu, INSTRUCTOR_MENU
             menu = draw_menu(INSTRUCTOR_MENU, 'section_requests', '', 'instructor')
             portal_key = 'instructor'
             base_template = 'instructor/base_instructor.html'
+            url_namespace = 'future_sections_instructor'
 
         highschools = context['highschools']
 
@@ -66,6 +68,20 @@ class FutureSectionsPageView(View):
         ).order_by('name')
 
         window_is_open = FutureCourse.is_window_open()
+
+        # Build URLs using the correct portal namespace
+        from django.urls import reverse
+        api_urls = {
+            'mark_teaching': reverse(f'{url_namespace}:actions-mark-teaching'),
+            'mark_not_teaching': reverse(f'{url_namespace}:actions-mark-not-teaching'),
+            'remove_teaching_status': reverse(f'{url_namespace}:actions-remove-teaching-status'),
+            'add_teacher': reverse(f'{url_namespace}:actions-add-teacher'),
+            'admin_assign': reverse(f'{url_namespace}:admin-positions-assign'),
+            'admin_positions': reverse(f'{url_namespace}:admin-positions-list'),
+            'course_requests': reverse(f'{url_namespace}:course-requests-list'),
+            'confirm_sections': reverse(f'{url_namespace}:actions-confirm-sections'),
+            'confirm_administrators': reverse(f'{url_namespace}:actions-confirm-administrators'),
+        }
 
         # Get portal-specific intro text
         try:
@@ -97,4 +113,5 @@ class FutureSectionsPageView(View):
             'page_name': fs_config.get('page_name', 'Future Section Requests'),
             'tab_course_requests': fs_config.get('tab_course_requests', 'Course Requests'),
             'tab_school_personnel': fs_config.get('tab_school_personnel', 'School Personnel'),
+            'api_urls': api_urls,
         })

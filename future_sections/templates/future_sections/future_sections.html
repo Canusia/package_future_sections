@@ -16,15 +16,15 @@
 {% block content %}
 <!-- Configuration data for JavaScript -->
 <div id="future-sections-config"
-     data-mark-teaching-url="{% url 'future_sections:actions-mark-teaching' %}"
-     data-mark-not-teaching-url="{% url 'future_sections:actions-mark-not-teaching' %}"
-     data-remove-teaching-status-url="{% url 'future_sections:actions-remove-teaching-status' %}"
-     data-add-teacher-url="{% url 'future_sections:actions-add-teacher' %}"
-     data-admin-assign-url="{% url 'future_sections:admin-positions-assign' %}"
-     data-admin-positions-url="{% url 'future_sections:admin-positions-list' %}"
-     data-course-requests-url="{% url 'future_sections:course-requests-list' %}"
-     data-confirm-sections-url="{% url 'future_sections:actions-confirm-sections' %}"
-     data-confirm-administrators-url="{% url 'future_sections:actions-confirm-administrators' %}"
+     data-mark-teaching-url="{{ api_urls.mark_teaching }}"
+     data-mark-not-teaching-url="{{ api_urls.mark_not_teaching }}"
+     data-remove-teaching-status-url="{{ api_urls.remove_teaching_status }}"
+     data-add-teacher-url="{{ api_urls.add_teacher }}"
+     data-admin-assign-url="{{ api_urls.admin_assign }}"
+     data-admin-positions-url="{{ api_urls.admin_positions }}"
+     data-course-requests-url="{{ api_urls.course_requests }}"
+     data-confirm-sections-url="{{ api_urls.confirm_sections }}"
+     data-confirm-administrators-url="{{ api_urls.confirm_administrators }}"
      data-highschool-ids="{% for hs in highschools %}{{ hs.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
      data-role-ids="{% for role in hs_roles %}{{ role.id }}{% if not forloop.last %},{% endif %}{% endfor %}"
      data-window-is-open="{% if window_is_open %}true{% else %}false{% endif %}"
@@ -68,6 +68,7 @@
                                 <th>Teacher</th>
                                 <th>Status</th>
                                 <th>School</th>
+                                <th>Previous Year</th>
                                 <th>Offering Status</th>
                             </tr>
                         </thead>
@@ -94,7 +95,7 @@
                     <div class="card mt-4">
                         <div class="card-body">
                             {{confirm_administrators_header|safe}}
-                            <form action="{% url 'future_sections:actions-confirm-sections' %}" method="post" class="frm_ajax">
+                            <form action="{{ api_urls.confirm_sections }}" method="post" class="frm_ajax">
                                 {% csrf_token %}
                                 {{confirm_sections_form|crispy}}
                                 <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">
@@ -134,7 +135,7 @@
                 <div class="card mt-4">
                     <div class="card-body">
                         {{confirm_administrators_header|safe}}
-                        <form action="{% url 'future_sections:actions-confirm-administrators' %}" method="post" class="frm_ajax">
+                        <form action="{{ api_urls.confirm_administrators }}" method="post" class="frm_ajax">
                             {% csrf_token %}
                             {{confirm_admins_form|crispy}}
                             <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">

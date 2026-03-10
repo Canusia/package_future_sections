@@ -49,7 +49,7 @@ class TeachingSectionFieldSchema(BaseModel):
         default=None,
         json_schema_extra={
             "default_label": "Instruction Mode",
-            "widget_type": "text",
+            "widget_type": "select",
             "field_type": "string",
         },
     )
@@ -117,6 +117,34 @@ class TeachingSectionFieldSchema(BaseModel):
             "field_type": "boolean",
         },
     )
+    new_teacher_name: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "New Teacher Name",
+            "default_help_text": "Enter the name of the new teacher",
+            "widget_type": "text",
+            "field_type": "string",
+            "depends_on": "teacher_changed",
+        },
+    )
+    highschool_title_changed: Optional[bool] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Did the high school title change?",
+            "widget_type": "checkbox",
+            "field_type": "boolean",
+        },
+    )
+    new_highschool_title: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "New High School Title",
+            "default_help_text": "Enter the new high school course title",
+            "widget_type": "text",
+            "field_type": "string",
+            "depends_on": "highschool_title_changed",
+        },
+    )
 
     # ------------------------------------------------------------------
     # Utility class methods
@@ -144,10 +172,12 @@ class TeachingSectionFieldSchema(BaseModel):
         required: bool = False,
         label_override: str | None = None,
         help_text_override: str | None = None,
+        choices: list[tuple[str, str]] | None = None,
     ) -> forms.Field:
         """Build a Django form field from schema metadata.
 
         When *visible* is False the field is rendered as a HiddenInput.
+        *choices* is used for ``select`` widget_type fields.
         """
         meta = cls.get_field_meta(name)
         label = label_override or meta.get("default_label", name)
@@ -194,6 +224,17 @@ class TeachingSectionFieldSchema(BaseModel):
                 label=label,
                 help_text=help_text,
                 widget=widget,
+            )
+
+        # Select fields — use ChoiceField with provided choices
+        if widget_type == "select":
+            select_choices = [("", "---------")] + (choices or [])
+            return forms.ChoiceField(
+                required=required,
+                label=label,
+                help_text=help_text,
+                choices=select_choices,
+                widget=forms.Select(attrs={"class": "form-control"}),
             )
 
         # String fields — widget depends on widget_type

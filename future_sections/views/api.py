@@ -201,7 +201,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         if 'fields' not in form_config:
             form_config['fields'] = ['term', 'estimated_enrollment']
         if 'show_syllabus' not in form_config:
-            form_config['show_syllabus'] = True
+            form_config['show_syllabus'] = False
 
         # Use unified template from future_sections app
         template = 'future_sections/teaching_course.html'
@@ -575,9 +575,14 @@ class CourseRequestViewSet(viewsets.ViewSet):
 
     def list(self, request, *args, **kwargs):
         """Return course requests with merged offering status from FutureCourse."""
+        from cis.models.section import ClassSection
+        from cis.models.term import Term
+        from django.db.models import Count
+
         fs_config = get_fs_config()
         academic_year_id = fs_config.get('academic_year')
         academic_year = AcademicYear.objects.filter(pk=academic_year_id).first()
+        previous_academic_year_id = fs_config.get('previous_academic_year')
         window_is_open = FutureCourse.is_window_open()
 
         # Get course certificates
@@ -597,6 +602,24 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'section_display': fc.section_display,  # Pre-formatted display from settings
             }
 
+        # Build previous year section counts per (course, highschool, term)
+        prev_year_lookup = {}
+        if previous_academic_year_id:
+            prev_sections = (
+                ClassSection.objects.filter(
+                    term__academic_year__id=previous_academic_year_id,
+                    status='active',
+                )
+                .values('course_id', 'highschool_id', 'term__id', 'term__label')
+                .annotate(count=Count('id'))
+            )
+            for row in prev_sections:
+                key = f"{row['course_id']}_{row['highschool_id']}"
+                prev_year_lookup.setdefault(key, []).append({
+                    'term_name': row['term__label'],
+                    'count': row['count'],
+                })
+
         # Build response data
         course_display_template = fs_config.get('course_display_template', '{course_title}')
         data = []
@@ -613,6 +636,10 @@ class CourseRequestViewSet(viewsets.ViewSet):
             except (KeyError, IndexError):
                 course_display = course.course.title
 
+            # Previous year sections for this course + highschool
+            prev_key = f"{course.course_id}_{course.teacher_highschool.highschool_id}"
+            prev_year_sections = prev_year_lookup.get(prev_key, [])
+
             data.append({
                 'certificate_id': cert_id,
                 'course_title': course_display,
@@ -624,6 +651,7 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'offering_status': offering.get('teaching'),
                 'sections': offering.get('sections', []),
                 'section_display': offering.get('section_display', []),
+                'prev_year_sections': prev_year_sections,
             })
 
         return Response(data)

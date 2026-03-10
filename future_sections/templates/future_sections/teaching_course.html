@@ -39,13 +39,31 @@
 
                                     {# Dynamically render configured fields #}
                                     {% for field_name in form_config.fields %}
-                                        {% if field_name != 'term' %}
+                                        {% if field_name != 'term' and field_name != 'new_teacher_name' and field_name != 'new_highschool_title' %}
                                         <div class="col-12">
                                             {% get_form_field teaching_form field_name as field %}
                                             {% if field %}
                                                 {{ field|as_crispy_field }}
                                             {% endif %}
                                         </div>
+                                        {# Auto-render new_teacher_name after teacher_changed #}
+                                        {% if field_name == 'teacher_changed' %}
+                                        <div class="col-12 dependent-field-wrapper" data-depends-on="teacher_changed" style="display:none;">
+                                            {% get_form_field teaching_form 'new_teacher_name' as new_teacher_field %}
+                                            {% if new_teacher_field %}
+                                                {{ new_teacher_field|as_crispy_field }}
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                        {# Auto-render new_highschool_title after highschool_title_changed #}
+                                        {% if field_name == 'highschool_title_changed' %}
+                                        <div class="col-12 dependent-field-wrapper" data-depends-on="highschool_title_changed" style="display:none;">
+                                            {% get_form_field teaching_form 'new_highschool_title' as new_title_field %}
+                                            {% if new_title_field %}
+                                                {{ new_title_field|as_crispy_field }}
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
                                         {% endif %}
                                     {% endfor %}
 
@@ -87,5 +105,28 @@
     $('.course-formset').formset({
         addText: '<div class="col-12 mt-3"><div class="float-right"><div class="btn btn-sm btn-primary"><i class="fa faw fas text-light fa-plus"></i>&nbsp;Add New Section</div></div></div>',
         deleteText: '<div class="col-2">Remove <i class="fa faw fas fa-trash"></i></div>'
+    });
+
+    // Toggle dependent field visibility based on parent checkbox
+    function toggleDependentField($checkbox, fieldName) {
+        var $formset = $checkbox.closest('.course-formset');
+        var $wrapper = $formset.find('.dependent-field-wrapper[data-depends-on="' + fieldName + '"]');
+        if ($checkbox.is(':checked')) {
+            $wrapper.show();
+        } else {
+            $wrapper.hide();
+            $wrapper.find('input, textarea').val('');
+        }
+    }
+
+    // Initialize and bind for all dependent checkbox fields
+    var dependentFields = ['teacher_changed', 'highschool_title_changed'];
+    $.each(dependentFields, function(_, fieldName) {
+        $('[name$="' + fieldName + '"]').each(function() {
+            toggleDependentField($(this), fieldName);
+        });
+        $(document).on('change', '[name$="' + fieldName + '"]', function() {
+            toggleDependentField($(this), fieldName);
+        });
     });
 </script>

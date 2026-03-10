@@ -157,6 +157,18 @@ function getCookie(name) {
                     }
                 },
                 {
+                    data: 'prev_year_sections',
+                    orderable: false,
+                    render: function(data, type, row) {
+                        if (!data || data.length === 0) return '---';
+                        var parts = [];
+                        for (var i = 0; i < data.length; i++) {
+                            parts.push(data[i].term_name + ': ' + data[i].count);
+                        }
+                        return parts.join('<br>');
+                    }
+                },
+                {
                     data: null,
                     orderable: false,
                     render: renderOfferingStatus
@@ -283,10 +295,17 @@ function getCookie(name) {
                     'X-CSRFToken': getCookie('csrftoken')
                 },
                 error: function(xhr, status, error) {
-                    var errors = $.parseJSON(xhr.responseJSON.errors);
+                    var response = xhr.responseJSON || {};
+                    var errors = {};
+                    try { errors = $.parseJSON(response.errors || '{}'); } catch (e) { errors = {}; }
 
                     var span = document.createElement('span');
                     span.innerHTML = '';
+
+                    // Show non-form errors from details
+                    if (response.details) {
+                        span.innerHTML += response.details;
+                    }
 
                     for (var name in errors) {
                         for (var i in errors[name]) {
@@ -307,7 +326,7 @@ function getCookie(name) {
                     }
 
                     swal({
-                        title: xhr.responseJSON.message,
+                        title: response.message || 'Error',
                         content: span,
                         icon: 'warning'
                     });

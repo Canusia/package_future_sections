@@ -45,6 +45,30 @@
     toggle_new_administrator_info()
     toggle_new_teacher_info()
 
+    // Toggle dependent fields based on parent checkbox
+    function toggle_dependent_field(checkboxId, fieldId, inputId) {
+        var $checkbox = $(checkboxId);
+        var $field = $(fieldId);
+        if ($checkbox.is(':checked')) {
+            $field.show();
+        } else {
+            $field.hide();
+            $(inputId).val('');
+        }
+    }
+
+    var dependentPairs = [
+        ['#id_teacher_changed', '#div_id_new_teacher_name', '#id_new_teacher_name'],
+        ['#id_highschool_title_changed', '#div_id_new_highschool_title', '#id_new_highschool_title'],
+    ];
+
+    $.each(dependentPairs, function(_, pair) {
+        $(document).on('change', pair[0], function() {
+            toggle_dependent_field(pair[0], pair[1], pair[2]);
+        });
+        toggle_dependent_field(pair[0], pair[1], pair[2]);
+    });
+
     $('#id_administrator').multipleSelect({
         filter: true,
         selectAll: false,
