@@ -57,7 +57,7 @@ class ConfirmHighSchoolAdministratorsForm(forms.Form):
         data = self.cleaned_data
 
         if data.get('action') == 'confirmed_administrators':
-            from cis.settings.future_sections import future_sections
+            from .settings.future_sections import future_sections
             from cis.models.highschool_administrator import HSAdministratorPosition
 
             config = future_sections.from_db()
@@ -109,7 +109,7 @@ class ConfirmHighSchoolAdministratorsForm(forms.Form):
     def __init__(self, highschools, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        from cis.settings.future_sections import future_sections
+        from .settings.future_sections import future_sections
         config = future_sections.from_db()
 
         label = config.get('confirm_administrators', 'I agree and confirm that I am authorized to do this')
@@ -132,7 +132,7 @@ class ConfirmClassSectionsForm(ConfirmHighSchoolAdministratorsForm, forms.Form):
 
         highschools = data.get('highschools')
 
-        from cis.settings.future_sections import future_sections
+        from .settings.future_sections import future_sections
         fs_config = future_sections.from_db()
 
         ht_courses = TeacherCourseCertificate.objects.filter(
@@ -169,7 +169,7 @@ class ConfirmClassSectionsForm(ConfirmHighSchoolAdministratorsForm, forms.Form):
 
         self.fields['action'].initial = action
 
-        from cis.settings.future_sections import future_sections
+        from .settings.future_sections import future_sections
         config = future_sections.from_db()
 
         label = config.get('confirmed_class_sections', 'I agree and confirm that I am authorized to do this')
@@ -431,7 +431,7 @@ class HSAdministratorPositionForm(forms.Form):
             ).values_list('hsadmin')
         )
 
-        from cis.settings.future_sections import future_sections
+        from .settings.future_sections import future_sections
         fs_config = future_sections.from_db()
         self.fields['confirm_school_personnel'].label = fs_config.get('confirm_new_personnel', 'Change Me in Settings')
 
@@ -739,7 +739,7 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                 )
                 teacher_hs = teacher_hs[0]
 
-            from cis.settings.future_sections import future_sections as fs_settings
+            from .settings.future_sections import future_sections as fs_settings
             fs_config = fs_settings.from_db()
             
             if not TeacherCourseCertificate.objects.filter(
