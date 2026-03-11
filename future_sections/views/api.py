@@ -48,6 +48,7 @@ from ..utils import (
     add_history_entry,
     get_user_highschools,
     get_course_certificates_for_user,
+    build_initial_from_prev_year,
 )
 
 
@@ -103,19 +104,27 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         # Verify access based on user role
         validate_certificate_access(request, teacher_course)
 
-        TeachingFormSet = formset_factory(
-            TeacherCourseSectionForm,
-            formset=TeacherCourseBaseLinkFormSet,
-            extra=1
-        )
-
         future_course = FutureCourse.get_or_add(teacher_course, academic_year, submitter=request.user)
 
-        if future_course.section_info == {}:
+        is_new = future_course.section_info == {}
+        if is_new:
             future_course.section_info = {'teaching': 'yes', 'sections': []}
             future_course.save()
 
         initial_data = future_course.section_info.get('sections', []) if future_course.section_info else []
+
+        # Pre-populate from previous year sections for new records
+        formset_extra = 1
+        if is_new and not initial_data:
+            initial_data = build_initial_from_prev_year(teacher_course)
+            if initial_data:
+                formset_extra = 0
+
+        TeachingFormSet = formset_factory(
+            TeacherCourseSectionForm,
+            formset=TeacherCourseBaseLinkFormSet,
+            extra=formset_extra
+        )
 
         if request.method == 'POST':
             teacher_course_teaching_form = TeacherCourseTeachingForm(request.POST)
@@ -151,6 +160,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
                 else:
                     future_course.meta['fp'] = str(fp.id)
 
+                future_course.submitted_by = request.user
                 add_history_entry(
                     future_course, request.user,
                     f'Marked as teaching - {future_course} {len(section_info)} section(s)'
@@ -260,6 +270,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         if not future_course.meta:
             future_course.meta = {'fp': str(fp.id), 'history': []}
 
+        future_course.submitted_by = request.user
         add_history_entry(future_course, request.user, 'Marked as not teaching')
         future_course.save()
 

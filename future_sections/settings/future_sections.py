@@ -94,6 +94,14 @@ class future_sections(forms.Form):
         required=True
     )
 
+    term_mapping = forms.CharField(
+        max_length=2000,
+        required=False,
+        label="Term Mapping",
+        widget=forms.HiddenInput(),
+        initial='{}',
+    )
+
     starting_date = forms.DateField()
     ending_date = forms.DateField()
 
@@ -631,6 +639,18 @@ class future_sections(forms.Form):
             '</div></div>'
         )
 
+        term_mapping_html = (
+            '<div id="term-mapping-ui" class="card bg-light mb-3" style="display:none;">'
+            '<div class="card-body">'
+            '<h5>Term Mapping</h5>'
+            '<p class="text-muted small">Map each previous year term to the corresponding requesting year term.</p>'
+            '<table class="table table-sm table-bordered" id="term-mapping-table">'
+            '<thead><tr><th>Previous Year Term</th><th>Requesting Year Term</th></tr></thead>'
+            '<tbody></tbody>'
+            '</table>'
+            '</div></div>'
+        )
+
         # Build layout with config UIs inserted before their hidden fields
         field_keys = list(self.fields.keys())
         layout_fields = []
@@ -639,6 +659,8 @@ class future_sections(forms.Form):
                 layout_fields.append(HTML(teaching_config_html))
             elif key == 'add_teacher_form_config':
                 layout_fields.append(HTML(add_teacher_config_html))
+            elif key == 'term_mapping':
+                layout_fields.append(HTML(term_mapping_html))
             layout_fields.append(key)
 
         self.helper.layout = Layout(

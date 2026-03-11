@@ -29,6 +29,7 @@ from cis.models.course import Cohort
 
 from ..models import FutureCourse, FutureSection, FutureProjection
 from ..settings.future_sections import future_sections as fs_settings
+from ..utils import build_initial_from_prev_year
 
 from cis.menu import cis_menu, draw_menu
 
@@ -89,19 +90,14 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
         pk=academic_year_id
     )
 
-    TeachingFormSet = formset_factory(
-        TeacherCourseSectionForm,
-        formset=TeacherCourseBaseLinkFormSet,
-        extra=1
-    )
-
     future_course = FutureCourse.get_or_add(
         teacher_course,
         academic_year,
         submitter=request.user
     )
 
-    if future_course.section_info == {}:
+    is_new = future_course.section_info == {}
+    if is_new:
         future_course.section_info = {
             'teaching': 'yes',
             'sections': []
@@ -112,6 +108,19 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
         initial_data = future_course.section_info.get('sections')
     else:
         initial_data = []
+
+    # Pre-populate from previous year sections for new records
+    formset_extra = 1
+    if is_new and not initial_data:
+        initial_data = build_initial_from_prev_year(teacher_course)
+        if initial_data:
+            formset_extra = 0
+
+    TeachingFormSet = formset_factory(
+        TeacherCourseSectionForm,
+        formset=TeacherCourseBaseLinkFormSet,
+        extra=formset_extra
+    )
 
     if request.method == 'POST':
         teacher_course_teaching_form = TeacherCourseTeachingForm(
@@ -134,6 +143,7 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
                         })
 
             future_course.section_info = {'teaching': 'yes', 'sections': section_info}
+            future_course.submitted_by = request.user
             future_course.save()
 
             data = {

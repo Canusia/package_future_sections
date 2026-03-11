@@ -362,6 +362,91 @@ function initPersonnelConfirmationToggle() {
     $toggle.on('change', toggleFields);
 }
 
+var _termMappingInitialized = false;
+function initTermMapping() {
+    if (_termMappingInitialized) return;
+
+    var $academicYear = $('#id_academic_year');
+    var $prevAcademicYear = $('#id_previous_academic_year');
+    var $hidden = $('#id_term_mapping');
+    var $ui = $('#term-mapping-ui');
+    var $tbody = $('#term-mapping-table tbody');
+
+    if (!$academicYear.length || !$prevAcademicYear.length || !$hidden.length) return;
+    _termMappingInitialized = true;
+
+    var savedMapping = {};
+    try { savedMapping = JSON.parse($hidden.val() || '{}'); } catch (e) { savedMapping = {}; }
+
+    function fetchTerms(academicYearId) {
+        if (!academicYearId) return $.Deferred().resolve([]).promise();
+        return $.getJSON('/ce/api/term/', { academic_year: academicYearId, format: 'json' });
+    }
+
+    function buildMappingUI() {
+        var prevId = $prevAcademicYear.val();
+        var reqId = $academicYear.val();
+
+        if (!prevId || !reqId) {
+            $ui.hide();
+            return;
+        }
+
+        $.when(fetchTerms(prevId), fetchTerms(reqId)).done(function(prevResp, reqResp) {
+            var prevTerms = (prevResp[0] && prevResp[0].results) ? prevResp[0].results : (Array.isArray(prevResp[0]) ? prevResp[0] : []);
+            var reqTerms = (reqResp[0] && reqResp[0].results) ? reqResp[0].results : (Array.isArray(reqResp[0]) ? reqResp[0] : []);
+
+            $tbody.empty();
+
+            if (prevTerms.length === 0) {
+                $tbody.append('<tr><td colspan="2" class="text-muted">No terms found for previous year</td></tr>');
+                $ui.show();
+                return;
+            }
+
+            // Build options for requesting year terms
+            var reqOptions = '<option value="">-- Select --</option>';
+            $.each(reqTerms, function(_, term) {
+                reqOptions += '<option value="' + term.id + '">' + term.label + '</option>';
+            });
+
+            $.each(prevTerms, function(_, prevTerm) {
+                var selected = savedMapping[prevTerm.id] || '';
+                var $row = $('<tr>' +
+                    '<td>' + prevTerm.label + '</td>' +
+                    '<td><select class="form-control term-map-select" data-prev-term="' + prevTerm.id + '">' + reqOptions + '</select></td>' +
+                    '</tr>');
+
+                if (selected) {
+                    $row.find('select').val(selected);
+                }
+
+                $tbody.append($row);
+            });
+
+            $ui.show();
+        });
+    }
+
+    function syncToHidden() {
+        var mapping = {};
+        $tbody.find('.term-map-select').each(function() {
+            var prevTermId = $(this).data('prev-term');
+            var reqTermId = $(this).val();
+            if (reqTermId) {
+                mapping[prevTermId] = reqTermId;
+            }
+        });
+        $hidden.val(JSON.stringify(mapping));
+    }
+
+    $(document).on('change', '.term-map-select', syncToHidden);
+    $academicYear.on('change', function() { savedMapping = {}; buildMappingUI(); });
+    $prevAcademicYear.on('change', function() { savedMapping = {}; buildMappingUI(); });
+
+    buildMappingUI();
+}
+
 function initAll() {
     var inits = [
         initTeachingFormConfig,
@@ -370,6 +455,7 @@ function initAll() {
         initPersonnelConfirmationToggle,
         initNewTeacherToggle,
         initPendingNotificationDatesPicker,
+        initTermMapping,
     ];
     for (var i = 0; i < inits.length; i++) {
         try { inits[i](); } catch (e) {

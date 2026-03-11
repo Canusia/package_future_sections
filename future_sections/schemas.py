@@ -109,12 +109,13 @@ class TeachingSectionFieldSchema(BaseModel):
             "field_type": "string",
         },
     )
-    teacher_changed: Optional[bool] = Field(
+    teacher_changed: Optional[str] = Field(
         default=None,
         json_schema_extra={
             "default_label": "Did the teacher change?",
-            "widget_type": "checkbox",
-            "field_type": "boolean",
+            "widget_type": "select",
+            "field_type": "string",
+            "choices": [("yes", "Yes"), ("no", "No")],
         },
     )
     new_teacher_name: Optional[str] = Field(
@@ -127,12 +128,13 @@ class TeachingSectionFieldSchema(BaseModel):
             "depends_on": "teacher_changed",
         },
     )
-    highschool_title_changed: Optional[bool] = Field(
+    highschool_title_changed: Optional[str] = Field(
         default=None,
         json_schema_extra={
             "default_label": "Did the high school title change?",
-            "widget_type": "checkbox",
-            "field_type": "boolean",
+            "widget_type": "select",
+            "field_type": "string",
+            "choices": [("yes", "Yes"), ("no", "No")],
         },
     )
     new_highschool_title: Optional[str] = Field(
@@ -228,7 +230,8 @@ class TeachingSectionFieldSchema(BaseModel):
 
         # Select fields — use ChoiceField with provided choices
         if widget_type == "select":
-            select_choices = [("", "---------")] + (choices or [])
+            schema_choices = meta.get("choices")
+            select_choices = [("", "---------")] + (choices or schema_choices or [])
             return forms.ChoiceField(
                 required=required,
                 label=label,

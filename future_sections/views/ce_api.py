@@ -19,6 +19,28 @@ from cis.models.teacher import TeacherCourseCertificate
 logger = logging.getLogger(__name__)
 
 
+class PendingTeacherCourseSerializer(TeacherCourseCertificateSerializer):
+    course_display = serializers.SerializerMethodField()
+    prev_year_sections = serializers.SerializerMethodField()
+
+    def get_course_display(self, obj):
+        try:
+            fs_config = fs_settings.from_db()
+            template = fs_config.get('course_display_template', '{course_title}')
+            return template.format(
+                course_name=obj.course.name or '',
+                course_title=obj.course.title,
+                credit_hours=obj.course.credit_hours,
+            )
+        except Exception:
+            return obj.course.title if obj.course else ''
+
+    def get_prev_year_sections(self, obj):
+        lookup = self.context.get('prev_year_lookup', {})
+        key = f"{obj.course_id}_{obj.teacher_highschool.highschool_id}"
+        return lookup.get(key, [])
+
+
 class NotificationLogSerializer(serializers.ModelSerializer):
     summary = serializers.SerializerMethodField()
     detailed_log = serializers.SerializerMethodField()
@@ -54,7 +76,7 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
 
 class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for pending future class sections (not yet responded to)"""
-    serializer_class = TeacherCourseCertificateSerializer
+    serializer_class = PendingTeacherCourseSerializer
     permission_classes = [CIS_user_only]
 
     def get_queryset(self):
@@ -87,6 +109,34 @@ class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
             )
 
         return records
+
+    def get_serializer_context(self):
+        from cis.models.section import ClassSection
+        from django.db.models import Count
+
+        context = super().get_serializer_context()
+        fs_config = fs_settings.from_db()
+        previous_academic_year_id = fs_config.get('previous_academic_year')
+
+        prev_year_lookup = {}
+        if previous_academic_year_id:
+            prev_sections = (
+                ClassSection.objects.filter(
+                    term__academic_year__id=previous_academic_year_id,
+                    status='active',
+                )
+                .values('course_id', 'highschool_id', 'term__id', 'term__label')
+                .annotate(count=Count('id'))
+            )
+            for row in prev_sections:
+                key = f"{row['course_id']}_{row['highschool_id']}"
+                prev_year_lookup.setdefault(key, []).append({
+                    'term_name': row['term__label'],
+                    'count': row['count'],
+                })
+
+        context['prev_year_lookup'] = prev_year_lookup
+        return context
 
 
 class FutureProjectionViewSet(viewsets.ReadOnlyModelViewSet):

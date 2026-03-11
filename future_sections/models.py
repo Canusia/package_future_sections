@@ -95,6 +95,12 @@ class FutureCourse(models.Model):
 
     section_info = JSONField(default=dict)
 
+    submitted_by = models.ForeignKey(
+        'cis.CustomUser', on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='fs_futurecourse_submitted'
+    )
+
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -192,7 +198,8 @@ class FutureCourse(models.Model):
                 teacher_course=teacher_course,
                 academic_year=academic_year,
                 section_info=section_info,
-                meta=meta
+                meta=meta,
+                submitted_by=submitter
             )
             record.save()
             return record

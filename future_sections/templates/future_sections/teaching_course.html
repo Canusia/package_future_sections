@@ -107,11 +107,17 @@
         deleteText: '<div class="col-2">Remove <i class="fa faw fas fa-trash"></i></div>'
     });
 
-    // Toggle dependent field visibility based on parent checkbox
-    function toggleDependentField($checkbox, fieldName) {
-        var $formset = $checkbox.closest('.course-formset');
+    // Toggle dependent field visibility based on parent field value
+    function toggleDependentField($field, fieldName) {
+        var $formset = $field.closest('.course-formset');
         var $wrapper = $formset.find('.dependent-field-wrapper[data-depends-on="' + fieldName + '"]');
-        if ($checkbox.is(':checked')) {
+        var show = false;
+        if ($field.is(':checkbox')) {
+            show = $field.is(':checked');
+        } else {
+            show = $field.val() === 'yes';
+        }
+        if (show) {
             $wrapper.show();
         } else {
             $wrapper.hide();
@@ -119,7 +125,7 @@
         }
     }
 
-    // Initialize and bind for all dependent checkbox fields
+    // Initialize and bind for all dependent fields
     var dependentFields = ['teacher_changed', 'highschool_title_changed'];
     $.each(dependentFields, function(_, fieldName) {
         $('[name$="' + fieldName + '"]').each(function() {

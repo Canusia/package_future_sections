@@ -29,6 +29,57 @@ def get_fs_config():
     return fs_settings.from_db()
 
 
+def build_initial_from_prev_year(teacher_course):
+    """Build formset initial data from previous year ClassSections using term mapping.
+
+    Collapses to one row per previous-year term. Maps terms using the
+    ``term_mapping`` stored in settings. Unmapped terms get a blank term value.
+    """
+    import json
+    from cis.models.section import ClassSection
+
+    fs_config = get_fs_config()
+    previous_academic_year_id = fs_config.get('previous_academic_year')
+    if not previous_academic_year_id:
+        return []
+
+    try:
+        term_mapping = json.loads(fs_config.get('term_mapping', '{}'))
+    except (json.JSONDecodeError, TypeError):
+        term_mapping = {}
+
+    if not term_mapping:
+        return []
+
+    highschool = teacher_course.teacher_highschool.highschool
+    teacher = teacher_course.teacher_highschool.teacher
+    course = teacher_course.course
+
+    prev_sections = ClassSection.objects.filter(
+        term__academic_year__id=previous_academic_year_id,
+        highschool=highschool,
+        teacher=teacher,
+        course=course,
+        status='active',
+    ).select_related('term').order_by('term__code')
+
+    seen_terms = set()
+    initial_data = []
+    for section in prev_sections:
+        prev_term_id = str(section.term_id)
+        if prev_term_id in seen_terms:
+            continue
+        seen_terms.add(prev_term_id)
+
+        mapped_term_id = term_mapping.get(prev_term_id, '')
+        initial_data.append({
+            'term': mapped_term_id or '',
+            'highschool_course_name': section.highschool_course_name or '',
+        })
+
+    return initial_data
+
+
 def get_user_context(request):
     """
     Get the user's role context for future sections operations.

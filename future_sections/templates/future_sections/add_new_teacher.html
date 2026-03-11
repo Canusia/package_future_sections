@@ -45,11 +45,17 @@
     toggle_new_administrator_info()
     toggle_new_teacher_info()
 
-    // Toggle dependent fields based on parent checkbox
-    function toggle_dependent_field(checkboxId, fieldId, inputId) {
-        var $checkbox = $(checkboxId);
+    // Toggle dependent fields based on parent field value
+    function toggle_dependent_field(parentId, fieldId, inputId) {
+        var $parent = $(parentId);
         var $field = $(fieldId);
-        if ($checkbox.is(':checked')) {
+        var show = false;
+        if ($parent.is(':checkbox')) {
+            show = $parent.is(':checked');
+        } else {
+            show = $parent.val() === 'yes';
+        }
+        if (show) {
             $field.show();
         } else {
             $field.hide();

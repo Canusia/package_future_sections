@@ -84,11 +84,12 @@
                                     <tr>
                                         <th></th>
                                         <th data-data="started_on" data-name="started_on">Added On</th>
+                                        <th data-data="submitted_by" data-name="submitted_by">Submitted By</th>
                                         <th data-data="status" data-name="status">Status</th>
                                         <th data-data="academic_year.name" data-name="academic_year.name">Acad Year
                                         </th>
-                                        <th data-data="teacher_course.course.title"
-                                            data-name="teacher_course.course.title">Course
+                                        <th data-data="course_display"
+                                            data-name="course_display">Course
                                         </th>
                                         <th data-data="teacher_course.teacher_highschool.highschool.name"
                                             data-name="teacher_course.teacher_highschool.highschool.name">School
@@ -96,7 +97,7 @@
                                         <th data-data="teacher_course.teacher_highschool.teacher.user.last_name"
                                             data-name="teacher_course.teacher_highschool.teacher.user.last_name">Teacher
                                         </th>
-                                        <th data-data="section_info" data-name="section_info">Section Info
+                                        <th data-data="section_display" data-name="section_display">Section Info
                                         </th>
 
                                         <th data-data="id" data-name='id'><span class="sr-only">Actions</span></th>
@@ -203,11 +204,14 @@
                                         <th data-data="teacher_highschool.highschool.name"
                                             data-name="teacher_highschool.highschool.name">School
                                         </th>
-                                        <th data-data="course.title"
-                                            data-name="course.title">Course
+                                        <th data-data="course_display"
+                                            data-name="course_display">Course
                                         </th>
                                         <th data-data="teacher_highschool.teacher.user.last_name"
                                             data-name="teacher_highschool.teacher.user.last_name">Teacher
+                                        </th>
+                                        <th data-data="prev_year_sections"
+                                            data-name="prev_year_sections">Previous Year
                                         </th>
                                         <th data-data="status"
                                             data-name="status">Certificate Status
@@ -515,6 +519,18 @@
                                                 return row.teacher_highschool.teacher.user.last_name + ', ' + row.teacher_highschool.teacher.user.first_name
                                             }
                                         },
+                                        {
+                                            'orderable': false,
+                                            'render': function (data, type, row, meta) {
+                                                var sections = row.prev_year_sections || [];
+                                                if (!sections.length) return '---';
+                                                var parts = [];
+                                                for (var i = 0; i < sections.length; i++) {
+                                                    parts.push(sections[i].term_name + ': ' + sections[i].count);
+                                                }
+                                                return parts.join('<br>');
+                                            }
+                                        },
                                         null,
                                         {
                                             'render': function (data, type, row, meta) {
@@ -594,6 +610,15 @@
                                         {
                                             'searchable': true,
                                             'render': function (data, type, row, meta) {
+                                                if (row.submitted_by) {
+                                                    return row.submitted_by.last_name + ', ' + row.submitted_by.first_name;
+                                                }
+                                                return '---';
+                                            }
+                                        },
+                                        {
+                                            'searchable': true,
+                                            'render': function (data, type, row, meta) {
                                                 if (row.status === 'reviewed') {
                                                     return '<span class="badge badge-success">Reviewed</span>'
                                                 }
@@ -619,19 +644,20 @@
                                         {
                                             'searchable': false,
                                             'render': function (data, type, row, meta) {
-                                                let value = row.section_info.teaching
-                                                if (value == 'yes') {
-                                                    let offer_info = 'Marked as Offering';
-                                                    $.each(row.section_info.sections, function(k, v) {
-                                                        offer_info += '<br>In ' + v.term_name + ' (' + v.estimated_enrollment + ')'
-                                                        if (v.file) {
-                                                            offer_info += ' | <a href="' + v.file + '" target="_blank">Syllabus</a>'
+                                                var sd = row.section_display || {};
+                                                var teaching = sd.teaching;
+                                                if (teaching == 'yes') {
+                                                    var offer_info = 'Marked as Offering';
+                                                    $.each(sd.displays || [], function(k, displayText) {
+                                                        if (displayText) {
+                                                            offer_info += '<br>' + displayText;
                                                         }
                                                     });
-                                                    return offer_info
-                                                } else {
-                                                    return 'Not Teaching'
+                                                    return offer_info;
+                                                } else if (teaching == 'no') {
+                                                    return 'Not Teaching';
                                                 }
+                                                return '---';
                                             }
                                         },
                                         {
@@ -641,7 +667,8 @@
                                                 let col = ''
                                                 col = '&nbsp;<a title="Delete not offering info" class="float-right course-action" data-course-certificate="' + row.teacher_course.certificate_id + '" data-academic_year="' + row.academic_year.id + '" data-action="remove-not-teaching-section" href="#">&nbsp;<i class="fas fa fa-trash"></i></a>'
 
-                                                if (row.section_info.teaching != 'no')
+                                                var sd = row.section_display || {};
+                                                if (sd.teaching != 'no')
                                                     col += '<a title="Edit Info" class="float-right course-action" data-toggle="modal" data-target="#teachingModal" data-course-certificate="' + row.teacher_course.certificate_id + '" data-academic_year="' + row.academic_year.id + '" data-action="teaching-section" href="#"><i class="fas fa fa-edit"></i>&nbsp;</a>'
 
                                                 return col
