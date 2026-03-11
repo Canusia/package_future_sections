@@ -26,6 +26,25 @@ STATICFILES_DIRS = [
 ]
 ```
 
+### 2.1 Update views/term.py
+
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+
+class TermViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = TermSerializer
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+    
+    permission_classes = [CIS_user_only]
+
+    def get_queryset(self):
+        academic_year_id = self.request.GET.get('academic_year', None)
+        result = Term.objects.all()
+
+        if academic_year_id:
+            result = result.filter(academic_year__id=academic_year_id)  
+
+        return result.order_by('-code')
+
 ### 3. Run Migrations
 
 ```bash
