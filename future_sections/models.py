@@ -129,7 +129,7 @@ class FutureCourse(models.Model):
                 ApplicantSchoolCourse, ApplicationUpload
             )
 
-        from future_sections import future_sections as fs_settings
+        from .settings.future_sections import future_sections as fs_settings
 
         fs_config = fs_settings.from_db()
         default_status = fs_config.get('default_instructor_app_status', 'In Progress')

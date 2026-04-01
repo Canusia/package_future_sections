@@ -95,7 +95,7 @@
                     <div class="card mt-4">
                         <div class="card-body">
                             {{confirm_administrators_header|safe}}
-                            <form action="{{ api_urls.confirm_sections }}" method="post" class="frm_ajax">
+                            <form action="{{ api_urls.confirm_sections }}" method="post" class="fs-ajax-form">
                                 {% csrf_token %}
                                 {{confirm_sections_form|crispy}}
                                 <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">
@@ -135,7 +135,7 @@
                 <div class="card mt-4">
                     <div class="card-body">
                         {{confirm_administrators_header|safe}}
-                        <form action="{{ api_urls.confirm_administrators }}" method="post" class="frm_ajax">
+                        <form action="{{ api_urls.confirm_administrators }}" method="post" class="fs-ajax-form">
                             {% csrf_token %}
                             {{confirm_admins_form|crispy}}
                             <input type="submit" class="btn btn-primary btn-sm" value="Confirm & Continue">

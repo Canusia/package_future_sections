@@ -9,7 +9,7 @@
         {{ teaching_message|safe }}
 
         <h3 class="ml-4 mr-4">{{ teacher_course.teacher_highschool.teacher }} - {{ teacher_course.course.title }}</h3>
-        <form method="post" action="{{ form_action_url }}" class="frm_ajax" enctype="multipart/form-data">
+        <form method="post" action="{{ form_action_url }}" class="fs-ajax-form" enctype="multipart/form-data">
             {% csrf_token %}
 
             {{ teacher_course_teaching_form.teacher_course_certificate_id|as_crispy_field }}

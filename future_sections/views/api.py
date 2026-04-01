@@ -171,6 +171,10 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
                 add_history_entry(fp, request.user, f'Marked as teaching - {future_course}')
                 fp.save()
 
+                fs_config = get_fs_config()
+                if teacher_course.status in fs_config.get('create_new_instructor_app', []):
+                    future_course.create_teacher_application()
+
                 return Response({
                     'status': 'Success',
                     'message': 'Successfully saved course information',

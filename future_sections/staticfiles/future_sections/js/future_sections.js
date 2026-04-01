@@ -263,7 +263,7 @@ function getCookie(name) {
         initPersonnelDataTable();
 
         // Ajax form submit handler
-        $(document).on('submit', 'form.frm_ajax', function(event) {
+        $(document).on('submit', 'form.fs-ajax-form', function(event) {
             var blocked_element = $(this).parent();
             $(blocked_element).block();
             event.preventDefault();
