@@ -20,7 +20,7 @@ from django.urls import reverse
 from model_utils import FieldTracker
 
 from cis.models.settings import Setting
-
+import importlib.util
 
 class FutureProjection(models.Model):
     """
@@ -116,11 +116,18 @@ class FutureCourse(models.Model):
     def __str__(self):
         return f"{self.teacher_course.teacher_highschool.teacher} - {self.teacher_course.course} ({self.academic_year})"
 
+    
     def create_teacher_application(self):
-        from instructor_app.models.teacher_applicant import (
-            TeacherApplicant, TeacherApplication,
-            ApplicantSchoolCourse, ApplicationUpload
-        )
+        if importlib.util.find_spec('instructor_app.instructor_app'):
+            from instructor_app.instructor_app.models.teacher_applicant import (
+                TeacherApplicant, TeacherApplication,
+                ApplicantSchoolCourse, ApplicationUpload
+            )
+        else:
+            from instructor_app.models.teacher_applicant import (
+                TeacherApplicant, TeacherApplication,
+                ApplicantSchoolCourse, ApplicationUpload
+            )
 
         from future_sections import future_sections as fs_settings
 
