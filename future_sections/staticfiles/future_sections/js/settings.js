@@ -330,8 +330,6 @@ function initNewTeacherToggle() {
     function toggleFields() {
         var show = $toggle.val() === '1';
         $label.toggle(show);
-        $appFor.toggle(show);
-        $defaultStatus.toggle(show);
     }
 
     toggleFields();
