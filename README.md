@@ -78,6 +78,44 @@ urlpatterns = [
 ]
 ```
 
+### 5a. Register Menu Entries
+
+Add menu entries to each portal's `menu.py` so users can navigate to the app. The entries follow the JSON structure used in `cis/menu.py`. Labels and icons can be customized.
+
+**CE Admin** (`cis/menu.py`) — add as a sub-menu entry under the existing "Classes" menu:
+
+```python
+{
+    'label': 'Course Projections',
+    'name': 'future_sections',
+    'url': 'future_sections_ce:future_sections'
+}
+```
+
+**High School Admin** (`highschool_admin/menu.py`) — add as a top-level nav item:
+
+```python
+{
+    'type': 'nav-item',
+    'icon': 'fas fa-fw fa-calendar-alt',
+    'name': 'future_sections',
+    'label': 'Section Requests',
+    'url': 'future_sections_highschool_admin:section_requests'
+}
+```
+
+**Instructor** (`instructor/menu.py`) — add as a top-level nav item:
+
+```python
+{
+    'type': 'nav-item',
+    'icon': 'fas fa-fw fa-calendar-alt',
+    'name': 'future_sections',
+    'label': 'Section Requests',
+    'url': 'future_sections_instructor:section_requests'
+}
+```
+
 ### 6. Add Flatpickr to header-includes.html
 
 ```html
