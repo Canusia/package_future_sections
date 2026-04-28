@@ -70,6 +70,13 @@
                                                                 <option value="submitted">Submitted</option>
                                                                 <option value="reviewed">Reviewed</option>
                                                             </select>
+                                                            &nbsp;
+                                                            <select class="form-control mt-2" name="faculty_review">
+                                                                <option value="">Filter By Faculty Review</option>
+                                                                <option value="approved">Approved</option>
+                                                                <option value="not_approved">Not approved</option>
+                                                                <option value="pending">Pending faculty review</option>
+                                                            </select>
                                                         </div>
 
                                                     </div>
@@ -619,10 +626,23 @@
                                         {
                                             'searchable': true,
                                             'render': function (data, type, row, meta) {
-                                                if (row.status === 'reviewed') {
-                                                    return '<span class="badge badge-success">Reviewed</span>'
+                                                var html = (row.status === 'reviewed')
+                                                    ? '<span class="badge badge-success">Reviewed</span>'
+                                                    : '<span class="badge badge-warning">Submitted</span>';
+
+                                                var review = (row.section_display && row.section_display.faculty_review) || null;
+                                                if (review && review.decision) {
+                                                    if (review.decision === 'approved') {
+                                                        var mentor = review.mentor_name || '';
+                                                        html += '<br><span class="badge badge-info mt-1">Faculty: Approved</span>';
+                                                        if (mentor) {
+                                                            html += '<br><small class="text-muted">' + $('<div>').text(mentor).html() + '</small>';
+                                                        }
+                                                    } else {
+                                                        html += '<br><span class="badge badge-danger mt-1">Faculty: Not approved</span>';
+                                                    }
                                                 }
-                                                return '<span class="badge badge-warning">Submitted</span>'
+                                                return html;
                                             }
                                         },
                                         {

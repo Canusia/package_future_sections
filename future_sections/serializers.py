@@ -53,13 +53,22 @@ class FutureCourseSerializer(serializers.ModelSerializer):
 
     def get_section_display(self, obj):
         try:
-            teaching = obj.section_info.get('teaching') if obj.section_info else None
+            info = obj.section_info or {}
+            review = info.get('faculty_review') or {}
+            faculty_review = None
+            if review.get('decision'):
+                mentor = review.get('mentor') or {}
+                faculty_review = {
+                    'decision': review.get('decision'),
+                    'mentor_name': mentor.get('name', ''),
+                }
             return {
-                'teaching': teaching,
+                'teaching': info.get('teaching'),
                 'displays': obj.section_display,
+                'faculty_review': faculty_review,
             }
         except Exception:
-            return {'teaching': None, 'displays': []}
+            return {'teaching': None, 'displays': [], 'faculty_review': None}
 
 
 class FutureSectionSerializer(serializers.ModelSerializer):

@@ -211,4 +211,14 @@ class FutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         if status:
             records = records.filter(status=status)
 
+        # Filter by faculty review state stored in section_info.faculty_review.decision
+        faculty_review = self.request.GET.get('faculty_review')
+        if faculty_review == 'approved':
+            records = records.filter(section_info__faculty_review__decision='approved')
+        elif faculty_review == 'not_approved':
+            records = records.filter(section_info__faculty_review__decision='not_approved')
+        elif faculty_review == 'pending':
+            # No faculty_review block, or faculty_review without a decision yet.
+            records = records.filter(section_info__faculty_review__decision__isnull=True)
+
         return records
