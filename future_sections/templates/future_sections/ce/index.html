@@ -791,7 +791,7 @@
 <script>
     jQuery(document).ready(function($) {
 
-        $(document).on('submit', 'form.frm_ajax', function (event) {
+        $(document).on('submit', 'form.frm_ajax, form.fs-ajax-form', function (event) {
 
         var blocked_element = $(this).parent()
         $(blocked_element).block();
@@ -808,9 +808,14 @@
         let action = $(form).attr('action')
         let first_element = '';
 
+        var isMultipart = form.attr('enctype') === 'multipart/form-data';
+        var postData = isMultipart ? new FormData(form[0]) : $(form).serialize();
+
         $.post({
             url: action,
-            data: $(form).serialize(),
+            data: postData,
+            processData: !isMultipart,
+            contentType: isMultipart ? false : 'application/x-www-form-urlencoded; charset=UTF-8',
             error: function (xhr, status, error) {
 
                 let errors = $.parseJSON(xhr.responseJSON.errors);
@@ -850,7 +855,7 @@
                 swal({
                     title: 'Success',
                     text: response.message,
-                    icon: response.status
+                    icon: 'success'
                 }).then(
                     (value) => {
                         if (response.action == 'reload_table'){
