@@ -29,7 +29,7 @@ from cis.models.course import Cohort
 
 from ..models import FutureCourse, FutureSection, FutureProjection
 from ..settings.future_sections import future_sections as fs_settings
-from ..utils import build_initial_from_prev_year
+from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
 from cis.menu import cis_menu, draw_menu
 
@@ -130,18 +130,9 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
         teaching_formset = TeachingFormSet(request.POST)
 
         if teacher_course_teaching_form.is_valid() and teaching_formset.is_valid():
-            section_info = []
-            for teaching_form in teaching_formset:
-                if teaching_form.cleaned_data:
-                    data = teaching_form.cleaned_data
-                    if data.get('term'):
-                        section_info.append({
-                            'term_name': str(teaching_form.cleaned_data.get('term')),
-                            'term': str(teaching_form.cleaned_data.get('term').id),
-                            'method_of_payment': teaching_form.cleaned_data.get('method_of_payment'),
-                            'number_of_sections': teaching_form.cleaned_data.get('number_of_sections')
-                        })
-
+            section_info = build_section_info_from_formset(
+                request, teaching_formset, future_course,
+            )
             future_course.section_info = {'teaching': 'yes', 'sections': section_info}
             future_course.submitted_by = request.user
             future_course.save()

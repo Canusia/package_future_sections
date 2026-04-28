@@ -49,6 +49,7 @@ from ..utils import (
     get_user_highschools,
     get_course_certificates_for_user,
     build_initial_from_prev_year,
+    build_section_info_from_formset,
 )
 
 
@@ -135,24 +136,9 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             fp = get_or_create_future_projection(highschool_id, request.user)
 
             if teacher_course_teaching_form.is_valid() and teaching_formset.is_valid():
-                section_info = []
-
-                for index, teaching_form in enumerate(teaching_formset):
-                    if teaching_form.cleaned_data and teaching_form.cleaned_data.get('term'):
-                        # Handle file upload
-                        uploaded_file = request.FILES.get(f'form-{index}-syllabus')
-                        if uploaded_file:
-                            from cis.backends.storage_backend import PrivateMediaStorage
-                            from django.utils.text import get_valid_filename
-
-                            media_storage = PrivateMediaStorage()
-                            safe_filename = get_valid_filename(uploaded_file.name)
-                            path = f"future_section/{future_course.id}/{safe_filename}"
-                            path = media_storage.save(path, uploaded_file)
-                            teaching_form.cleaned_data['file'] = media_storage.url(path)
-
-                        section_info.append(teaching_form.cleaned_data)
-
+                section_info = build_section_info_from_formset(
+                    request, teaching_formset, future_course,
+                )
                 # Update future course
                 future_course.section_info = {'teaching': 'yes', 'sections': section_info}
                 if not future_course.meta:

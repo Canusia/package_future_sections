@@ -241,3 +241,48 @@ def get_course_certificates_for_user(request):
             teacher_highschool__teacher=context['teacher'],
             **base_filter
         )
+
+
+def build_section_info_from_formset(request, teaching_formset, future_course):
+    """
+    Convert a validated teaching formset into the section_info payload
+    persisted on FutureCourse.section_info['sections'].
+
+    Per section it:
+      - Skips empty rows (no `term`).
+      - Uploads any `form-<i>-syllabus` file to PrivateMediaStorage and stores
+        the resulting URL in cleaned_data['file'].
+      - Drops the raw UploadedFile (`syllabus` key) since UploadedFile is not
+        JSON-serializable; cleaned_data['file'] holds the saved URL instead.
+
+    Args:
+        request: Current HttpRequest (used for request.FILES).
+        teaching_formset: A bound, validated TeachingFormSet.
+        future_course: FutureCourse (used in the storage path).
+
+    Returns:
+        list[dict]: cleaned_data dicts ready to assign to
+        FutureCourse.section_info['sections'].
+    """
+    from cis.backends.storage_backend import PrivateMediaStorage
+    from django.utils.text import get_valid_filename
+
+    sections = []
+    for index, teaching_form in enumerate(teaching_formset):
+        cleaned = teaching_form.cleaned_data
+        if not cleaned or not cleaned.get('term'):
+            continue
+
+        uploaded = request.FILES.get(f'form-{index}-syllabus')
+        if uploaded:
+            storage = PrivateMediaStorage()
+            safe_name = get_valid_filename(uploaded.name)
+            stored_path = storage.save(
+                f'future_section/{future_course.id}/{safe_name}',
+                uploaded,
+            )
+            cleaned['file'] = storage.url(stored_path)
+
+        cleaned.pop('syllabus', None)
+        sections.append(cleaned)
+    return sections
