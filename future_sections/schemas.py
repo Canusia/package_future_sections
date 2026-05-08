@@ -311,7 +311,10 @@ class TeachingSectionFieldSchema(BaseModel):
         display = re.sub(r"^\s*\|\s*|\s*\|\s*$", "", display)  # leading/trailing pipes
         display = re.sub(r"\s+", " ", display)               # whitespace
 
-        return display.strip()
+        # Result intentionally contains HTML (syllabus link). Marking it safe
+        # so callers rendering through Django templates don't have to remember
+        # the |safe filter on every accessor.
+        return mark_safe(display.strip())
 
     @classmethod
     def settings_help_text(cls) -> str:

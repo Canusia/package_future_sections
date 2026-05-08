@@ -460,6 +460,16 @@ class FutureCourse(models.Model):
 
         return displays
 
+    @property
+    def section_display_html(self):
+        """
+        ``section_display`` joined with ``<br>`` separators, marked safe so it
+        can be dropped into a template as ``{{ record.section_display_html }}``
+        without iterating or applying ``|safe``.
+        """
+        from django.utils.safestring import mark_safe
+        return mark_safe('<br>'.join(self.section_display))
+
     def additional_fields(self):
         """Return list of additional field names from teaching_form_config.
 
