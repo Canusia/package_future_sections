@@ -60,7 +60,7 @@ def build_initial_from_prev_year(teacher_course):
         highschool=highschool,
         teacher=teacher,
         course=course,
-        status='active',
+        status='A',
     ).select_related('term').order_by('term__code')
 
     seen_terms = set()
