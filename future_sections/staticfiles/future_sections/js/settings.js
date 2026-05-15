@@ -470,6 +470,37 @@ function initReviewToggles() {
     $assign.on('change', sync);
 }
 
+function initCycleTermsHint() {
+    var $boxes = $('input[name="cycle_terms"]');
+    if (!$boxes.length) return;
+
+    function refreshHint() {
+        var ays = new Set();
+        $('input[name="cycle_terms"]:checked').each(function () {
+            var label = $(this).siblings('label').text().trim();
+            // Term labels usually include the AY (e.g. "Fall 2026"); a precise
+            // single-AY check happens on save via the form's clean() method.
+            var year_match = label.match(/(\d{4})/);
+            if (year_match) ays.add(year_match[1]);
+        });
+        var $note = $('#cycle-terms-ay-note');
+        if ($note.length === 0) {
+            $note = $('<small id="cycle-terms-ay-note" class="form-text text-muted"></small>');
+            $boxes.first().closest('.form-group').append($note);
+        }
+        if (ays.size > 1) {
+            $note.text('Warning: selected terms appear to span multiple academic years; saving will fail.')
+                 .removeClass('text-muted').addClass('text-danger');
+        } else {
+            $note.text('All selected terms share the same academic year.')
+                 .removeClass('text-danger').addClass('text-muted');
+        }
+    }
+
+    refreshHint();
+    $boxes.on('change', refreshHint);
+}
+
 function initAll() {
     var inits = [
         initTeachingFormConfig,
@@ -477,6 +508,7 @@ function initAll() {
         initReviewedNotificationToggle,
         initPersonnelConfirmationToggle,
         initReviewToggles,
+        initCycleTermsHint,
         initNewTeacherToggle,
         initPendingNotificationDatesPicker,
         initTermMapping,
