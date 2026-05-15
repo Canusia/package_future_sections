@@ -999,6 +999,16 @@ class future_sections(forms.Form):
             'message': 'Successfully saved settings',
             'status': 'success'})
 
+    def _derive_academic_year_from_cycle_terms(self):
+        """Return the AcademicYear instance shared by all cycle_terms,
+        or None if cycle_terms is missing/empty."""
+        cycle_terms = self.cleaned_data.get('cycle_terms')
+        if not cycle_terms:
+            return None
+        # clean_cycle_terms already enforced single-AY; pick from the first.
+        first = cycle_terms.first() if hasattr(cycle_terms, 'first') else cycle_terms[0]
+        return first.academic_year if first else None
+
     def _to_python(self):
         """
         Return dict of form elements from $_POST
@@ -1014,6 +1024,14 @@ class future_sections(forms.Form):
 
         result = {}
         for key, value in self.cleaned_data.items():
-            result[key] = value
+            # Serialize Term/QuerySet values as list-of-UUID-strings
+            if key in ('cycle_terms', 'lookback_terms'):
+                result[key] = [str(t.id) for t in value] if value else []
+            else:
+                result[key] = value
 
+        # Derive academic_year from cycle_terms so legacy queries keep working.
+        derived_ay = self._derive_academic_year_from_cycle_terms()
+        if derived_ay:
+            result['academic_year'] = str(derived_ay.id)
         return result

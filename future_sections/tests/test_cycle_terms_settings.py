@@ -53,3 +53,13 @@ class CycleTermsValidationTests(TestCase):
         form = FSForm(self.request, data=data)
         form.is_valid()
         self.assertNotIn('cycle_terms', form.errors)
+
+    def test_academic_year_derived_from_cycle_terms_on_save(self):
+        data = _qdict([
+            ('cycle_terms', [str(self.fall_a.id), str(self.spring_a.id)]),
+            ('lookback_terms', []),
+        ])
+        form = FSForm(self.request, data=data)
+        form.is_valid()
+        derived_ay = form._derive_academic_year_from_cycle_terms()
+        self.assertEqual(derived_ay, self.ay_a)
