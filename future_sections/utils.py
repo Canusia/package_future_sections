@@ -211,35 +211,27 @@ def get_user_highschools(request):
 
 
 def get_course_certificates_for_user(request):
-    """
-    Get TeacherCourseCertificate records accessible to the user.
+    """Return the certs the user should see for the current cycle.
 
-    For HS Admins: All certificates for their highschools
-    For Instructors: Only their own certificates
-
-    Args:
-        request: HTTP request with authenticated user
-
-    Returns:
-        QuerySet of TeacherCourseCertificate instances
+    Universe is anchored on lookback Sections (see get_lookback_universe),
+    not just cert status. Course status is still applied as a final filter
+    so a cert tied to an Inactive Course is excluded.
     """
     fs_config = get_fs_config()
     context = get_user_context(request)
 
-    base_filter = {
-        'course__status__in': fs_config.get('course_status', []),
-        'status__in': fs_config.get('teacher_course_status', [])
-    }
+    universe = get_lookback_universe()  # cross-school
+    course_status = fs_config.get('course_status') or []
+    if course_status:
+        universe = universe.filter(course__status__in=course_status)
 
     if context['is_admin']:
-        return TeacherCourseCertificate.objects.filter(
+        return universe.filter(
             teacher_highschool__highschool__in=context['highschools'],
-            **base_filter
         )
     else:
-        return TeacherCourseCertificate.objects.filter(
+        return universe.filter(
             teacher_highschool__teacher=context['teacher'],
-            **base_filter
         )
 
 

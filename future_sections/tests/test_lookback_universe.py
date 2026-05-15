@@ -126,3 +126,31 @@ class LookbackUniverseTests(TestCase):
         self.assertIn(w['cert_fall'], certs)
         # Applicant unioned in despite no Section history
         self.assertIn(w['cert_applicant'], certs)
+
+
+class GetCourseCertificatesForUserTests(TestCase):
+    def test_instructor_sees_only_their_lookback_certs(self):
+        from django.contrib.auth.models import Group
+        from django.test import RequestFactory
+        from future_sections.future_sections.utils import get_course_certificates_for_user
+
+        w = _build_world()
+        Setting.objects.create(
+            key='cis_future_sections',
+            value={
+                'lookback_terms': [str(w['fall'].id)],
+                'teacher_course_status': ['Teaching'],
+                'course_status': ['Active'],
+                'allow_new_teacher_create': '2',
+            },
+        )
+        Group.objects.get_or_create(name='instructor')
+        instructor_user = w['cert_fall'].teacher_highschool.teacher.user
+        instructor_user.groups.add(Group.objects.get(name='instructor'))
+
+        factory = RequestFactory()
+        request = factory.get('/')
+        request.user = instructor_user
+        certs = list(get_course_certificates_for_user(request))
+        self.assertIn(w['cert_fall'], certs)
+        self.assertNotIn(w['cert_spring'], certs)
