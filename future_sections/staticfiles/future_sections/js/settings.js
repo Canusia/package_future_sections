@@ -470,9 +470,27 @@ function initReviewToggles() {
     $assign.on('change', sync);
 }
 
+function initTermFieldScrollContainer(fieldName) {
+    // Wrap a CheckboxSelectMultiple's <ul> in a scrollable div so long term
+    // lists don't push the rest of the settings form off-screen.
+    var $first = $('input[name="' + fieldName + '"]').first();
+    if (!$first.length) return;
+    var $list = $first.closest('ul');
+    if (!$list.length || $list.parent().hasClass('term-scroll')) return;
+    $list.wrap(
+        '<div class="term-scroll" style="' +
+        'max-height: 280px; overflow-y: auto; ' +
+        'border: 1px solid #dee2e6; border-radius: .25rem; ' +
+        'padding: .5rem .75rem; background: #fafafa;"></div>'
+    );
+}
+
 function initCycleTermsHint() {
     var $boxes = $('input[name="cycle_terms"]');
     if (!$boxes.length) return;
+
+    initTermFieldScrollContainer('cycle_terms');
+    initTermFieldScrollContainer('lookback_terms');
 
     function refreshHint() {
         var ays = new Set();

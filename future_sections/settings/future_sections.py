@@ -580,8 +580,11 @@ class future_sections(forms.Form):
         self.fields['academic_year'].queryset = AcademicYear.objects.all().order_by('-name')
         self.fields['previous_academic_year'].queryset = AcademicYear.objects.all().order_by('-name')
 
-        self.fields['cycle_terms'].queryset = Term.objects.all().order_by('-code')
-        self.fields['lookback_terms'].queryset = Term.objects.all().order_by('-code')
+        # Newest academic year first, then by code ascending within each AY so
+        # terms appear roughly chronological under their year header.
+        _term_order = Term.objects.all().order_by('-academic_year__name', 'code')
+        self.fields['cycle_terms'].queryset = _term_order
+        self.fields['lookback_terms'].queryset = _term_order
 
         self.fields['school_admin_roles'].queryset = HSPosition.objects.all().order_by('name')
         self.fields['pending_notification_roles'].queryset = HSPosition.objects.all().order_by('name')
