@@ -172,6 +172,16 @@ python manage.py makemigrations cis
 python manage.py migrate
 ```
 
+### 5c. Run the cycle-terms migration (existing tenants only)
+
+If you're upgrading from a release without per-term cycle support (i.e. you previously configured the cycle by **Requesting Information For** alone), run:
+
+```bash
+python manage.py migrate_cycle_terms
+```
+
+This populates `cycle_terms` from the existing `academic_year` setting (all `Term` rows under that AY). It's idempotent — safe to re-run. After running, set **Lookback Terms** manually in **CE Portal > Settings > Section Requests**; the migration intentionally leaves that field empty so the operator picks the historical terms that should drive the reminder universe.
+
 ### 6. Add Flatpickr to header-includes.html
 
 ```html
@@ -201,10 +211,22 @@ Navigate to **CE Portal > Settings > Classes > Section Requests** to configure t
 | **Page Name** | Name displayed in the breadcrumb and page title |
 | **Course Requests Tab Title** | Label for the Course Requests tab |
 | **School Personnel Tab Title** | Label for the School Personnel tab |
-| **Requesting Information For** | The academic year you are collecting section requests for |
+| **Requesting Information For** | The academic year you are collecting section requests for. Derived from **Cycle Terms** on save — kept in the settings JSON for backward compatibility with existing `FutureCourse.academic_year` FK queries. |
 | **Previous Year Reference** | A prior academic year to show what was previously offered |
 | **Starting Date / Ending Date** | Survey window for submissions |
 | **Course Column Display Template** | Template for the Course column. Placeholders: `{course_name}`, `{course_title}`, `{credit_hours}` |
+
+### Cycle Scope & Lookback
+
+Drives which terms a cycle covers and which teachers are expected to respond. Cycles are still **singleton** — one active cycle at a time per tenant — but a cycle can now span one or more terms within a single Academic Year.
+
+| Setting | Description |
+|---------|-------------|
+| **Cycle Terms** | One or more `Term` rows the cycle is collecting forecasts for. All selected terms must share one Academic Year (validated in `clean()` and live-hinted in the settings JS). Schools running annually pick all terms in the AY; schools running per semester pick one term and re-open the cycle for the next. The **Requesting Information For** AY is derived from this selection on save. |
+| **Lookback Terms** | One or more `Term` rows that define **who's expected to respond**. The universe is the set of `TeacherCourseCertificate` rows whose teacher × course had an Active (`status='A'`) `ClassSection` in any selected term. Used by both the submission-form universe (`utils.get_course_certificates_for_user`) and the reminder pending-detection query. |
+| **Allow HS Administrators to create new teachers?** (existing) | When `Yes`, also includes `TeacherCourseCertificate` rows with `status='Applicant'` in the universe — applicants can be reminded even without prior Section history. When `No`, only teachers with a qualifying Section in the lookback terms are surfaced. |
+
+**Reminder behaviour.** `notify_pending_section_requests` anchors on the lookback universe (minus certs that already have a `FutureCourse` for the cycle's AY). The reminder email gains a new `{{missing_terms}}` shortcode listing the cycle terms each school hasn't yet responded for — computed per-school from `FutureCourse.section_info.sections[*].term` coverage. Schools whose submissions cover every cycle term render an empty `{{missing_terms}}`.
 
 ### Portal Messages
 
