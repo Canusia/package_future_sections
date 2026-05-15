@@ -16,6 +16,8 @@ from ..views.ce_api import (
     FutureClassSectionViewSet,
     NotificationLogViewSet
 )
+from ..review import views as rv
+from ..review.api import SectionRequestViewSet
 
 
 def user_has_cis_role(user):
@@ -32,6 +34,16 @@ router.register('future_class_section', FutureClassSectionViewSet, basename='fut
 router.register('future_projection', FutureProjectionViewSet, basename='future_projection')
 router.register('pending_future_class_sections', PendingFutureClassSectionViewSet, basename='pending_future_class_sections')
 router.register('notification_logs', NotificationLogViewSet, basename='notification_logs')
+
+
+review_router = routers.DefaultRouter()
+
+
+class CESectionRequestViewSet(SectionRequestViewSet):
+    detail_url_name = 'future_sections_ce:section_request_detail'
+
+
+review_router.register('section_request', CESectionRequestViewSet, basename='section_request')
 
 app_name = 'future_sections_ce'
 
@@ -77,4 +89,14 @@ urlpatterns = [
         user_passes_test(user_has_cis_role, login_url='/')(send_pending_reminder),
         name='send_pending_reminder'
     ),
+    path('section_requests/',
+         user_passes_test(user_has_cis_role, login_url='/')(
+             lambda r: rv.section_request_list(r, portal='ce')),
+         name='section_request_list'),
+    path('section_requests/<uuid:future_course_id>/',
+         user_passes_test(user_has_cis_role, login_url='/')(
+             lambda r, future_course_id: rv.section_request_detail(
+                 r, future_course_id, portal='ce')),
+         name='section_request_detail'),
+    path('section_request_api/', include(review_router.urls)),
 ]
