@@ -445,12 +445,30 @@ function initTermMapping() {
     buildMappingUI();
 }
 
+function initReviewToggles() {
+    var $require = $('select[name="require_review"]');
+    var $assign = $('select[name="assign_mentor"]');
+    if (!$require.length && !$assign.length) return;
+
+    var $reviewerRoles = $('input[name="reviewer_roles"]').closest('.form-group');
+    var $mentorRole = $('select[name="mentor_default_role"]').closest('.form-group');
+
+    function sync() {
+        $reviewerRoles.toggle($require.val() === '1');
+        $mentorRole.toggle($assign.val() === '1');
+    }
+    sync();
+    $require.on('change', sync);
+    $assign.on('change', sync);
+}
+
 function initAll() {
     var inits = [
         initTeachingFormConfig,
         initAddTeacherFormConfig,
         initReviewedNotificationToggle,
         initPersonnelConfirmationToggle,
+        initReviewToggles,
         initNewTeacherToggle,
         initPendingNotificationDatesPicker,
         initTermMapping,
