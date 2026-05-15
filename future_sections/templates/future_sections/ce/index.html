@@ -72,7 +72,7 @@
                                                             </select>
                                                             &nbsp;
                                                             <select class="form-control mt-2" name="faculty_review">
-                                                                <option value="">Filter By Faculty Review</option>
+                                                                <option value="">Filter By Review</option>
                                                                 <option value="approved">Approved</option>
                                                                 <option value="not_approved">Not approved</option>
                                                                 <option value="pending">Pending faculty review</option>
@@ -634,12 +634,12 @@
                                                 if (review && review.decision) {
                                                     if (review.decision === 'approved') {
                                                         var mentor = review.mentor_name || '';
-                                                        html += '<br><span class="badge badge-info mt-1">Faculty: Approved</span>';
+                                                        html += '<br><span class="badge badge-info mt-1">Approved</span>';
                                                         if (mentor) {
                                                             html += '<br><small class="text-muted">' + $('<div>').text(mentor).html() + '</small>';
                                                         }
                                                     } else {
-                                                        html += '<br><span class="badge badge-danger mt-1">Faculty: Not approved</span>';
+                                                        html += '<br><span class="badge badge-danger mt-1">Not approved</span>';
                                                     }
                                                 }
                                                 return html;
