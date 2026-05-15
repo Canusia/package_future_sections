@@ -15,7 +15,7 @@ from django.template import Context, Template
 from django.shortcuts import render, get_object_or_404
 
 from cis.models.term import AcademicYear, Term
-from cis.models.course import Course
+from cis.models.course import Course, CourseAdministrator
 from cis.models.teacher import TeacherCourseCertificate
 from cis.models.highschool_administrator import HSPosition
 
@@ -278,6 +278,45 @@ class future_sections(forms.Form):
         required=False
     )
 
+    # ── Section Request Review ───────────────────────────────────────────
+    review_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Section Request Review</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    require_review = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        label='Do course proposals need to be reviewed?',
+        help_text='If enabled, designated CourseAdministrators may review and '
+                  'approve (or reject) submitted section requests.',
+    )
+
+    reviewer_roles = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple,
+        choices=CourseAdministrator.ROLE_OPTIONS,
+        required=False,
+        label='Reviewer Roles',
+        help_text='Which CourseAdministrator role(s) on the course are allowed '
+                  'to review section requests.',
+    )
+
+    assign_mentor = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        label='Assign a mentor during review?',
+        help_text='If enabled, an approval must include a mentor (selected from '
+                  'existing CourseAdministrators on the course, or created new).',
+    )
+
+    mentor_default_role = forms.ChoiceField(
+        choices=[('', '---------')] + list(CourseAdministrator.ROLE_OPTIONS),
+        required=False,
+        label='Mentor CourseAdministrator Role',
+        help_text='When a mentor is assigned, this is the role used on their '
+                  'CourseAdministrator row for the course.',
+    )
+
     # ── Form Configuration ───────────────────────────────────────────────
     form_config_header = FFields.ReadOnlyField(
         required=False,
@@ -451,6 +490,21 @@ class future_sections(forms.Form):
     
     def clean_school_admin_roles(self):
         return self.data.getlist('school_admin_roles')
+
+    def clean_reviewer_roles(self):
+        return self.data.getlist('reviewer_roles')
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('require_review') == '1' and not cleaned.get('reviewer_roles'):
+            self.add_error('reviewer_roles',
+                           forms.ValidationError(
+                               'Select at least one reviewer role when review is required.'))
+        if cleaned.get('assign_mentor') == '1' and not cleaned.get('mentor_default_role'):
+            self.add_error('mentor_default_role',
+                           forms.ValidationError(
+                               'Select a mentor role when mentor assignment is enabled.'))
+        return cleaned
 
     def clean_pending_notification_roles(self):
         return self.data.getlist('pending_notification_roles')
@@ -865,7 +919,7 @@ class future_sections(forms.Form):
             )
 
     def install(self):
-        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}'}
+        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}', 'require_review': 'Yes', 'reviewer_roles': ['Faculty', 'Dept. Chair', 'Dean'], 'assign_mentor': 'Yes', 'mentor_default_role': 'Faculty'}
 
         try:
             setting = Setting.objects.get(key=self.key)
