@@ -80,58 +80,70 @@ urlpatterns = [
 
 ### 5a. Register Menu Entries
 
-Add menu entries to each portal's `menu.py` so users can navigate to the app. The entries follow the JSON structure used in `cis/menu.py`. Labels and icons can be customized.
+Sidebar menus are configured per role via the `cis.settings.menu.menu` Setting form (see **CE Portal → Settings → Portal Menus** in the running app). Each role has a JSON textarea (`ce_menu`, `faculty_menu`, `instructor_menu`, `highschool_admin_menu`, …) whose value is a JSON array of nav-item objects. The form lives at `cis/settings/menu.py` in code.
 
-**CE Admin** (`cis/menu.py`) — add two sub-menu entries under the existing "Classes" menu:
+Edit each role's JSON textarea and merge the snippets below into the existing array. Labels and icons can be customized.
 
-```python
+**CE Admin (`ce_menu`)** — add the highlighted entries inside the existing `"name":"classes"` sub_menu:
+
+```json
 {
-    'label': 'Course Projections',
-    'name': 'future_sections',
-    'url': 'future_sections_ce:future_sections'
-},
-{
-    'label': 'Review Section Requests',
-    'name': 'section_requests',
-    'url': 'future_sections_ce:section_request_list'
+   "type":"nav-item",
+   "icon":"fas fa-fw fa-align-left",
+   "label":"Classes",
+   "name":"classes",
+   "sub_menu":[
+      {
+         "label":"Course Projections",
+         "name":"future_sections",
+         "url":"future_sections_ce:future_sections"
+      },
+      {
+         "label":"Review Section Requests",
+         "name":"section_requests",
+         "url":"future_sections_ce:section_request_list"
+      }
+   ]
 }
 ```
 
-**Faculty** (`cis/menu.py` — `FACULTY_MENU`) — add as a top-level nav item:
+**Faculty (`faculty_menu`)** — add as a top-level nav item:
 
-```python
+```json
 {
-    'type': 'nav-item',
-    'icon': 'fas fa-fw fa-clipboard-list',
-    'name': 'section_requests',
-    'label': 'Section Requests',
-    'url': 'future_sections_faculty:section_request_list'
+   "type":"nav-item",
+   "icon":"fas fa-fw fa-clipboard-list",
+   "name":"section_requests",
+   "label":"Section Requests",
+   "url":"future_sections_faculty:section_request_list"
 }
 ```
 
-**High School Admin** (`highschool_admin/menu.py`) — add as a top-level nav item:
+**High School Admin (`highschool_admin_menu`)** — add as a top-level nav item:
 
-```python
+```json
 {
-    'type': 'nav-item',
-    'icon': 'fas fa-fw fa-calendar-alt',
-    'name': 'future_sections',
-    'label': 'Section Requests',
-    'url': 'future_sections_highschool_admin:section_requests'
+   "type":"nav-item",
+   "icon":"fas fa-fw fa-calendar-alt",
+   "name":"section_requests",
+   "label":"Course Projections",
+   "url":"future_sections_highschool_admin:section_requests"
 }
 ```
 
-**Instructor** (`instructor/menu.py`) — add as a top-level nav item:
+**Instructor (`instructor_menu`)** — add as a top-level nav item:
 
-```python
+```json
 {
-    'type': 'nav-item',
-    'icon': 'fas fa-fw fa-calendar-alt',
-    'name': 'future_sections',
-    'label': 'Section Requests',
-    'url': 'future_sections_instructor:section_requests'
+   "type":"nav-item",
+   "icon":"fas fa-fw fa-calendar-alt",
+   "name":"section_requests",
+   "label":"Section Requests",
+   "url":"future_sections_instructor:section_requests"
 }
 ```
+
+After saving the Setting, the new entries appear in the sidebar on the next page load. The Faculty and CE "Review Section Requests" entries are gated by the **Do course proposals need to be reviewed?** + **Reviewer Roles** settings (see [Settings Reference → Section Request Review](#section-request-review)); when review is disabled, the URLs return 404 even though the menu items are visible.
 
 ### 5b. Add Reviewer Role to `CourseAdministrator`
 
