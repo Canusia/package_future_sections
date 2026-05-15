@@ -243,6 +243,70 @@ def get_course_certificates_for_user(request):
         )
 
 
+def get_lookback_universe(highschool=None):
+    """
+    Return TeacherCourseCertificate queryset of teachers expected to respond
+    to the current cycle. Anchored on ClassSections in `lookback_terms` with
+    status='A' (Active). When `allow_new_teacher_create='1'` is set, Applicant
+    certs are unioned in even if the teacher has no Section history.
+
+    Args:
+        highschool: Optional HighSchool instance to scope the query.
+                    None returns the universe across all schools.
+
+    Returns:
+        QuerySet of TeacherCourseCertificate.
+    """
+    from cis.models.section import ClassSection
+
+    fs_config = get_fs_config()
+    lookback_term_ids = fs_config.get('lookback_terms') or []
+    if not lookback_term_ids:
+        return TeacherCourseCertificate.objects.none()
+
+    cert_status_filter = fs_config.get('teacher_course_status') or []
+
+    # (teacher_id, course_id) pairs that actually taught in lookback_terms.
+    taught = ClassSection.objects.filter(
+        term__id__in=lookback_term_ids,
+        status='A',
+    )
+    if highschool is not None:
+        taught = taught.filter(highschool=highschool)
+    taught_pairs = taught.values_list('teacher_id', 'course_id').distinct()
+
+    if not taught_pairs:
+        behaviour_qs = TeacherCourseCertificate.objects.none()
+    else:
+        # Build a Q-disjunction so we match each pair exactly. For tenants with
+        # large lookback sets this could be optimized; keep simple for now.
+        from django.db.models import Q
+        q = Q()
+        for teacher_id, course_id in taught_pairs:
+            q |= Q(
+                teacher_highschool__teacher_id=teacher_id,
+                course_id=course_id,
+            )
+        behaviour_qs = TeacherCourseCertificate.objects.filter(q)
+        if cert_status_filter:
+            behaviour_qs = behaviour_qs.filter(status__in=cert_status_filter)
+        if highschool is not None:
+            behaviour_qs = behaviour_qs.filter(
+                teacher_highschool__highschool=highschool)
+
+    # Applicant carve-out
+    if fs_config.get('allow_new_teacher_create') == '1':
+        applicant_qs = TeacherCourseCertificate.objects.filter(
+            status='Applicant',
+        )
+        if highschool is not None:
+            applicant_qs = applicant_qs.filter(
+                teacher_highschool__highschool=highschool)
+        return (behaviour_qs | applicant_qs).distinct()
+
+    return behaviour_qs.distinct()
+
+
 def build_section_info_from_formset(request, teaching_formset, future_course):
     """
     Convert a validated teaching formset into the section_info payload
