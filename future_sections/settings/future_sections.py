@@ -80,6 +80,26 @@ class future_sections(forms.Form):
         initial='School Personnel',
     )
 
+    cycle_terms = forms.ModelMultipleChoiceField(
+        queryset=Term.objects.none(),
+        required=True,
+        widget=forms.CheckboxSelectMultiple,
+        label='Cycle Terms',
+        help_text='Terms this cycle is collecting forecasts for. Schools that '
+                  'run once per AY pick all terms in the AY; schools that run '
+                  'per semester pick one term and re-open the cycle for the next.',
+    )
+
+    lookback_terms = forms.ModelMultipleChoiceField(
+        queryset=Term.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label='Lookback Terms',
+        help_text='Terms used to determine which teachers are expected to '
+                  'respond. The universe of "pending" is teachers who taught '
+                  'an Active ClassSection in any of these terms.',
+    )
+
     academic_year = forms.ModelChoiceField(
         queryset=None,
         label="Requesting Information For",
@@ -493,6 +513,14 @@ class future_sections(forms.Form):
     def clean_school_admin_roles(self):
         return self.data.getlist('school_admin_roles')
 
+    def clean_cycle_terms(self):
+        ids = self.data.getlist('cycle_terms')
+        return Term.objects.filter(id__in=ids)
+
+    def clean_lookback_terms(self):
+        ids = self.data.getlist('lookback_terms')
+        return Term.objects.filter(id__in=ids)
+
     def clean_reviewer_roles(self):
         return self.data.getlist('reviewer_roles')
 
@@ -509,6 +537,17 @@ class future_sections(forms.Form):
             self.add_error('mentor_default_role',
                            forms.ValidationError(
                                'Select a mentor role when mentor assignment is enabled.'))
+
+        cycle_terms = cleaned.get('cycle_terms')
+        if not cycle_terms:
+            self.add_error('cycle_terms',
+                           forms.ValidationError('Pick at least one term.'))
+        else:
+            ay_ids = set(t.academic_year_id for t in cycle_terms)
+            if len(ay_ids) > 1:
+                self.add_error('cycle_terms',
+                               forms.ValidationError(
+                                   'All selected terms must share an Academic Year.'))
         return cleaned
 
     def clean_pending_notification_roles(self):
@@ -540,6 +579,9 @@ class future_sections(forms.Form):
 
         self.fields['academic_year'].queryset = AcademicYear.objects.all().order_by('-name')
         self.fields['previous_academic_year'].queryset = AcademicYear.objects.all().order_by('-name')
+
+        self.fields['cycle_terms'].queryset = Term.objects.all().order_by('-code')
+        self.fields['lookback_terms'].queryset = Term.objects.all().order_by('-code')
 
         self.fields['school_admin_roles'].queryset = HSPosition.objects.all().order_by('name')
         self.fields['pending_notification_roles'].queryset = HSPosition.objects.all().order_by('name')
