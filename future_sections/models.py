@@ -536,8 +536,9 @@ class FutureCourse(models.Model):
         from mailer import send_html_mail
         from cis.models.teacher import TeacherCourseCertificate
         from cis.models.highschool_administrator import HSAdministratorPosition
-        from cis.models.term import AcademicYear
+        from cis.models.term import AcademicYear, Term
         from .settings.future_sections import future_sections as fs_settings
+        from .utils import get_lookback_universe
 
         detailed_log = {
             'emails_sent': [],
@@ -565,24 +566,33 @@ class FutureCourse(models.Model):
             detailed_log['errors'].append(summary)
             return summary, detailed_log
 
-        # Get certificate IDs that have already submitted
+        cycle_term_ids = fs_config.get('cycle_terms') or []
+        cycle_terms = list(Term.objects.filter(id__in=cycle_term_ids))
+
+        # Universe: teachers who taught in lookback_terms (+applicant carve-out).
+        universe = get_lookback_universe()
+        if not universe.exists():
+            summary = 'No teachers found in the configured lookback terms.'
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        # Certs that have already submitted a FutureCourse for the cycle AY.
         received_records = cls.objects.filter(
-            academic_year__id=academic_year_id
+            academic_year__id=academic_year_id,
         ).values_list('teacher_course__certificate_id', flat=True)
 
-        # Get pending certificates grouped by high school
-        pending_by_school = TeacherCourseCertificate.objects.filter(
-            course__status__in=fs_config.get('course_status', []),
-            status__in=fs_config.get('teacher_course_status', [])
-        ).exclude(
-            certificate_id__in=received_records
-        ).values('teacher_highschool__highschool__id').annotate(
-            pending_count=Count('id')
+        pending_universe = universe.exclude(
+            certificate_id__in=received_records,
         )
 
-        school_ids = [item['teacher_highschool__highschool__id'] for item in pending_by_school]
+        pending_by_school = pending_universe.values(
+            'teacher_highschool__highschool__id',
+        ).annotate(pending_count=Count('id'))
+        school_ids = [item['teacher_highschool__highschool__id']
+                      for item in pending_by_school]
         pending_counts = {
-            str(item['teacher_highschool__highschool__id']): item['pending_count']
+            str(item['teacher_highschool__highschool__id']):
+                item['pending_count']
             for item in pending_by_school
         }
 
@@ -642,6 +652,24 @@ class FutureCourse(models.Model):
             highschool = admin_pos.highschool
             pending_count = pending_counts.get(str(highschool.id), 0)
 
+            # Compute missing terms for this school: cycle_terms whose UUID
+            # appears in NO submitted FutureCourse.section_info.sections[*]
+            # for this school.
+            submitted_for_school = cls.objects.filter(
+                academic_year__id=academic_year_id,
+                teacher_course__teacher_highschool__highschool=highschool,
+            )
+            covered_term_ids = set()
+            for fc in submitted_for_school:
+                if (fc.section_info or {}).get('teaching') != 'yes':
+                    continue
+                for sec in (fc.section_info or {}).get('sections') or []:
+                    if sec.get('term'):
+                        covered_term_ids.add(str(sec['term']))
+            missing = [t.label for t in cycle_terms
+                       if str(t.id) not in covered_term_ids]
+            missing_terms_label = ', '.join(missing) if missing else ''
+
             try:
                 template = Template(message_template)
                 context = Context({
@@ -650,6 +678,7 @@ class FutureCourse(models.Model):
                     'highschool': highschool.name,
                     'academic_year': academic_year_name,
                     'pending_count': pending_count,
+                    'missing_terms': missing_terms_label,
                     'link': link
                 })
                 text_body = template.render(context)
