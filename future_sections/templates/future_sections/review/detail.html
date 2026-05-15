@@ -1,0 +1,90 @@
+{% extends 'cis/logged-base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Review Section Request{% endblock %}
+
+{% block body %}
+<div class="">
+  <h1 class="h3 mb-3 text-gray-800">Review Section Request</h1>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Course</dt>
+        <dd class="col-sm-9">{{ course.cohort.designator }} {{ course.catalog_number }} — {{ course.title }} ({{ course.credit_hours }} cr)</dd>
+        <dt class="col-sm-3">High School</dt>
+        <dd class="col-sm-9">{{ highschool.name }}</dd>
+        <dt class="col-sm-3">Instructor</dt>
+        <dd class="col-sm-9">{{ instructor.first_name }} {{ instructor.last_name }} &lt;{{ instructor.email }}&gt;</dd>
+        <dt class="col-sm-3">Academic Year</dt>
+        <dd class="col-sm-9">{{ fc.academic_year.name }}</dd>
+        <dt class="col-sm-3">Submitted</dt>
+        <dd class="col-sm-9">
+          {% if fc.submitted_by %}{{ fc.submitted_by.first_name }} {{ fc.submitted_by.last_name }} &middot;{% endif %}
+          {{ fc.submitted_on|default:fc.started_on|date:"m/d/Y"|default:'' }}
+        </dd>
+      </dl>
+    </div>
+  </div>
+
+  <h5>Sections requested</h5>
+  {% if rendered_sections %}
+    {% for section in rendered_sections %}
+      <div class="card mb-2"><div class="card-body"><dl class="row mb-0">
+        {% for label, value in section %}
+          <dt class="col-sm-4">{{ label }}</dt>
+          <dd class="col-sm-8">{{ value|default:'—' }}</dd>
+        {% endfor %}
+      </dl></div></div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted">No sections submitted.</p>
+  {% endif %}
+
+  {% if review_display %}
+    <div class="alert alert-info">
+      <strong>Previous decision:</strong>
+      {{ review_display.decision }} by {{ review_display.reviewer_name }} on {{ review_display.reviewed_on|date:"m/d/Y g:i A" }}.
+      {% if review_display.comment %}<br>{{ review_display.comment }}{% endif %}
+    </div>
+  {% endif %}
+
+  <h5 class="mt-4">Your review</h5>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.decision|as_crispy_field }}
+    {{ form.comment|as_crispy_field }}
+
+    {% if assign_mentor %}
+    <div id="mentor-section" style="display:none;">
+      {% if has_existing_mentor_options %}
+        {{ form.existing_mentor|as_crispy_field }}
+      {% else %}
+        <p class="text-muted small">No existing mentor for this course. Add a new one:</p>
+        {{ form.new_mentor_name|as_crispy_field }}
+        {{ form.new_mentor_email|as_crispy_field }}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary">Submit Review</button>
+  </form>
+</div>
+
+<script>
+(function () {
+  var box = document.getElementById('mentor-section');
+  if (!box) return;
+  function syncMentorVisibility() {
+    var radios = document.querySelectorAll('input[name="decision"]');
+    var val = '';
+    for (var i = 0; i < radios.length; i++) { if (radios[i].checked) { val = radios[i].value; break; } }
+    box.style.display = (val === 'approved') ? '' : 'none';
+  }
+  document.querySelectorAll('input[name="decision"]').forEach(function (r) {
+    r.addEventListener('change', syncMentorVisibility);
+  });
+  syncMentorVisibility();
+})();
+</script>
+{% endblock %}

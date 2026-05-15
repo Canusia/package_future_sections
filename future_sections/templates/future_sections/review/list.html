@@ -1,0 +1,137 @@
+{% extends "cis/logged-base.html" %}
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block body %}
+<main>
+<div class="">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{% url back_url %}">Home</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Section Requests</li>
+    </ol>
+  </nav>
+
+  <div class="d-sm-flex align-items-center justify-content-between mb-3">
+    <h1 class="h3 mb-0 text-gray-800">Section Requests</h1>
+    <div>
+      <label class="mr-2 mb-0">Academic Year</label>
+      <select id="academic-year-filter" class="form-control form-control-sm d-inline-block w-auto">
+        {% for ay in academic_years %}
+          <option value="{{ ay.id }}" {% if ay.id|stringformat:"s" == selected_ay_id %}selected{% endif %}>{{ ay.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="table-responsive" style="min-height: 500px;">
+    <ul class="nav nav-tabs">
+      <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#tab_pending">Pending Review</a></li>
+      <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab_reviewed">Reviewed</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane active" id="tab_pending">
+        <div class="bg-white border border-top-0">
+          <div class="col-12 pt-3 mb-3">
+            <table id="records_pending" class="table table-striped" style="width:100%" data-server-side="true">
+              <thead><tr>
+                <th searchable="1" data-data="course_display" data-name="teacher_course.course.name">Course</th>
+                <th searchable="1" data-data="highschool_name" data-name="teacher_course.teacher_highschool.highschool.name">High School</th>
+                <th searchable="1" data-data="instructor_name" data-name="teacher_course.teacher_highschool.teacher.user.last_name">Instructor</th>
+                <th data-data="academic_year" data-name="academic_year.name">Academic Year</th>
+                <th data-data="submitted_on" data-name="submitted_on">Submitted</th>
+                <th data-data="id"><span class="sr-only">Actions</span></th>
+              </tr></thead>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="tab-pane" id="tab_reviewed">
+        <div class="bg-white border border-top-0">
+          <div class="col-12 pt-3 mb-3">
+            <table id="records_reviewed" class="table table-striped" style="width:100%" data-server-side="true">
+              <thead><tr>
+                <th searchable="1" data-data="course_display" data-name="teacher_course.course.name">Course</th>
+                <th searchable="1" data-data="highschool_name" data-name="teacher_course.teacher_highschool.highschool.name">High School</th>
+                <th searchable="1" data-data="instructor_name" data-name="teacher_course.teacher_highschool.teacher.user.last_name">Instructor</th>
+                <th data-data="academic_year" data-name="academic_year.name">Academic Year</th>
+                <th data-data="faculty_review_status">Decision</th>
+                <th data-data="id"><span class="sr-only">Actions</span></th>
+              </tr></thead>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<script>
+  var table_pending, table_reviewed;
+
+  $(document).ready(function () {
+    var apiUrl = '{{ api_url }}';
+
+    function initTable(tableId, globalName, tab) {
+      $('#' + tableId + ' thead tr').clone(true).appendTo('#' + tableId + ' thead');
+      $('#' + tableId + ' thead tr:eq(1) th').each(function (i) {
+        if ($(this).attr('searchable') != '1') { $(this).html(''); }
+        else {
+          var title = $(this).text();
+          $(this).html('<input type="text" class="form-control form-control-sm" placeholder="Search ' + title + '" />');
+          $('input', this).on('keyup change', function () {
+            var t = window[globalName];
+            if (t.column(i).search() !== this.value) { t.column(i).search(this.value).draw(); }
+          });
+        }
+      });
+
+      var columns = [
+        { data: 'course_display',  name: 'teacher_course.course.name' },
+        { data: 'highschool_name', name: 'teacher_course.teacher_highschool.highschool.name' },
+        { data: 'instructor_name', name: 'teacher_course.teacher_highschool.teacher.user.last_name' },
+        { data: 'academic_year',   name: 'academic_year.name', orderable: false, searchable: false },
+      ];
+      if (tab === 'reviewed') {
+        columns.push({ data: 'faculty_review_status', orderable: false, searchable: false });
+      } else {
+        columns.push({ data: 'submitted_on' });
+      }
+      columns.push({
+        data: 'detail_url', orderable: false, searchable: false,
+        render: function (url) {
+          return "<a class='btn btn-sm btn-primary record-details' refresh-target='" + globalName + "' href='" + url + "'>View Details</a>";
+        }
+      });
+
+      var t = $('#' + tableId).DataTable({
+        dom: 'B<"float-left mt-3 mb-3"l><"float-right mt-3"f><"row clear">rt<"row"<"col-6"i><"col-6 float-right"p>>',
+        buttons: [
+          { extend: 'csv', className: 'btn btn-sm btn-primary text-white text-light',
+            text: '<i class="fas fa-file-csv text-white"></i>&nbsp;CSV', titleAttr: 'Export results to CSV' },
+          { extend: 'print', className: 'btn btn-sm btn-primary text-white text-light',
+            text: '<i class="fas fa-print text-white"></i>&nbsp;Print', titleAttr: 'Print' },
+        ],
+        ajax: {
+          url: apiUrl,
+          data: function (d) { d.format = 'datatables'; d.tab = tab; d.academic_year = $('#academic-year-filter').val(); }
+        },
+        lengthMenu: [30, 50, 100],
+        order: [],
+        stateSave: false,
+        columns: columns,
+      });
+      window[globalName] = t;
+      return t;
+    }
+
+    table_pending  = initTable('records_pending',  'table_pending',  'pending');
+    table_reviewed = initTable('records_reviewed', 'table_reviewed', 'reviewed');
+
+    $('#academic-year-filter').on('change', function () {
+      table_pending.ajax.reload(null, false);
+      table_reviewed.ajax.reload(null, false);
+    });
+  });
+</script>
+{% endblock %}
