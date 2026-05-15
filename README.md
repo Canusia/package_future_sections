@@ -82,13 +82,30 @@ urlpatterns = [
 
 Add menu entries to each portal's `menu.py` so users can navigate to the app. The entries follow the JSON structure used in `cis/menu.py`. Labels and icons can be customized.
 
-**CE Admin** (`cis/menu.py`) — add as a sub-menu entry under the existing "Classes" menu:
+**CE Admin** (`cis/menu.py`) — add two sub-menu entries under the existing "Classes" menu:
 
 ```python
 {
     'label': 'Course Projections',
     'name': 'future_sections',
     'url': 'future_sections_ce:future_sections'
+},
+{
+    'label': 'Review Section Requests',
+    'name': 'section_requests',
+    'url': 'future_sections_ce:section_request_list'
+}
+```
+
+**Faculty** (`cis/menu.py` — `FACULTY_MENU`) — add as a top-level nav item:
+
+```python
+{
+    'type': 'nav-item',
+    'icon': 'fas fa-fw fa-clipboard-list',
+    'name': 'section_requests',
+    'label': 'Section Requests',
+    'url': 'future_sections_faculty:section_request_list'
 }
 ```
 
@@ -114,6 +131,33 @@ Add menu entries to each portal's `menu.py` so users can navigate to the app. Th
     'label': 'Section Requests',
     'url': 'future_sections_instructor:section_requests'
 }
+```
+
+### 5b. Add Reviewer Role to `CourseAdministrator`
+
+The Section Request Review flow (see [Settings Reference → Section Request Review](#section-request-review)) keys off the `role` field on `cis.CourseAdministrator`. The built-in choices are `Administrator`, `Faculty`, `Visitor`, `Dept. Chair`, `Dean`, and `FC Reviewer`.
+
+If your tenant uses a different role label for reviewers (e.g. "Program Coordinator", "Subject Lead"), add it to `ROLE_OPTIONS` in `cis/models/course.py` so it's selectable both on the `CourseAdministrator` admin page and in the **Reviewer Roles** / **Mentor CourseAdministrator Role** dropdowns on the settings form:
+
+```python
+# cis/models/course.py — class CourseAdministrator
+ROLE_OPTIONS = [
+    ('Administrator', 'Administrator'),
+    ('Faculty', 'Faculty'),
+    ('Visitor', 'Visitor'),
+    ('Dept. Chair', 'Dept. Chair'),
+    ('Dean', 'Dean'),
+    ('FC Reviewer', 'FC Reviewer'),
+    # Add your tenant-specific reviewer role here:
+    # ('Program Coordinator', 'Program Coordinator'),
+]
+```
+
+After editing, generate and run a migration:
+
+```bash
+python manage.py makemigrations cis
+python manage.py migrate
 ```
 
 ### 6. Add Flatpickr to header-includes.html
@@ -183,6 +227,19 @@ Navigate to **CE Portal > Settings > Classes > Section Requests** to configure t
 | **'Add New Teacher' Prompt** | Text displayed above the add teacher button (hidden if not allowed) |
 | **Create New Instructor App For** | Which instructor course statuses trigger a new instructor application (hidden if not allowed) |
 | **Default Status of Instructor Apps** | Default status assigned to new instructor applications created during section requests (hidden if not allowed) |
+
+### Section Request Review
+
+Drives the post-submission review flow under `/faculty/future_sections/section_requests/` and `/ce/future_sections/section_requests/`.
+
+| Setting | Description |
+|---------|-------------|
+| **Do course proposals need to be reviewed?** | If Yes, designated `CourseAdministrator` rows on the course can review submitted requests. If No, the review list and detail URLs return 404 and the faculty/CE menu entries are inert. |
+| **Reviewer Roles** | Which `CourseAdministrator.role` values are allowed to review (hidden when review is disabled). A user sees a request iff they have an Active row in one of these roles on the request's course. To add a role to this dropdown, edit `CourseAdministrator.ROLE_OPTIONS` in `cis/models/course.py` (see [Installation Step 5b](#5b-add-reviewer-role-to-courseadministrator)). |
+| **Assign a mentor during review?** | Only visible when review is required. If Yes, approving a request requires picking or creating a mentor; the mentor is stored on the request's `section_info.faculty_review.mentor` and added as a `CourseAdministrator` row on the course. If No, approvals submit with just decision + comment (hidden mentor row in the review form). |
+| **Mentor CourseAdministrator Role** | Which role the mentor's `CourseAdministrator` row gets on the course (defaults to `Faculty`). Hidden when review is disabled OR mentor assignment is disabled. The mentor user is always added to the `faculty` group with a `FacultyCoordinator` record, regardless of this role. |
+
+> **Note on the JSON storage key:** review data is persisted as `FutureCourse.section_info['faculty_review']`. The key name is historical — it represents any reviewer role, not just `Faculty`.
 
 ### Form Configuration
 
@@ -266,7 +323,14 @@ future_sections/
 │   ├── __init__.py           # Main URL configuration
 │   ├── highschool_admin.py   # HS Admin portal URLs
 │   ├── instructor.py         # Instructor portal URLs
-│   └── ce.py                 # CE portal URLs
+│   ├── ce.py                 # CE portal URLs (incl. review routes)
+│   └── faculty.py            # Faculty portal review routes
+├── review/
+│   ├── __init__.py
+│   ├── helpers.py            # Reviewer-role lookup, review JSON read/write, mentor create-or-attach
+│   ├── forms.py              # SectionRequestReviewForm (mentor_role + require_mentor)
+│   ├── api.py                # SectionRequestSerializer + portal-agnostic ViewSet
+│   └── views.py              # section_request_list / _detail with portal shims
 ├── management/
 │   └── commands/
 │       ├── migrate_future_sections_data.py  # Data migration from cis app
@@ -298,6 +362,11 @@ future_sections/
 - Record detail, delete, bulk actions
 - Admin lookup and ad-hoc reminder sending
 - API endpoints for future class sections, projections, pending sections, notification logs
+- Section request review (`section_requests/` + `section_requests/<uuid>/` + `section_request_api/`)
+
+**Faculty Portal** (`/faculty/future_sections/`):
+- Section request review for users with a qualifying `CourseAdministrator` row (`section_requests/` + `section_requests/<uuid>/` + `section_request_api/`)
+- Gated by the **Do course proposals need to be reviewed?** and **Reviewer Roles** settings
 
 ### Shared API URLs (`/future_sections/`):
 - `api/actions/mark-teaching/` - Mark course as teaching

@@ -44,6 +44,20 @@ class ReviewFieldsValidationTests(TestCase):
         self.assertNotIn('reviewer_roles', form.errors)
 
     def test_assign_mentor_yes_without_default_role_fails(self):
+        # assign_mentor is only checked when review is on.
+        data = _qdict([
+            ('require_review', '1'),
+            ('reviewer_roles', ['Faculty']),
+            ('assign_mentor', '1'),
+            ('mentor_default_role', ''),
+        ])
+        form = FSForm(self.request, data=data)
+        form.is_valid()
+        self.assertIn('mentor_default_role', form.errors)
+
+    def test_assign_mentor_ignored_when_review_off(self):
+        # When require_review='No', assign_mentor/mentor_default_role are not
+        # validated even if assign_mentor is 'Yes' with no mentor role.
         data = _qdict([
             ('require_review', '2'),
             ('reviewer_roles', []),
@@ -52,4 +66,5 @@ class ReviewFieldsValidationTests(TestCase):
         ])
         form = FSForm(self.request, data=data)
         form.is_valid()
-        self.assertIn('mentor_default_role', form.errors)
+        self.assertNotIn('mentor_default_role', form.errors)
+        self.assertNotIn('reviewer_roles', form.errors)

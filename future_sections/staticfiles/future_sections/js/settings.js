@@ -454,12 +454,16 @@ function initReviewToggles() {
     var $reviewerRoles = $form.find('input[name="reviewer_roles"]')
         .first()
         .closest('.form-group');
+    var $assignMentor = $assign.closest('.form-group');
     var $mentorRole = $form.find('select[name="mentor_default_role"]')
         .closest('.form-group');
 
     function sync() {
-        $reviewerRoles.toggle($require.val() === '1');
-        $mentorRole.toggle($assign.val() === '1');
+        var reviewOn = $require.val() === '1';
+        $reviewerRoles.toggle(reviewOn);
+        $assignMentor.toggle(reviewOn);
+        // Mentor role only visible when both review is on AND assign_mentor is Yes.
+        $mentorRole.toggle(reviewOn && $assign.val() === '1');
     }
     sync();
     $require.on('change', sync);

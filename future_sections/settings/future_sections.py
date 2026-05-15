@@ -304,9 +304,11 @@ class future_sections(forms.Form):
 
     assign_mentor = forms.ChoiceField(
         choices=YES_NO_SELECT_OPTIONS,
+        required=False,
         label='Assign a mentor during review?',
         help_text='If enabled, an approval must include a mentor (selected from '
-                  'existing CourseAdministrators on the course, or created new).',
+                  'existing CourseAdministrators on the course, or created new). '
+                  'Only applies when review is required.',
     )
 
     mentor_default_role = forms.ChoiceField(
@@ -496,11 +498,14 @@ class future_sections(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get('require_review') == '1' and not cleaned.get('reviewer_roles'):
+        review_on = cleaned.get('require_review') == '1'
+        if review_on and not cleaned.get('reviewer_roles'):
             self.add_error('reviewer_roles',
                            forms.ValidationError(
                                'Select at least one reviewer role when review is required.'))
-        if cleaned.get('assign_mentor') == '1' and not cleaned.get('mentor_default_role'):
+        # assign_mentor / mentor_default_role only matter when review is on.
+        if review_on and cleaned.get('assign_mentor') == '1' \
+                and not cleaned.get('mentor_default_role'):
             self.add_error('mentor_default_role',
                            forms.ValidationError(
                                'Select a mentor role when mentor assignment is enabled.'))
