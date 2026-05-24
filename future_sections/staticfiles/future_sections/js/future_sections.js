@@ -292,7 +292,7 @@ function getCookie(name) {
                 processData: false,
                 contentType: false,
                 headers: {
-                    'X-CSRFToken': getCookie('csrftoken')
+                    'X-CSRFToken': getCookie(window.CSRF_COOKIE_NAME || 'csrftoken')
                 },
                 error: function(xhr, status, error) {
                     var response = xhr.responseJSON || {};

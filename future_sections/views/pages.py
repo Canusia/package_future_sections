@@ -4,6 +4,7 @@ Page views for future sections.
 These views render the main future sections pages for different user roles.
 """
 
+from django.conf import settings
 from django.shortcuts import render
 from django.views import View
 
@@ -114,4 +115,11 @@ class FutureSectionsPageView(View):
             'tab_course_requests': fs_config.get('tab_course_requests', 'Course Requests'),
             'tab_school_personnel': fs_config.get('tab_school_personnel', 'School Personnel'),
             'api_urls': api_urls,
+            # In dev, concurrent local tenants on 127.0.0.1 share cookie scope,
+            # so the host's settings.py renames CSRF_COOKIE_NAME per tenant
+            # (e.g. ewu_csrftoken). Expose it so future_sections.js can read
+            # the right cookie. In production CSRF_COOKIE_NAME stays at
+            # Django's default and the template skips the inline override.
+            'debug': settings.DEBUG,
+            'csrf_cookie_name': settings.CSRF_COOKIE_NAME,
         })
