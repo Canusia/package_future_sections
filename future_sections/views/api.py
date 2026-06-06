@@ -357,6 +357,20 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             if form.is_valid():
                 record = form.save(request, academic_year)
 
+                # form.save() returns the FutureCourse on success, but returns
+                # a falsy value (e.g. False / None) on a known failure such as
+                # the new teacher failing to be created (Teacher.get_or_add ->
+                # None). Guard before dereferencing .teacher_course so we return
+                # a clean error instead of a 500 (AttributeError).
+                if not isinstance(record, FutureCourse):
+                    return Response({
+                        'status': 'error',
+                        'message': (
+                            'Could not add the teacher and course. '
+                            'Please verify the teacher details and try again.'
+                        ),
+                    }, status=400)
+
                 if record.teacher_course.status in fs_config.get('create_new_instructor_app', []):
                     record.create_teacher_application()
 
