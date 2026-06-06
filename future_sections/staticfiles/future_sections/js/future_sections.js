@@ -384,9 +384,12 @@ function getCookie(name) {
                 }
             }
 
-            $.blockUI();
-            $.ajax({
-                type: 'GET',
+            // remove-not-teaching-section maps to the remove-teaching-status
+            // endpoint, which is now POST-only and CSRF-protected (PT-33).
+            // All other course-actions remain form-fetch GETs.
+            var isRemoveAction = action === 'remove-not-teaching-section';
+            var ajaxOptions = {
+                type: isRemoveAction ? 'POST' : 'GET',
                 url: actionUrl,
                 data: data,
                 success: function(response) {
@@ -405,7 +408,15 @@ function getCookie(name) {
                     $.unblockUI();
                     alert('Failed request');
                 }
-            });
+            };
+            if (isRemoveAction) {
+                ajaxOptions.headers = {
+                    'X-CSRFToken': getCookie(window.CSRF_COOKIE_NAME || 'csrftoken')
+                };
+            }
+
+            $.blockUI();
+            $.ajax(ajaxOptions);
         });
     });
 

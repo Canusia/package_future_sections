@@ -274,18 +274,17 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             'action': 'reload_future_courses'
         })
 
-    @action(detail=False, methods=['get', 'post', 'delete'], url_path='remove-teaching-status')
+    @action(detail=False, methods=['post'], url_path='remove-teaching-status')
     def remove_teaching_status(self, request):
         """
         Remove teaching/not-teaching status for a course.
+
+        POST-only: this is a destructive state change. Restricting it to POST
+        ensures DRF SessionAuthentication enforces CSRF and that a cross-site
+        GET navigation cannot delete offering data (security finding PT-33).
         """
-        # Handle both GET (form params) and POST/DELETE (data params)
-        if request.method == 'GET':
-            course_certificate_id = request.GET.get('course_certificate_id')
-            academic_year_id = request.GET.get('academic_year_id')
-        else:
-            course_certificate_id = request.data.get('course_certificate_id')
-            academic_year_id = request.data.get('academic_year_id')
+        course_certificate_id = request.data.get('course_certificate_id')
+        academic_year_id = request.data.get('academic_year_id')
 
         if not course_certificate_id or not academic_year_id:
             return Response({
