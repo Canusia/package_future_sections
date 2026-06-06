@@ -17,6 +17,7 @@ from cis.models.course import Cohort, Course
 from cis.models.term import AcademicYear, Term
 from .models import FutureCourse, FutureProjection
 from .schemas import TeachingSectionFieldSchema
+from .utils import sanitize_plain_text
 
 class SearchInstructorByCohortForm(forms.Form):
     cohort = forms.ModelMultipleChoiceField(
@@ -348,6 +349,16 @@ class HSAdministratorPositionForm(forms.Form):
         label=mark_safe('By checking this box<br>-I under that adding this person will give them access to lorem ipsum.<br>-I confirm I have the authority to do this'),
         required=True
     )
+
+    def clean_new_administrator_first_name(self):
+        return sanitize_plain_text(
+            self.cleaned_data.get('new_administrator_first_name')
+        )
+
+    def clean_new_administrator_last_name(self):
+        return sanitize_plain_text(
+            self.cleaned_data.get('new_administrator_last_name')
+        )
 
     def clean(self):
         data = self.data
@@ -695,6 +706,18 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                 return data
             except ValidationError:
                 raise ValidationError('Please enter a valid email address')
+
+    def clean_teacher_first_name(self):
+        return sanitize_plain_text(self.cleaned_data.get('teacher_first_name'))
+
+    def clean_teacher_last_name(self):
+        return sanitize_plain_text(self.cleaned_data.get('teacher_last_name'))
+
+    def clean_highschool_course_name(self):
+        return sanitize_plain_text(self.cleaned_data.get('highschool_course_name'))
+
+    def clean_new_teacher_name(self):
+        return sanitize_plain_text(self.cleaned_data.get('new_teacher_name'))
 
     def save(self, request, academic_year, commit=True):
 

@@ -5,8 +5,10 @@ Shared by both instructor and highschool_admin views.
 """
 
 import datetime
+import re
 
 from django.shortcuts import get_object_or_404
+from django.utils.html import strip_tags
 
 from rest_framework.exceptions import PermissionDenied
 
@@ -16,6 +18,23 @@ from cis.models.highschool_administrator import HSAdministrator
 from cis.models.teacher import Teacher, TeacherCourseCertificate
 from cis.models.term import AcademicYear
 from cis.utils import user_has_highschool_admin_role, user_has_instructor_role
+
+
+_ANGLE = re.compile(r'[<>]')
+
+
+def sanitize_plain_text(value):
+    """Strip all HTML markup and residual angle brackets from free-text input.
+
+    Dependency-free (no bleach/nh3): Django's ``strip_tags`` removes tags, and
+    the ``_ANGLE`` scrub removes any ``<``/``>`` that ``strip_tags`` leaves on
+    malformed input (``strip_tags`` is explicitly documented as not
+    security-grade). Used to neutralise stored-XSS vectors (PT-24/PT-27) on
+    name fields before they are persisted. Non-strings pass through unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    return _ANGLE.sub('', strip_tags(value)).strip()
 
 
 def get_fs_config():
