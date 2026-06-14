@@ -236,6 +236,23 @@ class TeacherCourseSectionForm(forms.Form):
             if stored_mode not in choice_values:
                 instruction_mode_choices.append((stored_mode, stored_mode))
 
+        # Build location choices from settings (mirrors instruction_modes)
+        location_choices = None
+        raw_locations = fs_config.get('location_options', '')
+        if raw_locations:
+            location_choices = [
+                (loc.strip(), loc.strip())
+                for loc in raw_locations.split('|')
+                if loc.strip()
+            ]
+
+        # If editing existing data, ensure the stored location value is selectable
+        stored_location = initial.get('location', '')
+        if stored_location and location_choices:
+            location_values = {c[0] for c in location_choices}
+            if stored_location not in location_values:
+                location_choices.append((stored_location, stored_location))
+
         # Generate configurable fields from schema
         # Dependent fields are always visible when their parent is visible
         dependent_fields = {
@@ -247,6 +264,8 @@ class TeacherCourseSectionForm(forms.Form):
             extra_kwargs = {}
             if field_name == 'instruction_mode' and instruction_mode_choices:
                 extra_kwargs['choices'] = instruction_mode_choices
+            if field_name == 'location' and location_choices:
+                extra_kwargs['choices'] = location_choices
 
             is_visible = field_name in visible_fields
             if field_name in dependent_fields:
