@@ -2,6 +2,9 @@ from django import forms
 from django.test import SimpleTestCase
 
 from future_sections.future_sections.schemas import TeachingSectionFieldSchema
+from future_sections.future_sections.settings.future_sections import (
+    future_sections as fs_setting_form,
+)
 
 
 class LocationSchemaTests(SimpleTestCase):
@@ -27,3 +30,12 @@ class LocationSchemaTests(SimpleTestCase):
         field = TeachingSectionFieldSchema.make_django_form_field(
             'location', visible=False)
         self.assertIsInstance(field.widget, forms.HiddenInput)
+
+
+class LocationSettingFieldTests(SimpleTestCase):
+    def test_location_options_field_is_declared(self):
+        self.assertIn('location_options', fs_setting_form.base_fields)
+
+    def test_location_options_field_is_optional(self):
+        self.assertFalse(
+            fs_setting_form.base_fields['location_options'].required)
