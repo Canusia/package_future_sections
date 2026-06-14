@@ -394,6 +394,28 @@ class future_sections(forms.Form):
         })
     )
 
+    # ── Locations ─────────────────────────────────────────────────────────
+    location_options_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Locations</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    location_options = forms.CharField(
+        max_length=500,
+        required=False,
+        label="Available Locations",
+        help_text='Enter a pipe-delimited list of locations. '
+                  'Example: Main Campus|North High|Online. '
+                  'These will appear as dropdown options when the Location field is enabled.',
+        initial='',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Main Campus|North High|Online'
+        })
+    )
+
     # ── Reviewed Status Email ────────────────────────────────────────────
     reviewed_email_header = FFields.ReadOnlyField(
         required=False,
