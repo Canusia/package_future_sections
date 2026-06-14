@@ -45,6 +45,14 @@ class TeachingSectionFieldSchema(BaseModel):
             "field_type": "string",
         },
     )
+    location: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Location",
+            "widget_type": "select",
+            "field_type": "string",
+        },
+    )
     instruction_mode: Optional[str] = Field(
         default=None,
         json_schema_extra={
