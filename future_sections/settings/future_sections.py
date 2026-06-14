@@ -573,6 +573,17 @@ class future_sections(forms.Form):
                 self.add_error('cycle_terms',
                                forms.ValidationError(
                                    'All selected terms must share an Academic Year.'))
+            else:
+                # The Cycle Terms must belong to the selected "Requesting
+                # Information For" academic year (cleaned['academic_year'] is a
+                # str UUID via clean_academic_year). Guard only when a valid AY
+                # was provided; a missing AY already raises its own required error.
+                selected_ay = cleaned.get('academic_year')
+                if selected_ay and str(next(iter(ay_ids))) != str(selected_ay):
+                    self.add_error('cycle_terms',
+                                   forms.ValidationError(
+                                       'Selected terms must belong to the chosen '
+                                       '"Requesting Information For" academic year.'))
         return cleaned
 
     def clean_pending_notification_roles(self):
@@ -626,11 +637,11 @@ class future_sections(forms.Form):
             req_ay = saved.get('academic_year')
             prev_ay = saved.get('previous_academic_year')
             self.fields['cycle_terms'].queryset = (
-                Term.objects.filter(academic_year__id=req_ay).order_by('code')
+                Term.objects.filter(academic_year__id=req_ay).order_by('-code')
                 if req_ay else Term.objects.none()
             )
             self.fields['lookback_terms'].queryset = (
-                Term.objects.filter(academic_year__id=prev_ay).order_by('code')
+                Term.objects.filter(academic_year__id=prev_ay).order_by('-code')
                 if prev_ay else Term.objects.none()
             )
 

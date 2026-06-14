@@ -96,3 +96,33 @@ class TermQuerysetScopingTests(TestCase):
         form = FSForm(self.request, data=data)
         form.is_valid()
         self.assertNotIn('cycle_terms', form.errors)
+
+
+class AyTermTieValidationTests(TestCase):
+    def setUp(self):
+        self.request = RequestFactory().get('/?report_id=1')
+        self.ay_req = AcademicYear.objects.create(name='2026-2027')
+        self.ay_other = AcademicYear.objects.create(name='2027-2028')
+        self.req_fall = Term.objects.create(
+            code='FA26', label='Fall 2026', academic_year=self.ay_req)
+        self.other_fall = Term.objects.create(
+            code='FA27', label='Fall 2027', academic_year=self.ay_other)
+
+    def test_cycle_terms_must_match_selected_academic_year(self):
+        # academic_year says ay_req, but the submitted cycle_term is from ay_other
+        data = _qdict([
+            ('academic_year', str(self.ay_req.id)),
+            ('cycle_terms', [str(self.other_fall.id)]),
+        ])
+        form = FSForm(self.request, data=data)
+        form.is_valid()
+        self.assertIn('cycle_terms', form.errors)
+
+    def test_cycle_terms_matching_selected_academic_year_ok(self):
+        data = _qdict([
+            ('academic_year', str(self.ay_req.id)),
+            ('cycle_terms', [str(self.req_fall.id)]),
+        ])
+        form = FSForm(self.request, data=data)
+        form.is_valid()
+        self.assertNotIn('cycle_terms', form.errors)
