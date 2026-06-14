@@ -83,6 +83,13 @@ class TermQuerysetScopingTests(TestCase):
             form.fields['lookback_terms'].queryset.count(), Term.objects.count())
 
     def test_bound_valid_cycle_terms_not_rejected(self):
+        # Guards the bound-form full-queryset branch in __init__: Django runs
+        # ModelMultipleChoiceField.clean() (queryset membership check) BEFORE the
+        # custom clean_cycle_terms(). If the bound branch narrowed the queryset,
+        # field.clean() would reject these valid ids and 'cycle_terms' would land
+        # in form.errors. Other required fields are intentionally omitted from
+        # `data`, so the form as a whole is invalid — we only assert that the
+        # cycle_terms field itself was accepted.
         data = _qdict([
             ('cycle_terms', [str(self.req_fall.id), str(self.req_spring.id)]),
         ])
