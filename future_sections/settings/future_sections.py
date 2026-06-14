@@ -80,26 +80,6 @@ class future_sections(forms.Form):
         initial='School Personnel',
     )
 
-    cycle_terms = forms.ModelMultipleChoiceField(
-        queryset=Term.objects.none(),
-        required=True,
-        widget=forms.CheckboxSelectMultiple,
-        label='Cycle Terms',
-        help_text='Terms this cycle is collecting forecasts for. Schools that '
-                  'run once per AY pick all terms in the AY; schools that run '
-                  'per semester pick one term and re-open the cycle for the next.',
-    )
-
-    lookback_terms = forms.ModelMultipleChoiceField(
-        queryset=Term.objects.none(),
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        label='Lookback Terms',
-        help_text='Terms used to determine which teachers are expected to '
-                  'respond. The universe of "pending" is teachers who taught '
-                  'an Active ClassSection in any of these terms.',
-    )
-
     academic_year = forms.ModelChoiceField(
         queryset=None,
         label="Requesting Information For",
@@ -112,6 +92,29 @@ class future_sections(forms.Form):
         label="Previous Year Reference",
         help_text='Select a prior academic year to show what was previously offered at the high school',
         required=True
+    )
+
+    cycle_terms = forms.ModelMultipleChoiceField(
+        queryset=Term.objects.none(),
+        required=True,
+        widget=forms.CheckboxSelectMultiple,
+        label='Cycle Terms',
+        help_text='Terms this cycle is collecting forecasts for. Scoped to the '
+                  '"Requesting Information For" academic year selected above — only '
+                  'that year\'s terms are shown. Schools that run once per AY pick '
+                  'all terms in the AY; schools that run per semester pick one term '
+                  'and re-open the cycle for the next.',
+    )
+
+    lookback_terms = forms.ModelMultipleChoiceField(
+        queryset=Term.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label='Lookback Terms',
+        help_text='Terms used to determine which teachers are expected to '
+                  'respond (teachers who taught an Active ClassSection in any of '
+                  'these terms). Scoped to the "Previous Year Reference" academic '
+                  'year selected above — only that year\'s terms are shown.',
     )
 
     term_mapping = forms.CharField(
