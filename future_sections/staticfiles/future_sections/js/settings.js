@@ -485,38 +485,118 @@ function initTermFieldScrollContainer(fieldName) {
     );
 }
 
-function initCycleTermsHint() {
-    var $boxes = $('input[name="cycle_terms"]');
-    if (!$boxes.length) return;
+// ── AY-scoped term checkboxes ───────────────────────────────────────────
+// Cycle Terms follow the "Requesting Information For" AY (#id_academic_year);
+// Lookback Terms follow the "Previous Year Reference" AY
+// (#id_previous_academic_year). When an AY changes, refetch that year's terms
+// and rebuild the matching checkbox list, preserving still-valid checked terms.
+var AY_TERM_PAIRS = [
+    { aySelector: '#id_academic_year',          termName: 'cycle_terms' },
+    { aySelector: '#id_previous_academic_year', termName: 'lookback_terms' }
+];
 
+function rebuildTermCheckboxes(termName, academicYearId) {
+    var $group = $('#div_id_' + termName);
+    if (!$group.length) {
+        var $existing = $('input[name="' + termName + '"]').first();
+        if ($existing.length) $group = $existing.closest('.form-group');
+    }
+    if (!$group.length) return;
+
+    // Preserve currently-checked term ids across the rebuild.
+    var checked = {};
+    $('input[name="' + termName + '"]:checked').each(function () {
+        checked[$(this).val()] = true;
+    });
+
+    function render(terms) {
+        var items = '';
+        $.each(terms, function (i, term) {
+            var fieldId = 'id_' + termName + '_' + i;
+            var isChecked = checked[term.id] ? ' checked' : '';
+            items +=
+                '<li><label for="' + fieldId + '">' +
+                '<input type="checkbox" name="' + termName + '" value="' +
+                term.id + '" id="' + fieldId + '"' + isChecked + '> ' +
+                term.label + '</label></li>';
+        });
+
+        var $list = $group.find('ul').first();
+        if (!$list.length) {
+            // Empty server render had no <ul>; create one after the field label.
+            $list = $('<ul></ul>');
+            var $label = $group.find('label').first();
+            if ($label.length) { $label.after($list); } else { $group.append($list); }
+        }
+        $list.html(items);
+
+        // Re-apply the scroll wrapper (no-op if already wrapped) and refresh
+        // the cycle-terms AY hint via the delegated handler.
+        initTermFieldScrollContainer(termName);
+        $('input[name="' + termName + '"]').first().trigger('change');
+    }
+
+    if (!academicYearId) { render([]); return; }
+
+    $.getJSON('/ce/api/term/', { academic_year: academicYearId, format: 'json' })
+        .done(function (resp) {
+            var terms = (resp && resp.results) ? resp.results
+                       : (Array.isArray(resp) ? resp : []);
+            render(terms);
+        });
+}
+
+var _ayScopedTermsInitialized = false;
+function initAyScopedTerms() {
+    if (_ayScopedTermsInitialized) return;
+    var bound = false;
+    AY_TERM_PAIRS.forEach(function (pair) {
+        var $ay = $(pair.aySelector);
+        if (!$ay.length) return;
+        bound = true;
+        $ay.on('change', function () {
+            rebuildTermCheckboxes(pair.termName, $ay.val());
+        });
+    });
+    if (bound) { _ayScopedTermsInitialized = true; }
+}
+
+function initCycleTermsHint() {
     initTermFieldScrollContainer('cycle_terms');
     initTermFieldScrollContainer('lookback_terms');
 
     function refreshHint() {
+        var $group = $('#div_id_cycle_terms');
+        if (!$group.length) {
+            var $first = $('input[name="cycle_terms"]').first();
+            if ($first.length) $group = $first.closest('.form-group');
+        }
+        if (!$group.length) return;
+
         var ays = new Set();
         $('input[name="cycle_terms"]:checked').each(function () {
-            var label = $(this).siblings('label').text().trim();
-            // Term labels usually include the AY (e.g. "Fall 2026"); a precise
-            // single-AY check happens on save via the form's clean() method.
-            var year_match = label.match(/(\d{4})/);
-            if (year_match) ays.add(year_match[1]);
+            var label = $(this).siblings('label').text().trim()
+                     || $(this).closest('label').text().trim();
+            var m = label.match(/(\d{4})/);
+            if (m) ays.add(m[1]);
         });
-        var $note = $('#cycle-terms-ay-note');
+
+        var $note = $group.find('#cycle-terms-ay-note');
         if ($note.length === 0) {
             $note = $('<small id="cycle-terms-ay-note" class="form-text text-muted"></small>');
-            $boxes.first().closest('.form-group').append($note);
+            $group.append($note);
         }
         if (ays.size > 1) {
             $note.text('Warning: selected terms appear to span multiple academic years; saving will fail.')
                  .removeClass('text-muted').addClass('text-danger');
         } else {
-            $note.text('All selected terms share the same academic year.')
-                 .removeClass('text-danger').addClass('text-muted');
+            $note.text('').removeClass('text-danger').addClass('text-muted');
         }
     }
 
     refreshHint();
-    $boxes.on('change', refreshHint);
+    $(document).off('change.cycleHint')
+               .on('change.cycleHint', 'input[name="cycle_terms"]', refreshHint);
 }
 
 function initAll() {
@@ -527,6 +607,7 @@ function initAll() {
         initPersonnelConfirmationToggle,
         initReviewToggles,
         initCycleTermsHint,
+        initAyScopedTerms,
         initNewTeacherToggle,
         initPendingNotificationDatesPicker,
         initTermMapping,
