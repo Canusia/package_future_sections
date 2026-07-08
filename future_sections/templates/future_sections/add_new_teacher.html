@@ -80,6 +80,37 @@
         selectAll: false,
         single: true,
     })
+
+    // Searchable dropdown for the course list (single-select, mirroring the
+    // administrator field). Rebuilt whenever the campus changes so it always
+    // shows only the selected campus's courses.
+    function initCourseSelect() {
+        $('#id_course').multipleSelect({
+            filter: true,
+            selectAll: false,
+            single: true,
+        });
+    }
+
+    function reloadCoursesForCampus() {
+        var campusId = $('#id_campus').val();
+        $.getJSON('{{ courses_url }}', {
+            academic_year_id: '{{ academic_year.id }}',
+            course_type: '{{ course_type|escapejs }}',
+            campus: campusId
+        }).done(function (data) {
+            var $course = $('#id_course');
+            $course.multipleSelect('destroy');
+            $course.empty();
+            $.each((data && data.courses) || [], function (_, c) {
+                $course.append($('<option>', { value: c.id, text: c.title }));
+            });
+            initCourseSelect();
+        });
+    }
+
+    $(document).on('change', '#id_campus', reloadCoursesForCampus);
+    initCourseSelect();
 })
 </script>
 <div class="row">

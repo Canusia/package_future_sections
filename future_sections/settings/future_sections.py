@@ -133,7 +133,8 @@ class future_sections(forms.Form):
         required=False,
         label="Course Column Display Template",
         help_text='Template for the Course column in the requests table. '
-                  'Available placeholders: {course_name}, {course_title}, {credit_hours}. '
+                  'Available placeholders: {course_name}, {course_title}, '
+                  '{credit_hours}, {campus_name}, {campus_code}. '
                   'Default: "{course_title}".',
         initial='{course_title}',
     )

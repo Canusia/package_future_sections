@@ -50,6 +50,8 @@ from ..utils import (
     get_course_certificates_for_user,
     build_initial_from_prev_year,
     build_section_info_from_formset,
+    render_course_display,
+    addable_courses_for_user,
 )
 
 
@@ -396,12 +398,46 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
 
         context = get_user_context(request)
 
+        # URL the campus dropdown calls to refresh the course list (same
+        # viewset, sibling action). Derived from this action's path so it works
+        # under every portal prefix (highschool_admin / instructor / ce).
+        courses_url = request.path.rsplit('add-teacher', 1)[0] + 'add-teacher-courses/'
+
         return render(request, template, {
             'academic_year': academic_year,
             'form': form,
             'new_teacher_message': fs_config.get('new_teacher_message', 'change me'),
             'form_action_url': request.build_absolute_uri(),
             'is_admin': context['is_admin'],
+            'course_type': course_type,
+            'courses_url': courses_url,
+        })
+
+    @action(detail=False, methods=['get'], url_path='add-teacher-courses')
+    def add_teacher_courses(self, request):
+        """Return the campus-scoped course list for the add-teacher form as
+        JSON, so the campus dropdown can refresh the course <select> via AJAX.
+        Applies the same role/campus filtering as AddNewTeacherForm."""
+        from cis.models.course import Campus
+
+        academic_year_id = request.GET.get('academic_year_id')
+        course_type = request.GET.get('course_type', 'pathways')
+        campus_id = request.GET.get('campus')
+
+        if not academic_year_id:
+            return Response({
+                'status': 'error',
+                'message': 'academic_year_id is required',
+            }, status=400)
+
+        academic_year = get_object_or_404(AcademicYear, pk=academic_year_id)
+        campus = get_object_or_404(Campus, pk=campus_id) if campus_id else None
+
+        courses = addable_courses_for_user(
+            request, academic_year, course_type, campus)
+
+        return Response({
+            'courses': [{'id': str(c.id), 'title': c.title} for c in courses],
         })
 
     @action(detail=False, methods=['post'], url_path='confirm-sections')
@@ -583,6 +619,7 @@ class CourseRequestViewSet(viewsets.ViewSet):
     def get_queryset(self):
         return get_course_certificates_for_user(self.request).select_related(
             'course',
+            'course__campus',
             'teacher_highschool__teacher__user',
             'teacher_highschool__highschool'
         )
@@ -641,14 +678,9 @@ class CourseRequestViewSet(viewsets.ViewSet):
             cert_id = str(course.certificate_id)
             offering = offering_lookup.get(cert_id, {})
 
-            try:
-                course_display = course_display_template.format(
-                    course_name=course.course.name or '',
-                    course_title=course.course.title,
-                    credit_hours=course.course.credit_hours,
-                )
-            except (KeyError, IndexError):
-                course_display = course.course.title
+            course_display = render_course_display(
+                course_display_template, course.course
+            )
 
             # Previous year sections for this course + highschool
             prev_key = f"{course.course_id}_{course.teacher_highschool.highschool_id}"

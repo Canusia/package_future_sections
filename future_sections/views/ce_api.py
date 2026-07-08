@@ -24,14 +24,11 @@ class PendingTeacherCourseSerializer(TeacherCourseCertificateSerializer):
     prev_year_sections = serializers.SerializerMethodField()
 
     def get_course_display(self, obj):
+        from ..utils import render_course_display
         try:
             fs_config = fs_settings.from_db()
             template = fs_config.get('course_display_template', '{course_title}')
-            return template.format(
-                course_name=obj.course.name or '',
-                course_title=obj.course.title,
-                credit_hours=obj.course.credit_hours,
-            )
+            return render_course_display(template, obj.course)
         except Exception:
             return obj.course.title if obj.course else ''
 

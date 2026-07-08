@@ -48,6 +48,64 @@ def get_fs_config():
     return fs_settings.from_db()
 
 
+def addable_courses_for_user(request, academic_year, course_type=None, campus=None):
+    """Course queryset selectable in the add-teacher form.
+
+    Mirrors ``AddNewTeacherForm.__init__``: HS admins get all active courses;
+    instructors get only the courses they are certified for. When ``campus`` is
+    given the list is narrowed to that campus. Shared by the form (initial
+    render / bound validation) and the ``add-teacher-courses`` AJAX action so
+    the two never drift.
+
+    ``course_type`` is accepted for forward-compatibility but, matching current
+    behavior, is not used to filter the list.
+    """
+    from cis.models.course import Course
+    from cis.utils import user_has_highschool_admin_role, user_has_instructor_role
+
+    qs = Course.objects.filter(status__iexact='active')
+    if campus is not None:
+        qs = qs.filter(campus=campus)
+
+    # HS admins see everything active; only instructors are cert-scoped. The
+    # HS-admin check wins when a user happens to hold both roles (as in the form).
+    if (not user_has_highschool_admin_role(request.user)
+            and user_has_instructor_role(request.user)):
+        teacher_user = Teacher.objects.get(user__id=request.user.id)
+        fs_config = get_fs_config()
+        certified_course_ids = TeacherCourseCertificate.objects.filter(
+            teacher_highschool__teacher=teacher_user,
+            status__in=fs_config.get('teacher_course_status', []),
+        ).values_list('course__id', flat=True)
+        qs = qs.filter(id__in=certified_course_ids)
+
+    return qs.distinct('title').order_by('title')
+
+
+def render_course_display(template, course):
+    """Expand the ``course_display_template`` placeholders for a Course.
+
+    Supported placeholders: ``{course_name}``, ``{course_title}``,
+    ``{credit_hours}``, ``{campus_name}``, ``{campus_code}``. The ``campus`` FK
+    on Course is optional, so campus placeholders resolve to '' when unset.
+
+    Falls back to ``course.title`` if the template references an unknown
+    placeholder or is otherwise malformed. Single source of truth shared by the
+    request-table serializers and viewsets so new placeholders land in one place.
+    """
+    campus = getattr(course, 'campus', None)
+    try:
+        return template.format(
+            course_name=course.name or '',
+            course_title=course.title,
+            credit_hours=course.credit_hours,
+            campus_name=(campus.name if campus else ''),
+            campus_code=(campus.code if campus else ''),
+        )
+    except (KeyError, IndexError, ValueError):
+        return course.title
+
+
 def build_initial_from_prev_year(teacher_course):
     """Build formset initial data from previous year ClassSections using term mapping.
 

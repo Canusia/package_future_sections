@@ -508,10 +508,16 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
         label='School',
         widget=forms.Select(attrs={'class': 'col-md-10'}))
 
+    campus = forms.ModelChoiceField(
+        queryset=None,
+        label='Campus',
+        empty_label=None,
+        widget=forms.Select(attrs={'class': 'col-md-10'}))
+
     course = CourseTitleChoiceField(
         queryset=None,
         widget=forms.Select(attrs={'class': 'col-md-10'}))
-    
+
     term = forms.ModelChoiceField(
         queryset=None,
         widget=forms.Select(attrs={'class': 'col-md-10'}))
@@ -557,7 +563,7 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
         except Exception:
             add_teacher_config = {}
 
-        always_included = {'highschool', 'course', 'term', 'teacher'}
+        always_included = {'highschool', 'campus', 'course', 'term', 'teacher'}
 
         # Restore always-included fields that may have been hidden by parent TeacherCourseSectionForm
         for field_name in always_included:
@@ -614,7 +620,7 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
         # Ordering: sort fields by weight
         config_weights = add_teacher_config.get('weights', None)
         if config_weights is not None:
-            always_first = ['highschool', 'course', 'term', 'teacher']
+            always_first = ['highschool', 'campus', 'course', 'term', 'teacher']
             weighted = []
             remaining = []
             for field_name in self.fields:
@@ -637,6 +643,25 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                 field.label = mark_safe(custom_labels[field_name])
             if field_name in custom_help_texts:
                 field.help_text = mark_safe(custom_help_texts[field_name])
+
+        # Campus dropdown, defaulting to the first campus. The course list is
+        # scoped to a campus: the submitted value when the form is bound (so a
+        # course chosen after switching campus still validates on POST),
+        # otherwise the default campus on first render.
+        from cis.models.course import Campus
+        from django.core.exceptions import ValidationError
+        from .utils import addable_courses_for_user
+
+        self.fields['campus'].queryset = Campus.objects.order_by('name')
+        default_campus = Campus.objects.order_by('name').first()
+        self.fields['campus'].initial = default_campus
+
+        active_campus = default_campus
+        if self.is_bound and self.data.get('campus'):
+            try:
+                active_campus = Campus.objects.get(id=self.data.get('campus'))
+            except (Campus.DoesNotExist, ValidationError, ValueError):
+                active_campus = default_campus
 
         from cis.utils import user_has_highschool_admin_role, user_has_instructor_role
         from cis.models.teacher import Teacher
@@ -670,37 +695,37 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                 id__in=highschools.values_list('highschool__id')
             )
 
-            # Filter courses to only those the instructor is certified for
-            from .settings.future_sections import future_sections as fs_settings
-            fs_config = fs_settings.from_db()
-
-            certified_course_ids = TeacherCourseCertificate.objects.filter(
-                teacher_highschool__teacher=teacher_user,
-                status__in=fs_config.get('teacher_course_status', [])
-            ).values_list('course__id', flat=True)
-
-            self.fields['course'].queryset = Course.objects.filter(
-                id__in=certified_course_ids,
-                status__iexact='active'
-            ).distinct('title').order_by('title')
+            # Instructors: only courses they're certified for, scoped to campus.
+            self.fields['course'].queryset = addable_courses_for_user(
+                request, academic_year, course_type, active_campus)
 
             self.fields['academic_year_id'].initial = academic_year.id
             self.fields['highschool'].queryset = highschools
             self.fields['term'].queryset = Term.objects.filter(academic_year=academic_year)
             self.fields['action'].initial = "add_new_teacher"
+            self._order_campus_before_course()
             return  # Exit early for instructors
 
         self.fields['academic_year_id'].initial = academic_year.id
         self.fields['highschool'].queryset = highschools
         self.fields['term'].queryset = Term.objects.filter(academic_year=academic_year)
 
-        # For HS Admins: show all active courses
-        self.fields['course'].queryset = Course.objects.filter(
-            status__iexact='active'
-        ).distinct('title').order_by('title')
+        # For HS Admins: all active courses in the selected campus.
+        self.fields['course'].queryset = addable_courses_for_user(
+            request, academic_year, course_type, active_campus)
 
         self.fields['action'].initial = "add_new_teacher"
-        
+        self._order_campus_before_course()
+
+    def _order_campus_before_course(self):
+        """Render the campus dropdown immediately before the course field,
+        regardless of any add_teacher_form_config weight ordering applied above."""
+        if 'campus' not in self.fields or 'course' not in self.fields:
+            return
+        order = [name for name in self.fields if name != 'campus']
+        order.insert(order.index('course'), 'campus')
+        self.order_fields(order)
+
     def clean(self):
         super().clean()
 

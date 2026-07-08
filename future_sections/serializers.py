@@ -39,15 +39,11 @@ class FutureCourseSerializer(serializers.ModelSerializer):
 
     def get_course_display(self, obj):
         from .settings.future_sections import future_sections as fs_settings
+        from .utils import render_course_display
         try:
             fs_config = fs_settings.from_db()
             template = fs_config.get('course_display_template', '{course_title}')
-            course = obj.teacher_course.course
-            return template.format(
-                course_name=course.name or '',
-                course_title=course.title,
-                credit_hours=course.credit_hours,
-            )
+            return render_course_display(template, obj.teacher_course.course)
         except Exception:
             return obj.teacher_course.course.title if obj.teacher_course else ''
 
