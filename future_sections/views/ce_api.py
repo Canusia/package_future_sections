@@ -76,6 +76,19 @@ class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PendingTeacherCourseSerializer
     permission_classes = [CIS_user_only]
 
+    def filter_queryset(self, queryset):
+        # DataTables may request ORDER BY / search on a serializer-only column
+        # (e.g. course_display, a SerializerMethodField); order_by() then raises
+        # FieldError. Fall back to the unordered queryset rather than 500ing.
+        from django.core.exceptions import FieldError
+        try:
+            return super().filter_queryset(queryset)
+        except FieldError:
+            logger.warning(
+                'future_sections pending: DataTables ordering failed; falling '
+                'back to default order. params=%s', dict(self.request.query_params))
+            return queryset
+
     def get_queryset(self):
         fs_setting_config = fs_settings.from_db()
 
