@@ -91,7 +91,9 @@
                                     <tr>
                                         <th></th>
                                         <th data-data="started_on" data-name="started_on">Added On</th>
-                                        <th data-data="submitted_by" data-name="submitted_by">Submitted By</th>
+                                        <th data-data="submitted_by"
+                                            data-name="submitted_by.last_name, submitted_by.first_name">Submitted By
+                                        </th>
                                         <th data-data="status" data-name="status">Status</th>
                                         <th data-data="academic_year.name" data-name="academic_year.name">Acad Year
                                         </th>
@@ -527,6 +529,8 @@
                                             }
                                         },
                                         {
+                                            // Serializer-only field — no ORM path to search on.
+                                            'searchable': false,
                                             'orderable': false,
                                             'render': function (data, type, row, meta) {
                                                 var sections = row.prev_year_sections || [];
