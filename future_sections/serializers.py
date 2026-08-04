@@ -32,6 +32,7 @@ class FutureCourseSerializer(serializers.ModelSerializer):
     started_on = serializers.DateField(format='%m/%d/%Y')
     course_display = serializers.SerializerMethodField()
     section_display = serializers.SerializerMethodField()
+    changed_teacher_sections = serializers.SerializerMethodField()
 
     class Meta:
         model = FutureCourse
@@ -65,6 +66,25 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             }
         except Exception:
             return {'teaching': None, 'displays': [], 'faculty_review': None}
+
+    def get_changed_teacher_sections(self, obj):
+        """Sections flagged 'teacher changed', for the CE outreach action.
+
+        The CE index renders sections from pre-formatted display strings, so
+        the structured values the compose box needs are surfaced here.
+        """
+        info = obj.section_info or {}
+        out = []
+        for index, section in enumerate(info.get('sections', []) or []):
+            if (section or {}).get('teacher_changed') != 'yes':
+                continue
+            out.append({
+                'index': index,
+                'term_name': section.get('term_name', '') or '',
+                'new_teacher_name': section.get('new_teacher_name', '') or '',
+                'new_teacher_email': section.get('new_teacher_email', '') or '',
+            })
+        return out
 
 
 class FutureSectionSerializer(serializers.ModelSerializer):
