@@ -45,6 +45,18 @@ from django.utils.safestring import mark_safe
 
 from ..schemas import TeachingSectionFieldSchema
 
+DEFAULT_NEW_TEACHER_EMAIL_SUBJECT = (
+    'Invitation to apply — {{course}} at {{highschool}}'
+)
+
+DEFAULT_NEW_TEACHER_EMAIL_MESSAGE = (
+    '<p>Dear {{new_teacher_name}},</p>'
+    '<p>{{highschool}} has indicated you will be teaching {{course}} for '
+    '{{academic_year}}. To teach this course you need to complete an '
+    'instructor application.</p>'
+    '<p>Please begin here: {{link}}</p>'
+)
+
 class future_sections(forms.Form):
 
     class Media:
@@ -485,6 +497,28 @@ class future_sections(forms.Form):
         validators=[validate_html_short_code],
         label='Reviewed Notification Email Message',
         help_text='Email template sent when status changes to reviewed. Shortcodes: {{course}}, {{highschool}}, {{instructor_first_name}}, {{instructor_last_name}}. <a href="#" class="float-right" onClick="do_bulk_action(\'future_sections\', \'reviewed_email_message\')" >See Preview</a>'
+    )
+
+    new_teacher_email_subject = forms.CharField(
+        max_length=None,
+        required=False,
+        label='New Teacher Email Subject',
+        help_text='Subject line pre-filled when CE staff email a new teacher '
+                  'named on a section marked as having changed teachers. '
+                  'Leave blank to use the default.'
+    )
+
+    new_teacher_email_message = forms.CharField(
+        max_length=None,
+        required=False,
+        widget=forms.Textarea,
+        validators=[validate_html_short_code],
+        label='New Teacher Email Message',
+        help_text='Body pre-filled when CE staff email a new teacher. Staff '
+                  'can edit it before sending. Shortcodes: '
+                  '{{new_teacher_name}}, {{course}}, {{highschool}}, '
+                  '{{academic_year}}, {{current_teacher_name}}, '
+                  '{{term_name}}, {{link}}. Leave blank to use the default.'
     )
 
     # ── Pending Request Notifications ────────────────────────────────────
