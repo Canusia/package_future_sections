@@ -5,7 +5,7 @@ from django.utils.safestring import mark_safe
 from django.utils.html import format_html
 
 from django.core.validators import validate_email
-from datetime import datetime
+import datetime
 from django import forms
 from django.forms.formsets import BaseFormSet
 from django.core.exceptions import ValidationError
@@ -103,7 +103,7 @@ class ConfirmHighSchoolAdministratorsForm(forms.Form):
             action = data.get('action')
 
             fp.meta[f'{action}'] = 'Yes'
-            fp.meta[f'{action}_at'] = datetime.now().strftime('%m/%d/%Y')
+            fp.meta[f'{action}_at'] = datetime.datetime.now().strftime('%m/%d/%Y')
             fp.meta[f'{action}_by'] = request.user.id
 
             # print(fp.meta)
@@ -350,6 +350,23 @@ class TeacherCourseSectionForm(forms.Form):
         if term:
             data['term_name'] = str(term)
             data['term'] = str(term.id)
+
+        # Only compare when both values actually parsed as dates. Hidden date
+        # fields are CharFields, so their values are plain strings and this
+        # check correctly no-ops for them.
+        start = data.get('start_date')
+        end = data.get('end_date')
+        if isinstance(start, datetime.date) and isinstance(end, datetime.date) \
+                and end < start:
+            self.add_error(
+                'end_date',
+                'End Date cannot be earlier than Start Date.')
+
+        # section_info is a JSONField; date objects are not JSON serializable.
+        for date_name in TeachingSectionFieldSchema.get_date_field_names():
+            value = data.get(date_name)
+            if isinstance(value, datetime.date):
+                data[date_name] = value.isoformat()
 
         return data
 
