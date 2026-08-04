@@ -53,6 +53,13 @@ def is_dependent_field(field_name):
 @register.simple_tag
 def get_existing_file_field(form, field_name):
     """Return the hidden companion field holding *field_name*'s stored URL."""
+    # NOTE: this companion is only rendered by the main-loop branch of
+    # teaching_course.html. A file field that ever declares `depends_on`
+    # would be rendered by the dependent-field branch instead, which does
+    # not call this tag — so it would render with no companion, and its
+    # stored URL would be lost on save (the dependent hide-path also clears
+    # its inputs). Unreachable today since assessment_upload (the only file
+    # field) has no depends_on.
     companion = f'{field_name}_existing'
     if companion in form.fields:
         return form[companion]

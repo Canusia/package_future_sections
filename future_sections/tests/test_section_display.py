@@ -18,6 +18,14 @@ class FileDisplayTests(SimpleTestCase):
         self.assertNotIn('href', out)
         self.assertEqual(out, 'X Y')
 
+    def test_non_http_scheme_renders_no_anchor(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'assessment_upload': 'javascript:alert(1)'},
+            'X {assessment_upload} Y')
+        self.assertNotIn('<a', out)
+        self.assertNotIn('javascript:', out)
+        self.assertEqual(out, 'X Y')
+
 
 class DateDisplayTests(SimpleTestCase):
     def test_iso_date_renders_in_us_format(self):
@@ -60,3 +68,29 @@ class ExistingBehaviourTests(SimpleTestCase):
             {'estimated_enrollment': '25'},
             '{estimated_enrollment} | {class_period}')
         self.assertEqual(out, '25')
+
+
+class XssEscapingTests(SimpleTestCase):
+    def test_notes_with_a_script_payload_renders_escaped_with_no_live_tag(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'notes': '<img src=x onerror=alert(1)>'}, '{notes}')
+        self.assertNotIn('<img', out)
+        self.assertIn('&lt;img', out)
+
+    def test_ampersand_in_a_plain_value_is_escaped(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'class_period': 'Math & Science'}, '{class_period}')
+        self.assertEqual(out, 'Math &amp; Science')
+
+    def test_syllabus_link_still_renders_as_a_working_anchor(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'file': 'https://files.test/s.pdf'}, '{syllabus_link}')
+        self.assertIn("<a href='https://files.test/s.pdf'", out)
+        self.assertIn('Syllabus</a>', out)
+
+    def test_file_anchor_still_renders_for_https_url(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'assessment_upload': 'https://files.test/a.pdf'},
+            '{assessment_upload}')
+        self.assertIn('<a', out)
+        self.assertIn("href='https://files.test/a.pdf'", out)

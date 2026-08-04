@@ -127,7 +127,7 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
             request.POST
         )
 
-        teaching_formset = TeachingFormSet(request.POST)
+        teaching_formset = TeachingFormSet(request.POST, request.FILES)
 
         if teacher_course_teaching_form.is_valid() and teaching_formset.is_valid():
             section_info = build_section_info_from_formset(

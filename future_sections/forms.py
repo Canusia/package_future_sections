@@ -368,6 +368,23 @@ class TeacherCourseSectionForm(forms.Form):
             if isinstance(value, datetime.date):
                 data[date_name] = value.isoformat()
 
+        # Required file fields: a plain HTML file input can't be pre-filled,
+        # so a required file field always looks empty on a save that isn't
+        # re-uploading. When that's the only reason the field errored and the
+        # hidden `_existing` companion is carrying a previously stored URL,
+        # accept it here instead of blocking the whole form. This is not the
+        # authoritative acceptance: build_section_info_from_formset only
+        # persists this value if it matches a URL already stored somewhere
+        # on the record, so a tampered `_existing` value still can't inject
+        # an arbitrary URL — it just ends up stored as ''.
+        for file_name in TeachingSectionFieldSchema.get_file_field_names():
+            if file_name not in self.fields:
+                continue
+            existing_value = data.get(f'{file_name}_existing')
+            if file_name in self._errors and existing_value:
+                del self._errors[file_name]
+                data[file_name] = existing_value
+
         return data
 
 

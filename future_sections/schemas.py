@@ -12,10 +12,12 @@ Single source of truth for:
 import datetime
 import re
 from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
 from django import forms
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 
 
@@ -33,8 +35,8 @@ class TeachingSectionFieldSchema(BaseModel):
     Each field carries metadata in json_schema_extra:
     - default_label: label shown in the form
     - default_help_text: optional help text
-    - widget_type: text | textarea | checkbox
-    - field_type: string | boolean | integer
+    - widget_type: text | textarea | checkbox | select | file | date | email
+    - field_type: string | boolean | integer | date
     """
 
     estimated_enrollment: Optional[str] = Field(
@@ -422,11 +424,24 @@ class TeachingSectionFieldSchema(BaseModel):
                 value = "Yes" if value else ""
             elif value and key in file_fields:
                 link_label = cls.get_field_meta(key).get("default_label", key)
-                value = (
-                    f"<a href='{value}' target='_blank'>{link_label}</a>"
-                )
+                if urlparse(str(value)).scheme.lower() in ("http", "https"):
+                    value = format_html(
+                        "<a href='{}' target='_blank'>{}</a>",
+                        value, link_label,
+                    )
+                else:
+                    # Unsupported scheme (e.g. javascript:) — render no
+                    # anchor rather than a bare, unvalidated URL.
+                    value = ""
             elif value and key in date_fields:
                 value = _display_date(value)
+            else:
+                # Ordinary section values (notes, class_period,
+                # highschool_course_name, etc.) come from instructor input
+                # and are substituted into a template that is rendered as
+                # raw HTML (mark_safe below) — escape them so instructor
+                # input can't execute as HTML/JS in the CE admin's browser.
+                value = escape(value)
             display = display.replace("{" + key + "}", str(value))
 
         # Syllabus link placeholder

@@ -131,7 +131,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
 
         if request.method == 'POST':
             teacher_course_teaching_form = TeacherCourseTeachingForm(request.POST)
-            teaching_formset = TeachingFormSet(request.POST)
+            teaching_formset = TeachingFormSet(request.POST, request.FILES)
 
             # Get or create FutureProjection
             highschool_id = teacher_course.teacher_highschool.highschool.id
