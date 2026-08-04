@@ -107,16 +107,17 @@ def render_course_display(template, course):
         return course.title
 
 
-def build_prev_year_lookup(previous_academic_year_id):
+def build_prev_year_lookup(previous_academic_year_id, statuses=None):
     """Return ``{f'{course_id}_{highschool_id}': [{term_name, count}, …]}``
-    of active previous-year section counts.
+    of previous-year section counts.
 
     Feeds the "Previous Year" column in both the HS admin and the CE portal,
     which is why it lives here rather than in either view.
 
-    Only active sections count. ``ClassSection.CLASS_STATUS`` is
-    ``(('A', 'Active'), ('C', 'Cancelled'))`` — the stored value is the
-    single-letter code, so this filters on ``'A'``, not on the label.
+    *statuses* is the tenant's ``prev_year_class_status`` setting — a list of
+    ``ClassSection.CLASS_STATUS`` codes (the stored values are codes such as
+    ``'A'``, not labels such as ``'Active'``). When it is empty or absent,
+    classes of every status are counted.
     """
     from django.db.models import Count
     from cis.models.section import ClassSection
@@ -125,11 +126,12 @@ def build_prev_year_lookup(previous_academic_year_id):
     if not previous_academic_year_id:
         return lookup
 
+    filters = {'term__academic_year__id': previous_academic_year_id}
+    if statuses:
+        filters['status__in'] = list(statuses)
+
     rows = (
-        ClassSection.objects.filter(
-            term__academic_year__id=previous_academic_year_id,
-            status='A',
-        )
+        ClassSection.objects.filter(**filters)
         .values('course_id', 'highschool_id', 'term__id', 'term__label')
         .annotate(count=Count('id'))
     )

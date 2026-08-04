@@ -651,7 +651,9 @@ class CourseRequestViewSet(viewsets.ViewSet):
             }
 
         # Build previous year section counts per (course, highschool, term)
-        prev_year_lookup = build_prev_year_lookup(previous_academic_year_id)
+        prev_year_lookup = build_prev_year_lookup(
+            previous_academic_year_id,
+            fs_config.get('prev_year_class_status'))
 
         # Build response data
         course_display_template = fs_config.get('course_display_template', '{course_title}')

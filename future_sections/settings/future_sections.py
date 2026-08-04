@@ -18,6 +18,7 @@ from django.shortcuts import render, get_object_or_404
 from cis.models.term import AcademicYear, Term
 from cis.models.course import Course, CourseAdministrator
 from cis.models.teacher import TeacherCourseCertificate
+from cis.models.section import ClassSection
 from cis.models.highschool_administrator import HSPosition
 
 try:
@@ -95,6 +96,15 @@ class future_sections(forms.Form):
         label="Previous Year Reference",
         help_text='Select a prior academic year to show what was previously offered at the high school',
         required=True
+    )
+
+    prev_year_class_status = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple,
+        choices=ClassSection.CLASS_STATUS,
+        label="Previous Year Class Status",
+        help_text='Only previous-year classes with the selected status(es) are counted in the '
+                  '"Previous Year" column. Leave every option unselected to count classes of any status.',
+        required=False
     )
 
     cycle_terms = forms.ModelMultipleChoiceField(

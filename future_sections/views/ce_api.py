@@ -127,7 +127,8 @@ class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         fs_config = fs_settings.from_db()
 
         context['prev_year_lookup'] = build_prev_year_lookup(
-            fs_config.get('previous_academic_year'))
+            fs_config.get('previous_academic_year'),
+            fs_config.get('prev_year_class_status'))
         return context
 
 
