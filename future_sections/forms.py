@@ -17,6 +17,7 @@ from cis.models.teacher import Teacher, TeacherCourseCertificate, TeacherHighSch
 from cis.models.highschool import HighSchool
 from cis.models.course import Cohort, Course
 from cis.models.term import AcademicYear, Term
+from cis.validators import validate_html_short_code
 from .models import FutureCourse, FutureProjection
 from .schemas import TeachingSectionFieldSchema
 from .utils import sanitize_plain_text
@@ -1011,9 +1012,11 @@ class EmailNewTeacherForm(forms.Form):
         label='To',
         widget=forms.EmailInput(attrs={'class': 'form-control'}))
     subject = forms.CharField(
-        widget=forms.TextInput(attrs={'class': 'form-control'}))
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
+        validators=[validate_html_short_code])
     message = forms.CharField(
-        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 10}))
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 10}),
+        validators=[validate_html_short_code])
     mode = forms.ChoiceField(
         choices=MODE_CHOICES,
         initial='start_app',

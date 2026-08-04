@@ -302,6 +302,23 @@ def get_or_create_future_projection(highschool_id, user):
     return projection
 
 
+class ExistingAccountNotApplicantError(Exception):
+    """Raised by ``get_or_create_applicant`` when *email* already belongs to
+    an existing account that holds a role other than ``applicant``.
+
+    Reusing such an account would attach an applicant record to someone's
+    existing, possibly privileged, login and email them a verification link
+    into the applicant flow — so no account is touched and no mail of any
+    kind is sent when this is raised.
+    """
+
+    def __init__(self, email):
+        self.email = email
+        super().__init__(
+            f'{email} already belongs to an existing account that is not '
+            'an applicant.')
+
+
 def get_or_create_applicant(email, full_name):
     """Return ``(TeacherApplicant, created)`` for *email*.
 
@@ -309,6 +326,12 @@ def get_or_create_applicant(email, full_name):
     account for the same address. The applicant is left unverified: the
     caller sends the verification email so the recipient proves they control
     the address before they can set a password.
+
+    Raises:
+        ExistingAccountNotApplicantError: if an existing account matches
+            *email* and holds any role other than ``applicant`` (e.g.
+            instructor, student, ce). A user with no roles at all is fine
+            to reuse.
     """
     import importlib.util
     from cis.models.customuser import CustomUser
@@ -327,6 +350,10 @@ def get_or_create_applicant(email, full_name):
         user = CustomUser.objects.create(
             username=email, email=email,
             first_name=first_name, last_name=last_name)
+    else:
+        roles = user.get_roles()
+        if any(role != 'applicant' for role in roles):
+            raise ExistingAccountNotApplicantError(email)
 
     applicant = TeacherApplicant.objects.filter(user=user).first()
     if applicant is not None:

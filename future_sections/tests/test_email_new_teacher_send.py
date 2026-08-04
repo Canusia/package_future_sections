@@ -115,6 +115,20 @@ class ComposeRenderTests(_Base):
         self.assertIn('confirm_recipient', body)
 
 
+class NonUUIDFutureCourseIdTests(_Base):
+    def test_get_with_non_uuid_future_course_id_404s(self):
+        response = self.client.get(self.url, {
+            'action': 'email-new-teacher',
+            'future_course_id': 'not-a-uuid',
+            'section_index': 0,
+        })
+        self.assertEqual(response.status_code, 404)
+
+    def test_post_with_non_uuid_future_course_id_404s(self):
+        response = self._post(future_course_id='not-a-uuid')
+        self.assertEqual(response.status_code, 404)
+
+
 @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
 class StartAppSendTests(_Base):
     def test_sends_one_email_to_the_recipient(self):

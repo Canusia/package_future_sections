@@ -98,3 +98,25 @@ class EmailNewTeacherFormTests(SimpleTestCase):
         form = _form(_Course([CHANGED]), recipient='not-an-email')
         self.assertFalse(form.is_valid())
         self.assertIsNone(form.section)
+
+    def test_broken_subject_shortcode_is_rejected(self):
+        # A stray '{%' must be caught here, before any invite-mode side
+        # effect runs (account creation, verification email).
+        form = _form(_Course([CHANGED]), subject='Hi {% if %}')
+        self.assertFalse(form.is_valid())
+        self.assertIn('subject', form.errors)
+
+    def test_broken_message_shortcode_is_rejected(self):
+        form = _form(_Course([CHANGED]), message='Body {% if %}')
+        self.assertFalse(form.is_valid())
+        self.assertIn('message', form.errors)
+
+    def test_valid_shortcodes_in_message_still_pass(self):
+        form = _form(_Course([CHANGED]),
+                     message='Hello {{new_teacher_name}} — {{link}}')
+        self.assertTrue(form.is_valid())
+
+    def test_section_is_none_when_subject_shortcode_broken(self):
+        form = _form(_Course([CHANGED]), subject='Hi {% if %}')
+        self.assertFalse(form.is_valid())
+        self.assertIsNone(form.section)

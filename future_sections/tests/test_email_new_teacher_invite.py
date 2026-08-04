@@ -1,5 +1,6 @@
 from unittest import mock
 
+from django.contrib.auth.models import Group
 from django.core import mail
 from django.test import override_settings
 
@@ -7,6 +8,9 @@ from cis.models.customuser import CustomUser
 
 from future_sections.future_sections.tests.test_email_new_teacher_send import (
     LOCMEM, _Base, _flush,
+)
+from future_sections.future_sections.utils import (
+    ExistingAccountNotApplicantError, get_or_create_applicant,
 )
 
 
@@ -33,12 +37,29 @@ class InviteModeTests(_Base):
         self.assertTrue(
             CustomUser.objects.filter(email='jane@zillah.test').exists())
 
-    def test_sends_the_verification_email(self):
+    @override_settings(DEBUG=False)
+    def test_sends_the_verification_email_when_debug_false(self):
+        # Container defaults to DEBUG=True (see
+        # test_verification_email_skipped_when_debug_true below), so this
+        # exercises the "real" deploy path explicitly.
         TeacherApplicant = _applicant_model()
         with mock.patch.object(
                 TeacherApplicant, 'send_verification_request_email') as send:
             self._post(mode='invite')
         self.assertTrue(send.called)
+
+    @override_settings(DEBUG=True)
+    def test_verification_email_skipped_when_debug_true(self):
+        # Testing invite mode locally must never email a real person; the
+        # applicant record should still be created so the flow stays
+        # testable.
+        TeacherApplicant = _applicant_model()
+        before = TeacherApplicant.objects.count()
+        with mock.patch.object(
+                TeacherApplicant, 'send_verification_request_email') as send:
+            self._post(mode='invite')
+        self.assertFalse(send.called)
+        self.assertEqual(TeacherApplicant.objects.count(), before + 1)
 
     def test_does_not_create_a_teacher_application(self):
         # complete_signup creates that record; a second one would be a
@@ -83,3 +104,85 @@ class InviteModeTests(_Base):
             self._post(mode='invite')
         _flush()
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_existing_applicant_only_user_is_reused(self):
+        # A user whose only role is 'applicant' (e.g. a returning invitee)
+        # is fine to reuse.
+        applicant_group, _ = Group.objects.get_or_create(name='applicant')
+        user = CustomUser.objects.create(
+            username='jane@zillah.test', email='jane@zillah.test',
+            first_name='Jane', last_name='Roe')
+        user.groups.add(applicant_group)
+        before = CustomUser.objects.count()
+        TeacherApplicant = _applicant_model()
+        with mock.patch.object(TeacherApplicant,
+                               'send_verification_request_email'):
+            response = self._post(mode='invite')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(CustomUser.objects.count(), before)
+
+    def test_privileged_existing_account_is_refused(self):
+        # An address that already belongs to an instructor/student/ce
+        # account must not be reused as an applicant.
+        for role in ('instructor', 'student', 'ce'):
+            with self.subTest(role=role):
+                CustomUser.objects.filter(
+                    email='jane@zillah.test').delete()
+                group, _ = Group.objects.get_or_create(name=role)
+                user = CustomUser.objects.create(
+                    username='jane@zillah.test', email='jane@zillah.test',
+                    first_name='Jane', last_name='Roe')
+                user.groups.add(group)
+
+                user_count_before = CustomUser.objects.count()
+                TeacherApplicant = _applicant_model()
+                applicant_count_before = TeacherApplicant.objects.count()
+
+                with mock.patch.object(
+                        TeacherApplicant,
+                        'send_verification_request_email') as send:
+                    response = self._post(mode='invite')
+
+                _flush()
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('not an applicant',
+                               response.json()['message'])
+                self.assertEqual(CustomUser.objects.count(),
+                                  user_count_before)
+                self.assertEqual(TeacherApplicant.objects.count(),
+                                  applicant_count_before)
+                self.assertFalse(send.called)
+                self.assertEqual(len(mail.outbox), 0)
+
+
+class GetOrCreateApplicantRoleGuardTests(_Base):
+    """Unit-level coverage of the role guard directly on the helper."""
+
+    def test_no_roles_is_reused(self):
+        user = CustomUser.objects.create(
+            username='noroles@zillah.test', email='noroles@zillah.test')
+        before = CustomUser.objects.count()
+        applicant, _created = get_or_create_applicant(
+            'noroles@zillah.test', 'No Roles')
+        self.assertEqual(applicant.user_id, user.id)
+        self.assertEqual(CustomUser.objects.count(), before)
+
+    def test_applicant_role_is_reused(self):
+        group, _ = Group.objects.get_or_create(name='applicant')
+        user = CustomUser.objects.create(
+            username='onlyapplicant@zillah.test',
+            email='onlyapplicant@zillah.test')
+        user.groups.add(group)
+        before = CustomUser.objects.count()
+        applicant, _created = get_or_create_applicant(
+            'onlyapplicant@zillah.test', 'Only Applicant')
+        self.assertEqual(applicant.user_id, user.id)
+        self.assertEqual(CustomUser.objects.count(), before)
+
+    def test_instructor_role_is_refused(self):
+        group, _ = Group.objects.get_or_create(name='instructor')
+        user = CustomUser.objects.create(
+            username='teacher@zillah.test', email='teacher@zillah.test')
+        user.groups.add(group)
+        with self.assertRaises(ExistingAccountNotApplicantError):
+            get_or_create_applicant('teacher@zillah.test', 'A Teacher')

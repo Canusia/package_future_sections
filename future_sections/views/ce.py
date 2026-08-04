@@ -3,12 +3,13 @@ CE Portal Views for Future Sections
 """
 import json
 import logging
+import uuid
 
 from django.conf import settings as s
 from django.db import IntegrityError
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, render
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.forms.formsets import formset_factory
 from django.template.loader import get_template
 from django.utils.safestring import mark_safe
@@ -102,8 +103,16 @@ def email_new_teacher(request):
     from ..utils import add_history_entry, get_fs_config
 
     source = request.POST if request.method == 'POST' else request.GET
-    future_course = get_object_or_404(
-        FutureCourse, pk=source.get('future_course_id'))
+    future_course_id = source.get('future_course_id')
+    # Guard a client-supplied future_course_id: a non-UUID value (fuzzing, a
+    # stale/uninitialised form field) would raise ValidationError -> 500 in
+    # the pk lookup below. Same idiom as the PT-1 term_id guard (see
+    # cis/views/teacher.py).
+    try:
+        uuid.UUID(str(future_course_id))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404('Invalid future_course_id')
+    future_course = get_object_or_404(FutureCourse, pk=future_course_id)
     fs_config = get_fs_config()
 
     sections = (future_course.section_info or {}).get('sections') or []
@@ -164,11 +173,18 @@ def email_new_teacher(request):
     recipient = data['recipient']
 
     if data['mode'] == 'invite':
-        from ..utils import get_or_create_applicant
+        from ..utils import ExistingAccountNotApplicantError, get_or_create_applicant
         try:
             applicant, _created = get_or_create_applicant(
                 recipient, context_values['new_teacher_name'])
-            applicant.send_verification_request_email()
+        except ExistingAccountNotApplicantError:
+            return JsonResponse({
+                'status': 'error',
+                'message': (
+                    f'{recipient} already belongs to an existing account '
+                    'that is not an applicant. Handle this teacher through '
+                    'the normal add-teacher route instead.'),
+            }, status=400)
         except Exception as exc:
             logger.error('New-teacher invite failed for %s: %s',
                          recipient, exc)
@@ -177,6 +193,12 @@ def email_new_teacher(request):
                 'message': ('Could not create the invitation. '
                             'No email was sent.'),
             }, status=400)
+
+        if django_settings.DEBUG:
+            logger.info(
+                'DEBUG mode: skipping verification email to %s', recipient)
+        else:
+            applicant.send_verification_request_email()
 
     context = Context(context_values)
     subject = Template(data['subject']).render(context)
