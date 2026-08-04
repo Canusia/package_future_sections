@@ -547,7 +547,7 @@
                                             'render': function (data, type, row, meta) {
                                                 let academic_year_id = $("#pending_fc_academic_year").val()
 
-                                                let actions = "<button type=\"button\" class=\"btn btn-sm btn-primary course-action\" data-academic_year=\"" + academic_year_id + "\" data-toggle=\"modal\" data-course-certificate=\"" + row.certificate_id + "\" data-id=\"-1\" data-action=\"teaching-section\" data-target=\"#teachingModal\">{{ enter_course_details_label|escapejs }}</button>&nbsp;<button type=\"button\" class=\"btn btn-sm btn-secondary mt-xs-1 course-action\" data-course-certificate=\"" + row.certificate_id + "\" data-academic_year=\"" + academic_year_id + "\" data-action=\"not-teaching-section\" data-id=\"-1\" data-target=\"\">{{ not_teaching_label|escapejs }}</button>"
+                                                let actions = "<button type=\"button\" class=\"btn btn-sm btn-primary course-action\" data-academic_year=\"" + academic_year_id + "\" data-toggle=\"modal\" data-course-certificate=\"" + row.certificate_id + "\" data-id=\"-1\" data-action=\"teaching-section\" data-target=\"#teachingModal\">{{ enter_course_details_label|escape|escapejs }}</button>&nbsp;<button type=\"button\" class=\"btn btn-sm btn-secondary mt-xs-1 course-action\" data-course-certificate=\"" + row.certificate_id + "\" data-academic_year=\"" + academic_year_id + "\" data-action=\"not-teaching-section\" data-id=\"-1\" data-target=\"\">{{ not_teaching_label|escape|escapejs }}</button>"
                                                 return actions
                                             }
                                         }

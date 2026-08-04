@@ -21,6 +21,8 @@ from cis.models.teacher import TeacherCourseCertificate
 from cis.models.section import ClassSection
 from cis.models.highschool_administrator import HSPosition
 
+from ..utils import sanitize_plain_text
+
 try:
     from instructor_app.instructor_app.models import TeacherApplication
 except ImportError:
@@ -584,6 +586,17 @@ class future_sections(forms.Form):
 
     def clean_reviewer_roles(self):
         return self.data.getlist('reviewer_roles')
+
+    # The offering-action button labels are plain text: they are injected into
+    # a JS-built button, and unlike the rich-text message settings there is no
+    # reason for markup in a button caption.
+    def clean_enter_course_details_label(self):
+        return sanitize_plain_text(
+            self.cleaned_data.get('enter_course_details_label'))
+
+    def clean_not_teaching_label(self):
+        return sanitize_plain_text(
+            self.cleaned_data.get('not_teaching_label'))
 
     def clean(self):
         cleaned = super().clean()

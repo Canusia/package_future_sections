@@ -96,3 +96,36 @@ class CEPortalWiringTests(SimpleTestCase):
         # The old hardcoded button text must be gone from the row renderer.
         self.assertNotIn('>Enter Course Details</button>', source)
         self.assertNotIn('>Not teaching this course</button>', source)
+
+
+class LabelsArePlainTextTests(SimpleTestCase):
+    """Button captions are plain text — unlike the rich-text message settings
+    that are deliberately rendered as markup."""
+
+    def test_settings_strip_markup_on_save(self):
+        from future_sections.future_sections.utils import sanitize_plain_text
+        # The clean_* hooks delegate to this helper.
+        self.assertEqual(
+            sanitize_plain_text('<script>alert(1)</script>Go'), 'alert(1)Go')
+        self.assertEqual(sanitize_plain_text('<b>Enter</b>'), 'Enter')
+
+    def test_settings_declare_sanitising_clean_hooks(self):
+        for name in ('clean_enter_course_details_label',
+                     'clean_not_teaching_label'):
+            self.assertTrue(hasattr(FSForm, name), name)
+
+    def test_hs_js_escapes_the_labels(self):
+        source = _read(HS_JS)
+        self.assertIn('function escapeHtml', source)
+        self.assertIn("escapeHtml(", source)
+        self.assertNotIn(
+            "var enterDetailsLabel = config.data('enter-details-label')",
+            source)
+
+    def test_ce_template_escapes_for_html_not_just_js(self):
+        # escapejs alone keeps the JS string intact but still yields a live
+        # '<' in the assembled HTML, so escape must come first.
+        source = _read(CE_TEMPLATE)
+        self.assertIn('{{ enter_course_details_label|escape|escapejs }}',
+                      source)
+        self.assertIn('{{ not_teaching_label|escape|escapejs }}', source)

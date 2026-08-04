@@ -29,12 +29,19 @@ function getCookie(name) {
     var highschoolIds = config.data('highschool-ids') ? String(config.data('highschool-ids')).split(',') : [];
     var roleIds = config.data('role-ids') ? String(config.data('role-ids')).split(',') : [];
     var windowIsOpen = config.data('window-is-open') === true || config.data('window-is-open') === 'true';
-    // Tenant-configurable button wording; the fallbacks only apply when the
-    // page was rendered without the settings (e.g. an older template).
-    var enterDetailsLabel = config.data('enter-details-label')
-        || 'Enter Course Details';
-    var notTeachingLabel = config.data('not-teaching-label')
-        || 'We are not teaching this course';
+    // Tenant-configurable button wording. Escaped here because the buttons are
+    // assembled as an HTML string: these captions are plain text, unlike the
+    // rich-text message settings that are deliberately rendered as markup.
+    // The fallbacks only apply when the page was rendered without the
+    // settings (e.g. an older template).
+    function escapeHtml(value) {
+        return $('<div>').text(value == null ? '' : value).html();
+    }
+
+    var enterDetailsLabel = escapeHtml(
+        config.data('enter-details-label') || 'Enter Course Details');
+    var notTeachingLabel = escapeHtml(
+        config.data('not-teaching-label') || 'We are not teaching this course');
 
     // Map action names to their API endpoints
     function getActionUrl(action) {
