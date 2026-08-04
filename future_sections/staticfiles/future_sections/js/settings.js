@@ -68,6 +68,40 @@ function initReviewedNotificationToggle() {
     $toggle.on('change', toggleFields);
 }
 
+/**
+ * Reorder a config table's draggable rows to match saved weights.
+ *
+ * Rows render in schema declaration order; without this a saved order does
+ * not survive a page reload. Unweighted rows sort last, and ties keep their
+ * current DOM order.
+ */
+function applySavedFieldOrder($ui, weights, inputClass) {
+    var $table = $ui.find('table').first();
+    var $body = $table.find('tbody').first();
+    if (!$body.length) return;
+
+    var rows = [];
+    $body.children('tr').each(function (index) {
+        var $row = $(this);
+        var $input = $row.find('.' + inputClass);
+        rows.push({
+            el: this,
+            draggable: $row.find('.fw-grip').length > 0,
+            index: index,
+            weight: $input.length && weights.hasOwnProperty($input.data('field'))
+                ? weights[$input.data('field')]
+                : Number.MAX_SAFE_INTEGER
+        });
+    });
+
+    rows.filter(function (r) { return r.draggable; })
+        .sort(function (a, b) {
+            if (a.weight !== b.weight) return a.weight - b.weight;
+            return a.index - b.index;
+        })
+        .forEach(function (r) { $body.append(r.el); });
+}
+
 function initTeachingFormConfig() {
     var $hidden = $('input[name="teaching_form_config"]');
     if (!$hidden.length) return;
@@ -111,6 +145,8 @@ function initTeachingFormConfig() {
         var w = weights[$(this).data('field')];
         if (w !== undefined) $(this).val(w);
     });
+
+    applySavedFieldOrder($ui, weights, 'tfc-weight');
 
     $('#tfc-show-syllabus').prop('checked', showSyllabus);
     $('#tfc-display-template').val(displayTemplate);
@@ -193,6 +229,10 @@ function initTeachingFormConfig() {
 
     // Sync on form submit
     $hidden.closest('form').on('submit', syncToHidden);
+
+    if (window.initFieldReorder) {
+        window.initFieldReorder('#teaching-form-config-ui', 'tfc-weight');
+    }
 }
 
 function initAddTeacherFormConfig() {
@@ -236,6 +276,8 @@ function initAddTeacherFormConfig() {
         var w = weights[$(this).data('field')];
         if (w !== undefined) $(this).val(w);
     });
+
+    applySavedFieldOrder($ui, weights, 'atfc-weight');
 
     // Sync UI state to hidden JSON field
     function syncToHidden() {
@@ -312,6 +354,10 @@ function initAddTeacherFormConfig() {
 
     // Sync on form submit
     $hidden.closest('form').on('submit', syncToHidden);
+
+    if (window.initFieldReorder) {
+        window.initFieldReorder('#add-teacher-form-config-ui', 'atfc-weight');
+    }
 }
 
 function initNewTeacherToggle() {
