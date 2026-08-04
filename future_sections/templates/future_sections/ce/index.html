@@ -677,6 +677,16 @@
                                                             offer_info += '<br>' + displayText;
                                                         }
                                                     });
+                                                    $.each(row.changed_teacher_sections || [], function(k, cs) {
+                                                        var who = cs.new_teacher_name || cs.new_teacher_email || 'new teacher';
+                                                        offer_info += '<br><a href="#" class="email-new-teacher" ' +
+                                                            'data-toggle="modal" data-target="#teachingModal" ' +
+                                                            'data-future-course="' + row.id + '" ' +
+                                                            'data-section-index="' + cs.index + '" ' +
+                                                            'title="Email the new teacher">' +
+                                                            '<i class="fas fa-envelope"></i>&nbsp;Email ' +
+                                                            $('<div>').text(who).html() + '</a>';
+                                                    });
                                                     return offer_info;
                                                 } else if (teaching == 'no') {
                                                     return 'Not Teaching';
@@ -942,6 +952,28 @@
                     }
                 });
             })
+
+        $(document).on('click', '.email-new-teacher', function () {
+            var $link = $(this);
+            $.blockUI();
+            $.ajax({
+                type: 'GET',
+                url: "{% url 'future_sections_ce:future_sections_actions' %}",
+                data: {
+                    'action': 'email-new-teacher',
+                    'future_course_id': $link.attr('data-future-course'),
+                    'section_index': $link.attr('data-section-index')
+                },
+                success: function (response) {
+                    $.unblockUI();
+                    $('#teachingModal .modal-content > .modal-body').html(response);
+                },
+                error: function () {
+                    $.unblockUI();
+                    alert('Could not open the email form');
+                }
+            });
+        });
     })
 </script>
 
