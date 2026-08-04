@@ -216,8 +216,12 @@ class future_sections(forms.Form):
         widget=forms.CheckboxSelectMultiple
     )
 
+    # Required only when require_personnel_confirmation is 'Yes' — enforced in
+    # clean(). The settings JS hides this field whenever confirmation is off,
+    # so a field-level required=True would block saving on an invisible field.
     confirm_new_personnel = forms.CharField(
         max_length=None,
+        required=False,
         widget=forms.Textarea,
         label="School Personnel Confirmation Checkbox Text",
         validators=[validate_html_short_code],
@@ -555,6 +559,17 @@ class future_sections(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
+
+        # The confirmation checkbox text is only shown — and only used — when
+        # personnel confirmation is being requested.
+        if cleaned.get('require_personnel_confirmation') == '1' \
+                and not cleaned.get('confirm_new_personnel'):
+            self.add_error('confirm_new_personnel',
+                           forms.ValidationError(
+                               'Enter the checkbox text shown to high school '
+                               'administrators when personnel confirmation is '
+                               'required.'))
+
         review_on = cleaned.get('require_review') == '1'
         if review_on and not cleaned.get('reviewer_roles'):
             self.add_error('reviewer_roles',
