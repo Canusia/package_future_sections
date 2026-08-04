@@ -390,7 +390,10 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
         JSON-serializable; cleaned_data['file'] holds the saved URL instead.
       - Uploads any `form-<i>-<name>` file for each schema file field and
         stores the resulting URL under that field's own key, carrying forward
-        the previous URL from `<name>_existing` when nothing new is posted.
+        the previous URL from `<name>_existing` when nothing new is posted,
+        but only when that posted value matches a URL already stored under
+        that key somewhere on the record; otherwise the field is stored as
+        `''`.
 
     Args:
         request: Current HttpRequest (used for request.FILES).
@@ -403,6 +406,17 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
     """
     from cis.backends.storage_backend import PrivateMediaStorage
     from django.utils.text import get_valid_filename
+
+    existing_sections = (future_course.section_info or {}).get(
+        'sections', []) or []
+    known_urls = {
+        name: {
+            section.get(name)
+            for section in existing_sections
+            if section.get(name)
+        }
+        for name in TeachingSectionFieldSchema.get_file_field_names()
+    }
 
     sections = []
     for index, teaching_form in enumerate(teaching_formset):
@@ -436,7 +450,15 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
             elif not cleaned.get(file_name):
                 # No new upload: keep whatever was already stored. A hidden
                 # file field already carries the URL in cleaned[file_name].
-                cleaned[file_name] = cleaned.get(f'{file_name}_existing', '')
+                # The posted `_existing` value is client-supplied and must
+                # match a URL already stored under this key on the record
+                # (any section, since rows can be added/removed/reordered)
+                # before it is trusted.
+                posted_existing = cleaned.get(f'{file_name}_existing', '')
+                if posted_existing in known_urls.get(file_name, set()):
+                    cleaned[file_name] = posted_existing
+                else:
+                    cleaned[file_name] = ''
             cleaned.pop(f'{file_name}_existing', None)
 
         sections.append(cleaned)
