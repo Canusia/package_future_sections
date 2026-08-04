@@ -56,7 +56,8 @@ urlpatterns = [
     ),
     path(
         'ajax',
-        future_sections_actions,
+        user_passes_test(user_has_cis_role, login_url='/')(
+            future_sections_actions),
         name='future_sections_actions'
     ),
     path(
