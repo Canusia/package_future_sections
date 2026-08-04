@@ -121,31 +121,13 @@ class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         return records
 
     def get_serializer_context(self):
-        from cis.models.section import ClassSection
-        from django.db.models import Count
+        from ..utils import build_prev_year_lookup
 
         context = super().get_serializer_context()
         fs_config = fs_settings.from_db()
-        previous_academic_year_id = fs_config.get('previous_academic_year')
 
-        prev_year_lookup = {}
-        if previous_academic_year_id:
-            prev_sections = (
-                ClassSection.objects.filter(
-                    term__academic_year__id=previous_academic_year_id,
-                    status='active',
-                )
-                .values('course_id', 'highschool_id', 'term__id', 'term__label')
-                .annotate(count=Count('id'))
-            )
-            for row in prev_sections:
-                key = f"{row['course_id']}_{row['highschool_id']}"
-                prev_year_lookup.setdefault(key, []).append({
-                    'term_name': row['term__label'],
-                    'count': row['count'],
-                })
-
-        context['prev_year_lookup'] = prev_year_lookup
+        context['prev_year_lookup'] = build_prev_year_lookup(
+            fs_config.get('previous_academic_year'))
         return context
 
 

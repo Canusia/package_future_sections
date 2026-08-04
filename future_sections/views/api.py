@@ -49,6 +49,7 @@ from ..utils import (
     get_user_highschools,
     get_course_certificates_for_user,
     build_initial_from_prev_year,
+    build_prev_year_lookup,
     build_section_info_from_formset,
     render_course_display,
     addable_courses_for_user,
@@ -626,10 +627,6 @@ class CourseRequestViewSet(viewsets.ViewSet):
 
     def list(self, request, *args, **kwargs):
         """Return course requests with merged offering status from FutureCourse."""
-        from cis.models.section import ClassSection
-        from cis.models.term import Term
-        from django.db.models import Count
-
         fs_config = get_fs_config()
         academic_year_id = fs_config.get('academic_year')
         academic_year = AcademicYear.objects.filter(pk=academic_year_id).first()
@@ -654,22 +651,7 @@ class CourseRequestViewSet(viewsets.ViewSet):
             }
 
         # Build previous year section counts per (course, highschool, term)
-        prev_year_lookup = {}
-        if previous_academic_year_id:
-            prev_sections = (
-                ClassSection.objects.filter(
-                    term__academic_year__id=previous_academic_year_id,
-                    status='active',
-                )
-                .values('course_id', 'highschool_id', 'term__id', 'term__label')
-                .annotate(count=Count('id'))
-            )
-            for row in prev_sections:
-                key = f"{row['course_id']}_{row['highschool_id']}"
-                prev_year_lookup.setdefault(key, []).append({
-                    'term_name': row['term__label'],
-                    'count': row['count'],
-                })
+        prev_year_lookup = build_prev_year_lookup(previous_academic_year_id)
 
         # Build response data
         course_display_template = fs_config.get('course_display_template', '{course_title}')

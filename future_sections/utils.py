@@ -107,6 +107,41 @@ def render_course_display(template, course):
         return course.title
 
 
+def build_prev_year_lookup(previous_academic_year_id):
+    """Return ``{f'{course_id}_{highschool_id}': [{term_name, count}, …]}``
+    of active previous-year section counts.
+
+    Feeds the "Previous Year" column in both the HS admin and the CE portal,
+    which is why it lives here rather than in either view.
+
+    Only active sections count. ``ClassSection.CLASS_STATUS`` is
+    ``(('A', 'Active'), ('C', 'Cancelled'))`` — the stored value is the
+    single-letter code, so this filters on ``'A'``, not on the label.
+    """
+    from django.db.models import Count
+    from cis.models.section import ClassSection
+
+    lookup = {}
+    if not previous_academic_year_id:
+        return lookup
+
+    rows = (
+        ClassSection.objects.filter(
+            term__academic_year__id=previous_academic_year_id,
+            status='A',
+        )
+        .values('course_id', 'highschool_id', 'term__id', 'term__label')
+        .annotate(count=Count('id'))
+    )
+    for row in rows:
+        key = f"{row['course_id']}_{row['highschool_id']}"
+        lookup.setdefault(key, []).append({
+            'term_name': row['term__label'],
+            'count': row['count'],
+        })
+    return lookup
+
+
 def build_initial_from_prev_year(teacher_course):
     """Build formset initial data from previous year ClassSections using term mapping.
 
