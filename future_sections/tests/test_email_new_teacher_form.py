@@ -83,3 +83,18 @@ class EmailNewTeacherFormTests(SimpleTestCase):
         form = _form(_Course([CHANGED]))
         self.assertTrue(form.is_valid())
         self.assertEqual(form.section['new_teacher_name'], 'Jane Roe')
+
+    def test_section_is_none_when_confirmation_missing(self):
+        form = _form(_Course([CHANGED]), confirm_recipient=False)
+        self.assertFalse(form.is_valid())
+        self.assertIsNone(form.section)
+
+    def test_section_is_none_when_subject_blank(self):
+        form = _form(_Course([CHANGED]), subject='')
+        self.assertFalse(form.is_valid())
+        self.assertIsNone(form.section)
+
+    def test_section_is_none_when_recipient_invalid(self):
+        form = _form(_Course([CHANGED]), recipient='not-an-email')
+        self.assertFalse(form.is_valid())
+        self.assertIsNone(form.section)

@@ -1041,3 +1041,11 @@ class EmailNewTeacherForm(forms.Form):
                 'That section is not marked as having a new teacher.')
         self.section = section
         return index
+
+    def clean(self):
+        cleaned = super().clean()
+        # `section` is only meaningful on a fully valid form — a caller that
+        # reads it must not see a resolved section from a rejected submission.
+        if self.errors:
+            self.section = None
+        return cleaned
