@@ -18,3 +18,42 @@ def get_form_field(form, field_name):
     if field_name in form.fields:
         return form[field_name]
     return None
+
+
+@register.simple_tag
+def dependent_fields(form, parent_field_name):
+    """
+    Return the bound fields that are conditional on *parent_field_name*.
+
+    Driven by the schema's ``depends_on`` metadata, so a new conditional
+    field needs no template change.
+
+    Usage:
+        {% dependent_fields form "teacher_changed" as dependents %}
+        {% for dep in dependents %}{{ dep|as_crispy_field }}{% endfor %}
+    """
+    from ..schemas import TeachingSectionFieldSchema
+
+    return [
+        form[name]
+        for name in TeachingSectionFieldSchema.get_dependents_of(
+            parent_field_name)
+        if name in form.fields
+    ]
+
+
+@register.simple_tag
+def is_dependent_field(field_name):
+    """True when *field_name* is rendered under a parent, not in the main list."""
+    from ..schemas import TeachingSectionFieldSchema
+
+    return field_name in TeachingSectionFieldSchema.get_dependent_fields()
+
+
+@register.simple_tag
+def get_existing_file_field(form, field_name):
+    """Return the hidden companion field holding *field_name*'s stored URL."""
+    companion = f'{field_name}_existing'
+    if companion in form.fields:
+        return form[companion]
+    return None
