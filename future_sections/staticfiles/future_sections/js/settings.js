@@ -227,12 +227,14 @@ function initTeachingFormConfig() {
     $ui.on('change', '#tfc-show-syllabus', syncToHidden);
     $ui.on('input', '.tfc-label, .tfc-weight, #tfc-display-template', syncToHidden);
 
+    // field_weights.js renumbers weight inputs on drop by assigning
+    // input.value directly (no 'input' event), so re-serialize after a drag
+    // settles. dragend fires after its document-level drop handler has
+    // already renumbered; the setTimeout guarantees ordering regardless.
+    $ui.on('dragend drop', function () { setTimeout(syncToHidden, 0); });
+
     // Sync on form submit
     $hidden.closest('form').on('submit', syncToHidden);
-
-    if (window.initFieldReorder) {
-        window.initFieldReorder('#teaching-form-config-ui', 'tfc-weight');
-    }
 }
 
 function initAddTeacherFormConfig() {
@@ -352,12 +354,14 @@ function initAddTeacherFormConfig() {
 
     $ui.on('input', '.atfc-label, .atfc-weight', syncToHidden);
 
+    // field_weights.js renumbers weight inputs on drop by assigning
+    // input.value directly (no 'input' event), so re-serialize after a drag
+    // settles. dragend fires after its document-level drop handler has
+    // already renumbered; the setTimeout guarantees ordering regardless.
+    $ui.on('dragend drop', function () { setTimeout(syncToHidden, 0); });
+
     // Sync on form submit
     $hidden.closest('form').on('submit', syncToHidden);
-
-    if (window.initFieldReorder) {
-        window.initFieldReorder('#add-teacher-form-config-ui', 'atfc-weight');
-    }
 }
 
 function initNewTeacherToggle() {

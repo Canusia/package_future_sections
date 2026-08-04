@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 
 from django.conf import settings
 from django.http import JsonResponse
+from django.templatetags.static import static
 from django.urls import reverse_lazy
 from django.shortcuts import (
     render
@@ -45,7 +46,6 @@ class future_sections(forms.Form):
 
     class Media:
         js = (
-            'future_sections/js/field_reorder.js',
             'future_sections/js/settings.js',
         )
 
@@ -669,7 +669,7 @@ class future_sections(forms.Form):
             meta = TeachingSectionFieldSchema.get_field_meta(name)
             default_label = meta.get("default_label", name)
             rows_html += (
-                '<tr>'
+                f'<tr draggable="true" data-field="{name}">'
                 '<td class="fw-grip text-center text-muted" '
                 'style="cursor:move;width:32px;">'
                 '<i class="fas fa-grip-vertical"></i></td>'
@@ -693,11 +693,19 @@ class future_sections(forms.Form):
             )
 
         placeholder_list = ", ".join(f"{{{n}}}" for n in schema_fields)
+        field_weights_style = (
+            '<style>'
+            'table.field-weights-table tr[draggable] { cursor: grab; }'
+            'table.field-weights-table td.fw-grip { width: 1.5rem; }'
+            'table.field-weights-table tr.fw-dragging { opacity: .4; }'
+            '</style>'
+        )
         teaching_config_html = (
+            field_weights_style +
             '<div id="teaching-form-config-ui" class="card mb-3">'
             '<div class="card-header"><h5 class="mb-0">Teaching Form Fields</h5></div>'
             '<div class="card-body">'
-            '<table class="table table-sm table-bordered">'
+            '<table class="table table-sm table-bordered field-weights-table">'
             '<thead><tr>'
             '<th style="width:32px"></th>'
             '<th>Field</th>'
@@ -760,7 +768,7 @@ class future_sections(forms.Form):
         at_rows_html = ""
         for name, default_label in add_teacher_fields:
             at_rows_html += (
-                '<tr>'
+                f'<tr draggable="true" data-field="{name}">'
                 '<td class="fw-grip text-center text-muted" '
                 'style="cursor:move;width:32px;">'
                 '<i class="fas fa-grip-vertical"></i></td>'
@@ -787,7 +795,7 @@ class future_sections(forms.Form):
             '<div id="add-teacher-form-config-ui" class="card mb-3">'
             '<div class="card-header"><h5 class="mb-0">Add Teacher Form Fields</h5></div>'
             '<div class="card-body">'
-            '<table class="table table-sm table-bordered">'
+            '<table class="table table-sm table-bordered field-weights-table">'
             '<thead><tr>'
             '<th style="width:32px"></th>'
             '<th>Field</th>'
@@ -818,6 +826,7 @@ class future_sections(forms.Form):
             'Drag a row by its handle to change the order fields appear in the '
             'form. The weight column updates automatically.</small>'
             '</div></div>'
+            f'<script src="{static("js/field_weights.js")}"></script>'
         )
 
         term_mapping_html = (
