@@ -9,6 +9,7 @@ Single source of truth for:
 - Section display formatting
 - Settings help text generation
 """
+import datetime
 import re
 from typing import Optional
 
@@ -16,6 +17,14 @@ from pydantic import BaseModel, Field
 
 from django import forms
 from django.utils.safestring import mark_safe
+
+
+def _display_date(value: str) -> str:
+    """Render an ISO date string as ``m/d/Y``; pass anything else through."""
+    try:
+        return datetime.date.fromisoformat(str(value)).strftime("%m/%d/%Y")
+    except (ValueError, TypeError):
+        return str(value)
 
 
 class TeachingSectionFieldSchema(BaseModel):
@@ -403,11 +412,21 @@ class TeachingSectionFieldSchema(BaseModel):
         """
         display = template
 
+        file_fields = set(cls.get_file_field_names())
+        date_fields = set(cls.get_date_field_names())
+
         for key, value in section.items():
             if value is None:
                 value = ""
             elif isinstance(value, bool):
                 value = "Yes" if value else ""
+            elif value and key in file_fields:
+                link_label = cls.get_field_meta(key).get("default_label", key)
+                value = (
+                    f"<a href='{value}' target='_blank'>{link_label}</a>"
+                )
+            elif value and key in date_fields:
+                value = _display_date(value)
             display = display.replace("{" + key + "}", str(value))
 
         # Syllabus link placeholder
