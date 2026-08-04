@@ -2,6 +2,7 @@
 CE Portal Views for Future Sections
 """
 import json
+import logging
 
 from django.conf import settings as s
 from django.db import IntegrityError
@@ -32,6 +33,8 @@ from ..settings.future_sections import future_sections as fs_settings
 from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
 from cis.menu import cis_menu, draw_menu
+
+logger = logging.getLogger(__name__)
 
 
 def delete_section(request):
@@ -159,6 +162,21 @@ def email_new_teacher(request):
 
     data = form.cleaned_data
     recipient = data['recipient']
+
+    if data['mode'] == 'invite':
+        from ..utils import get_or_create_applicant
+        try:
+            applicant, _created = get_or_create_applicant(
+                recipient, context_values['new_teacher_name'])
+            applicant.send_verification_request_email()
+        except Exception as exc:
+            logger.error('New-teacher invite failed for %s: %s',
+                         recipient, exc)
+            return JsonResponse({
+                'status': 'error',
+                'message': ('Could not create the invitation. '
+                            'No email was sent.'),
+            }, status=400)
 
     context = Context(context_values)
     subject = Template(data['subject']).render(context)

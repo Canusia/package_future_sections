@@ -47,7 +47,7 @@ def _safe_force_login(client, user):
 
 class _Base(TestCase):
     def setUp(self):
-        for name in ('ce', 'instructor', 'faculty'):
+        for name in ('ce', 'instructor', 'faculty', 'applicant'):
             Group.objects.get_or_create(name=name)
 
         self.ay = AcademicYear.objects.create(name='2027-2028')

@@ -302,6 +302,39 @@ def get_or_create_future_projection(highschool_id, user):
     return projection
 
 
+def get_or_create_applicant(email, full_name):
+    """Return ``(TeacherApplicant, created)`` for *email*.
+
+    Reuses an existing user and applicant rather than creating a second
+    account for the same address. The applicant is left unverified: the
+    caller sends the verification email so the recipient proves they control
+    the address before they can set a password.
+    """
+    import importlib.util
+    from cis.models.customuser import CustomUser
+
+    if importlib.util.find_spec('instructor_app.instructor_app'):
+        from instructor_app.instructor_app.models.teacher_applicant_model \
+            import TeacherApplicant
+    else:
+        from instructor_app.models.teacher_applicant_model import (
+            TeacherApplicant)
+
+    first_name, _, last_name = (full_name or '').strip().partition(' ')
+
+    user = CustomUser.objects.filter(email__iexact=email).first()
+    if user is None:
+        user = CustomUser.objects.create(
+            username=email, email=email,
+            first_name=first_name, last_name=last_name)
+
+    applicant = TeacherApplicant.objects.filter(user=user).first()
+    if applicant is not None:
+        return applicant, False
+
+    return TeacherApplicant.objects.create(user=user), True
+
+
 def add_history_entry(obj, user, action):
     """
     Add a history entry to an object's meta field.
