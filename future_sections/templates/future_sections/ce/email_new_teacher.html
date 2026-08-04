@@ -1,0 +1,21 @@
+{% load crispy_forms_tags %}
+<div class="modal-header">
+    <h5 class="modal-title">Email {{ new_teacher_name|default:"new teacher" }}</h5>
+</div>
+<div class="modal-body">
+    <p class="text-muted small">
+        {{ course }} &middot; {{ highschool }} &middot; {{ term_name }}
+    </p>
+    <form method="post" action="{{ form_action_url }}" class="fs-ajax-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="email-new-teacher">
+        <input type="hidden" name="future_course_id" value="{{ future_course_id }}">
+        {{ form|crispy }}
+        <p class="alert alert-info small mb-3">
+            Choosing <strong>Create an invitation</strong> also sends a separate
+            verification email so the teacher can confirm this address.
+        </p>
+        <input type="submit" class="btn btn-primary" value="Send">
+        <button type="button" class="btn btn-sm" onclick="window.closeTeachingModal()">Cancel</button>
+    </form>
+</div>

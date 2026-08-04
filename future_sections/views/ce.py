@@ -55,6 +55,9 @@ def future_sections_actions(request):
                 request.POST.get('academic_year_id')
             )
 
+        if action == 'email-new-teacher':
+            return email_new_teacher(request)
+
     if request.method == 'GET':
         action = request.GET.get('action')
 
@@ -76,6 +79,111 @@ def future_sections_actions(request):
                 request.GET.get('course_certificate'),
                 request.GET.get('academic_year_id')
             )
+        elif action == 'email-new-teacher':
+            return email_new_teacher(request)
+
+
+def email_new_teacher(request):
+    """Compose and send an email to the new teacher named on a section."""
+    from django.conf import settings as django_settings
+    from django.template import Context, Template
+    from django.template.loader import get_template
+    from django.urls import reverse as url_reverse
+    from mailer import send_html_mail
+
+    from ..forms import EmailNewTeacherForm
+    from ..settings.future_sections import (
+        DEFAULT_NEW_TEACHER_EMAIL_SUBJECT,
+        DEFAULT_NEW_TEACHER_EMAIL_MESSAGE,
+    )
+    from ..utils import add_history_entry, get_fs_config
+
+    source = request.POST if request.method == 'POST' else request.GET
+    future_course = get_object_or_404(
+        FutureCourse, pk=source.get('future_course_id'))
+    fs_config = get_fs_config()
+
+    sections = (future_course.section_info or {}).get('sections') or []
+    try:
+        index = int(source.get('section_index', 0))
+    except (TypeError, ValueError):
+        index = -1
+    section = sections[index] if 0 <= index < len(sections) else {}
+
+    teacher_course = future_course.teacher_course
+    highschool = teacher_course.teacher_highschool.highschool
+    start_app_url = request.build_absolute_uri(
+        url_reverse('applicant_app:start_app'))
+
+    context_values = {
+        'new_teacher_name': section.get('new_teacher_name', ''),
+        'course': str(teacher_course.course),
+        'highschool': highschool.name,
+        'academic_year': str(future_course.academic_year),
+        'current_teacher_name': str(teacher_course.teacher_highschool.teacher),
+        'term_name': section.get('term_name', ''),
+        'link': start_app_url,
+    }
+
+    if request.method == 'GET':
+        form = EmailNewTeacherForm(
+            future_course=future_course,
+            initial={
+                'section_index': index,
+                'recipient': section.get('new_teacher_email', ''),
+                'subject': (fs_config.get('new_teacher_email_subject')
+                            or DEFAULT_NEW_TEACHER_EMAIL_SUBJECT),
+                'message': (fs_config.get('new_teacher_email_message')
+                            or DEFAULT_NEW_TEACHER_EMAIL_MESSAGE),
+            },
+        )
+        return render(
+            request,
+            'future_sections/ce/email_new_teacher.html',
+            {
+                'form': form,
+                'future_course_id': str(future_course.id),
+                'form_action_url': url_reverse(
+                    'future_sections_ce:future_sections_actions'),
+                **context_values,
+            },
+        )
+
+    form = EmailNewTeacherForm(data=request.POST, future_course=future_course)
+    if not form.is_valid():
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Please correct the errors and try again.',
+            'errors': form.errors,
+        }, status=400)
+
+    data = form.cleaned_data
+    recipient = data['recipient']
+
+    context = Context(context_values)
+    subject = Template(data['subject']).render(context)
+    text_body = Template(data['message']).render(context)
+    html_body = get_template('cis/email.html').render({'message': text_body})
+
+    to = [recipient]
+    if getattr(django_settings, 'DEBUG', True):
+        to = ['kadaji@gmail.com']
+
+    send_html_mail(subject, text_body, html_body,
+                   django_settings.DEFAULT_FROM_EMAIL, to)
+
+    add_history_entry(
+        future_course, request.user,
+        f"Emailed new teacher {recipient} ({data['mode']})"
+        f" for {context_values['term_name'] or 'section'}")
+    future_course.save()
+
+    return JsonResponse({
+        'status': 'Success',
+        'display': 'swal',
+        'message': f'Email sent to {recipient}.',
+        'action': 'reload_future_courses',
+    })
 
 
 def mark_as_teaching(request, course_certificate_id, academic_year_id):
