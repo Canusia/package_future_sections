@@ -389,9 +389,10 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
       - Drops the raw UploadedFile (`syllabus` key) since UploadedFile is not
         JSON-serializable; cleaned_data['file'] holds the saved URL instead.
       - Uploads any `form-<i>-<name>` file for each schema file field and
-        stores the resulting URL under that field's own key, carrying forward
-        the previous URL from `<name>_existing` when nothing new is posted,
-        but only when that posted value matches a URL already stored under
+        stores the resulting URL under that field's own key. When nothing
+        new is posted, the value already on the field (hidden file field
+        case) or its `<name>_existing` companion (visible file field case)
+        is carried forward only when it matches a URL already stored under
         that key somewhere on the record; otherwise the field is stored as
         `''`.
 
@@ -447,18 +448,20 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
                     uploaded,
                 )
                 cleaned[file_name] = storage.url(stored_path)
-            elif not cleaned.get(file_name):
-                # No new upload: keep whatever was already stored. A hidden
-                # file field already carries the URL in cleaned[file_name].
-                # The posted `_existing` value is client-supplied and must
-                # match a URL already stored under this key on the record
-                # (any section, since rows can be added/removed/reordered)
-                # before it is trusted.
-                posted_existing = cleaned.get(f'{file_name}_existing', '')
-                if posted_existing in known_urls.get(file_name, set()):
-                    cleaned[file_name] = posted_existing
-                else:
-                    cleaned[file_name] = ''
+            else:
+                # No new upload this request. The posted value — whether it
+                # arrives as cleaned[file_name] (hidden file field) or as the
+                # `_existing` companion (visible file field) — is
+                # client-supplied and untrusted. Only accept it when it
+                # matches a URL already stored under this key on the record
+                # (any section, since rows can be added/removed/reordered);
+                # otherwise store ''.
+                candidate = (cleaned.get(file_name)
+                             or cleaned.get(f'{file_name}_existing', ''))
+                cleaned[file_name] = (
+                    candidate
+                    if candidate in known_urls.get(file_name, set())
+                    else '')
             cleaned.pop(f'{file_name}_existing', None)
 
         sections.append(cleaned)

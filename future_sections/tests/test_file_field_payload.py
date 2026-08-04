@@ -132,12 +132,37 @@ class FilePayloadTests(SimpleTestCase):
 
     def test_hidden_file_field_value_is_preserved(self):
         # When the field is not visible it arrives as a plain URL string.
+        course = _FakeCourse(section_info={'sections': [
+            {'assessment_upload': 'https://files.test/kept.pdf'},
+        ]})
         sections = self._run([_FakeForm({
             'term': 't1',
             'assessment_upload': 'https://files.test/kept.pdf',
-        })])
+        })], course=course)
         self.assertEqual(sections[0]['assessment_upload'],
                          'https://files.test/kept.pdf')
+
+    def test_hidden_file_field_value_not_on_record_is_dropped(self):
+        course = _FakeCourse(section_info={'sections': [
+            {'assessment_upload': 'https://files.test/kept.pdf'},
+        ]})
+        sections = self._run([_FakeForm({
+            'term': 't1',
+            'assessment_upload': 'https://evil.test/spoofed.pdf',
+        })], course=course)
+        self.assertEqual(sections[0]['assessment_upload'], '')
+
+    def test_hidden_file_field_value_on_a_different_section_index_is_accepted(self):
+        course = _FakeCourse(section_info={'sections': [
+            {'assessment_upload': 'https://files.test/section-a.pdf'},
+            {'assessment_upload': 'https://files.test/section-b.pdf'},
+        ]})
+        sections = self._run([_FakeForm({
+            'term': 't1',
+            'assessment_upload': 'https://files.test/section-b.pdf',
+        })], course=course)
+        self.assertEqual(sections[0]['assessment_upload'],
+                         'https://files.test/section-b.pdf')
 
     def test_missing_file_yields_empty_string(self):
         sections = self._run([_FakeForm({'term': 't1'})])
