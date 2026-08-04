@@ -138,7 +138,7 @@
                                                         <small><a target="_blank"
                                                                 href="{{request.scheme}}://{{request.get_host}}{% url 'instructor:course_schedule' r.teacher_highschool.teacher.id %}">{{request.scheme}}://{{request.get_host}}{% url 'instructor:course_schedule' r.teacher_highschool.teacher.id %}</a></small>
                                                     </td>
-                                                    <td>{{r.teacher_highschool.highschool}} <br> <small>{{r.teacher_highschool.highschool.hs_type}}</small></td>
+                                                    <td>{{r.teacher_highschool.highschool}} <br> <small>{{r.teacher_highschool.highschool.hs_type_display}}</small></td>
 
                                                 </tr>
                                                 {% endfor %}
