@@ -155,6 +155,40 @@ class TeachingSectionFieldSchema(BaseModel):
             "depends_on": "highschool_title_changed",
         },
     )
+    start_date: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Start Date",
+            "widget_type": "date",
+            "field_type": "date",
+        },
+    )
+    end_date: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "End Date",
+            "widget_type": "date",
+            "field_type": "date",
+        },
+    )
+    assessment_upload: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Assessment Upload",
+            "widget_type": "file",
+            "field_type": "string",
+        },
+    )
+    new_teacher_email: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "New Teacher Email",
+            "default_help_text": "Enter the email address of the new teacher",
+            "widget_type": "email",
+            "field_type": "string",
+            "depends_on": "teacher_changed",
+        },
+    )
 
     # ------------------------------------------------------------------
     # Utility class methods
@@ -172,6 +206,47 @@ class TeachingSectionFieldSchema(BaseModel):
         if info is None:
             return {}
         return info.json_schema_extra or {}
+
+    @classmethod
+    def get_dependent_fields(cls) -> dict[str, str]:
+        """Return ``{field_name: parent_field_name}`` for conditional fields.
+
+        A field is conditional when its metadata declares ``depends_on``; the
+        field is only shown once the named parent field is answered "yes".
+        """
+        deps: dict[str, str] = {}
+        for name in cls.get_available_field_names():
+            parent = cls.get_field_meta(name).get("depends_on")
+            if parent:
+                deps[name] = parent
+        return deps
+
+    @classmethod
+    def get_dependents_of(cls, parent: str) -> list[str]:
+        """Return field names depending on *parent*, in declaration order."""
+        return [
+            name
+            for name, dep_parent in cls.get_dependent_fields().items()
+            if dep_parent == parent
+        ]
+
+    @classmethod
+    def get_file_field_names(cls) -> list[str]:
+        """Return field names rendered as file uploads."""
+        return [
+            name
+            for name in cls.get_available_field_names()
+            if cls.get_field_meta(name).get("widget_type") == "file"
+        ]
+
+    @classmethod
+    def get_date_field_names(cls) -> list[str]:
+        """Return field names rendered as date pickers."""
+        return [
+            name
+            for name in cls.get_available_field_names()
+            if cls.get_field_meta(name).get("widget_type") == "date"
+        ]
 
     @classmethod
     def make_django_form_field(
@@ -234,6 +309,35 @@ class TeachingSectionFieldSchema(BaseModel):
                 label=label,
                 help_text=help_text,
                 widget=widget,
+            )
+
+        if widget_type == "file":
+            return forms.FileField(
+                required=required,
+                label=label,
+                help_text=help_text,
+                widget=forms.ClearableFileInput(
+                    attrs={"class": "form-control-file"}),
+            )
+
+        if widget_type == "date":
+            return forms.DateField(
+                required=required,
+                label=label,
+                help_text=help_text,
+                input_formats=["%Y-%m-%d", "%m/%d/%Y"],
+                widget=forms.DateInput(
+                    attrs={"type": "date", "class": "form-control"},
+                    format="%Y-%m-%d",
+                ),
+            )
+
+        if widget_type == "email":
+            return forms.EmailField(
+                required=required,
+                label=label,
+                help_text=help_text,
+                widget=forms.EmailInput(attrs={"class": "form-control"}),
             )
 
         # Select fields — use ChoiceField with provided choices
