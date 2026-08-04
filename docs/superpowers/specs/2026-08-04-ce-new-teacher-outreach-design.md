@@ -143,16 +143,38 @@ case where staff most need to make contact.
 
 ### The compose endpoint
 
-A new `@action` on `FutureSectionsActionViewSet`, `url_path='email-new-teacher'`,
-`methods=['get', 'post']`, permission `CIS_user_only` (CE staff only — this is a
-CE-portal action, unlike the HS-admin actions on that viewset).
+The CE index opens every modal the same way: a `.course-action` click GETs
+`future_sections_ce:future_sections_actions` with an `action` name and injects
+the returned HTML into the target modal's `.modal-body`
+(`ce/index.html:901-944`). The new action follows that mechanism — a
+`email-new-teacher` branch in `future_sections_actions` (`views/ce.py:46`),
+not a DRF `@action`.
+
+It does **not** belong on `FutureSectionsActionViewSet` (`views/api.py:60`),
+despite that name: that viewset is the HS-admin/instructor API and carries
+`permission_classes = [IsHSAdminOrInstructor]`. A CE-only action there would
+either be unreachable by CE staff or force a permission change on the
+HS-admin endpoints.
+
+**Prerequisite — the CE ajax endpoint is currently unguarded.** In
+`urls/ce.py`, `index`, `detail`, and `settings` are each wrapped in
+`user_passes_test(user_has_cis_role)`, but the `ajax` path registering
+`future_sections_actions` is not. Any authenticated user — a student, an
+applicant — can today invoke its `teaching-section`,
+`not-teaching-section`, and `remove-not-teaching-section` branches. Adding an
+email sender and an account-creating invite behind that URL would turn a
+pre-existing authorization gap into an outbound-mail and user-creation gap, so
+the guard is added first, as its own change. The three existing branches are
+CE-portal operations that the HS admin and instructor portals reach through
+their own API viewset instead, so gating the endpoint does not remove
+capability from anyone who legitimately has it.
 
 **GET** returns the rendered modal: recipient, subject, and body pre-filled from
 the tenant template, a mode selector, and a confirmation checkbox.
 
-**POST** validates and sends. Payload: `future_course_id`, `section_index`,
-`recipient`, `subject`, `message`, `mode` (`start_app` | `invite`), and
-`confirm_recipient`.
+**POST** validates and sends, through the same view's POST branch. Payload:
+`future_course_id`, `section_index`, `recipient`, `subject`, `message`, `mode`
+(`start_app` | `invite`), and `confirm_recipient`.
 
 Validation, all server-side and all re-checked regardless of what the modal
 enforced:
