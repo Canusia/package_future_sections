@@ -101,6 +101,12 @@ class FutureSectionsPageView(View):
             'window_is_open': window_is_open,
             'allow_teacher_create': fs_config.get('allow_new_teacher_create', '1') == '1',
             'new_teacher_create_label': fs_config.get('new_teacher_create_label', 'Change me'),
+            'enter_course_details_label': (
+                fs_config.get('enter_course_details_label')
+                or 'Enter Course Details'),
+            'not_teaching_label': (
+                fs_config.get('not_teaching_label')
+                or 'We are not teaching this course'),
             'window_closed_message': fs_config.get('window_closed_message'),
             'welcome_message': FutureCourse.welcome_message(highschools),
             'welcome_message_personnel': fs_config.get('welcome_message_personnel', 'Change Me'),

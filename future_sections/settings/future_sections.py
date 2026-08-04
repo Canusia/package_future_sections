@@ -305,6 +305,24 @@ class future_sections(forms.Form):
         help_text='If Allowed to create new teacher, this is displayed in the page above the button to create new teacher'
     )
 
+    enter_course_details_label = forms.CharField(
+        max_length=None,
+        required=False,
+        initial='Enter Course Details',
+        label="'Enter Course Details' Button Label",
+        help_text='Wording of the button an instructor or high school administrator clicks to '
+                  'record the sections they plan to offer. Leave blank to use the default.'
+    )
+
+    not_teaching_label = forms.CharField(
+        max_length=None,
+        required=False,
+        initial='We are not teaching this course',
+        label="'Not Teaching' Button Label",
+        help_text='Wording of the button used to indicate a course will not be offered. '
+                  'Leave blank to use the default.'
+    )
+
     create_new_instructor_app = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple,
         choices=TeacherCourseCertificate.STATUS_OPTIONS,

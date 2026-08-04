@@ -432,7 +432,13 @@ def index(request):
             'pending_api_url': '/ce/future_sections/api/pending_future_class_sections?format=datatables',
             'notification_log_api_url': '/ce/future_sections/api/notification_logs/?format=datatables',
             'active_academic_year': active_academic_year,
-            'academic_years': AcademicYear.objects.all().order_by('-name')
+            'academic_years': AcademicYear.objects.all().order_by('-name'),
+            'enter_course_details_label': (
+                setting.value.get('enter_course_details_label')
+                or 'Enter Course Details'),
+            'not_teaching_label': (
+                setting.value.get('not_teaching_label')
+                or 'We are not teaching this course'),
         }
     )
 

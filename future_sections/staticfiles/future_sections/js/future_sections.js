@@ -29,6 +29,12 @@ function getCookie(name) {
     var highschoolIds = config.data('highschool-ids') ? String(config.data('highschool-ids')).split(',') : [];
     var roleIds = config.data('role-ids') ? String(config.data('role-ids')).split(',') : [];
     var windowIsOpen = config.data('window-is-open') === true || config.data('window-is-open') === 'true';
+    // Tenant-configurable button wording; the fallbacks only apply when the
+    // page was rendered without the settings (e.g. an older template).
+    var enterDetailsLabel = config.data('enter-details-label')
+        || 'Enter Course Details';
+    var notTeachingLabel = config.data('not-teaching-label')
+        || 'We are not teaching this course';
 
     // Map action names to their API endpoints
     function getActionUrl(action) {
@@ -71,13 +77,13 @@ function getCookie(name) {
                 'data-id="-1" ' +
                 'data-action="teaching-section" ' +
                 'data-target="#teachingModal">' +
-                'Enter Course Details</button> ' +
+                enterDetailsLabel + '</button> ' +
                 '<button type="button" class="btn btn-sm btn-secondary mt-xs-1 course-action" ' +
                 'data-course-certificate="' + certId + '" ' +
                 'data-academic_year="' + academicYearId + '" ' +
                 'data-action="not-teaching-section" ' +
                 'data-id="-1">' +
-                'We are not teaching this course</button>';
+                notTeachingLabel + '</button>';
         }
 
         // Marked as not teaching
