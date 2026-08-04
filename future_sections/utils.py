@@ -107,6 +107,20 @@ def render_course_display(template, course):
         return course.title
 
 
+def prev_year_status_filter(statuses):
+    """Return the ``ClassSection`` status filter for *statuses*.
+
+    *statuses* is the tenant's ``prev_year_class_status`` setting — a list of
+    ``ClassSection.CLASS_STATUS`` codes (the stored values are codes such as
+    ``'A'``, not labels such as ``'Active'``). An empty or absent selection
+    means every status qualifies, so no filter is applied.
+
+    Shared by the "Previous Year" column and the copy-last-year's-sections
+    prefill so the two can never disagree about which classes count.
+    """
+    return {'status__in': list(statuses)} if statuses else {}
+
+
 def build_prev_year_lookup(previous_academic_year_id, statuses=None):
     """Return ``{f'{course_id}_{highschool_id}': [{term_name, count}, …]}``
     of previous-year section counts.
@@ -127,8 +141,7 @@ def build_prev_year_lookup(previous_academic_year_id, statuses=None):
         return lookup
 
     filters = {'term__academic_year__id': previous_academic_year_id}
-    if statuses:
-        filters['status__in'] = list(statuses)
+    filters.update(prev_year_status_filter(statuses))
 
     rows = (
         ClassSection.objects.filter(**filters)
@@ -175,7 +188,7 @@ def build_initial_from_prev_year(teacher_course):
         highschool=highschool,
         teacher=teacher,
         course=course,
-        status='A',
+        **prev_year_status_filter(fs_config.get('prev_year_class_status')),
     ).select_related('term').order_by('term__code')
 
     seen_terms = set()
