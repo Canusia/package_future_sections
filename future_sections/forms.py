@@ -370,9 +370,12 @@ class TeacherCourseSectionForm(forms.Form):
 
         # Required file fields: a plain HTML file input can't be pre-filled,
         # so a required file field always looks empty on a save that isn't
-        # re-uploading. When that's the only reason the field errored and the
-        # hidden `_existing` companion is carrying a previously stored URL,
-        # accept it here instead of blocking the whole form. This is not the
+        # re-uploading. Only when the field errored solely because it was
+        # required (no file posted, and every error on the field has code
+        # 'required') and the hidden `_existing` companion is carrying a
+        # previously stored URL, accept it here instead of blocking the whole
+        # form. Any other validation error on the field (e.g. empty-file,
+        # size, extension, content-type) is left intact. This is not the
         # authoritative acceptance: build_section_info_from_formset only
         # persists this value if it matches a URL already stored somewhere
         # on the record, so a tampered `_existing` value still can't inject
@@ -381,7 +384,10 @@ class TeacherCourseSectionForm(forms.Form):
             if file_name not in self.fields:
                 continue
             existing_value = data.get(f'{file_name}_existing')
-            if file_name in self._errors and existing_value:
+            errors = self._errors.get(file_name)
+            if (existing_value and errors
+                    and not self.files.get(self.add_prefix(file_name))
+                    and all(e.code == 'required' for e in errors.as_data())):
                 del self._errors[file_name]
                 data[file_name] = existing_value
 

@@ -144,6 +144,26 @@ class RequiredFileFieldValidationTests(_FormsetBindingMixin, TestCase):
             sections[0]['assessment_upload'],
             'https://files.test/future_section/course-1/assessment.pdf')
 
+    def test_empty_file_upload_with_existing_is_rejected(self):
+        # An empty (0-byte) upload fails Django's FileField validation with
+        # code 'empty', not 'required'. The `_existing` fallback must not
+        # swallow that error — only a genuinely absent file (code
+        # 'required') is eligible for the fallback.
+        self._make_setting()
+        empty_upload = SimpleUploadedFile(
+            'assessment.pdf', b'', content_type='application/pdf')
+        stored_url = 'https://files.test/old.pdf'
+        data = self._management_data()
+        data['form-0-term'] = str(self.term.id)
+        data['form-0-assessment_upload_existing'] = stored_url
+        formset = self._formset(
+            data, files={'form-0-assessment_upload': empty_upload})
+        self.assertFalse(formset.is_valid())
+        self.assertIn('assessment_upload', formset.errors[0])
+        self.assertIn(
+            'The submitted file is empty.',
+            formset.errors[0]['assessment_upload'])
+
     def test_syllabus_path_is_unaffected(self):
         # syllabus is hardcoded required=False (forms.py), so it must
         # validate cleanly with no file and no formset FILES binding for it.
