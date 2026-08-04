@@ -13,6 +13,7 @@ from django.utils.html import strip_tags
 from rest_framework.exceptions import PermissionDenied
 
 from .models import FutureCourse, FutureProjection
+from .schemas import TeachingSectionFieldSchema
 from cis.models.highschool import HighSchool
 from cis.models.highschool_administrator import HSAdministrator
 from cis.models.teacher import Teacher, TeacherCourseCertificate
@@ -387,6 +388,9 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
         the resulting URL in cleaned_data['file'].
       - Drops the raw UploadedFile (`syllabus` key) since UploadedFile is not
         JSON-serializable; cleaned_data['file'] holds the saved URL instead.
+      - Uploads any `form-<i>-<name>` file for each schema file field and
+        stores the resulting URL under that field's own key, carrying forward
+        the previous URL from `<name>_existing` when nothing new is posted.
 
     Args:
         request: Current HttpRequest (used for request.FILES).
@@ -417,5 +421,23 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
             cleaned['file'] = storage.url(stored_path)
 
         cleaned.pop('syllabus', None)
+
+        # Schema-driven file fields store their URL under their own key.
+        for file_name in TeachingSectionFieldSchema.get_file_field_names():
+            uploaded = request.FILES.get(f'form-{index}-{file_name}')
+            if uploaded:
+                storage = PrivateMediaStorage()
+                safe_name = get_valid_filename(uploaded.name)
+                stored_path = storage.save(
+                    f'future_section/{future_course.id}/{safe_name}',
+                    uploaded,
+                )
+                cleaned[file_name] = storage.url(stored_path)
+            elif not cleaned.get(file_name):
+                # No new upload: keep whatever was already stored. A hidden
+                # file field already carries the URL in cleaned[file_name].
+                cleaned[file_name] = cleaned.get(f'{file_name}_existing', '')
+            cleaned.pop(f'{file_name}_existing', None)
+
         sections.append(cleaned)
     return sections
