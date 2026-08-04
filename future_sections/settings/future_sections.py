@@ -44,7 +44,10 @@ from ..schemas import TeachingSectionFieldSchema
 class future_sections(forms.Form):
 
     class Media:
-        js = ('future_sections/js/settings.js',)
+        js = (
+            'future_sections/js/field_reorder.js',
+            'future_sections/js/settings.js',
+        )
 
     key = "cis_future_sections"
 
@@ -667,6 +670,9 @@ class future_sections(forms.Form):
             default_label = meta.get("default_label", name)
             rows_html += (
                 '<tr>'
+                '<td class="fw-grip text-center text-muted" '
+                'style="cursor:move;width:32px;">'
+                '<i class="fas fa-grip-vertical"></i></td>'
                 f'<td>{default_label}</td>'
                 '<td class="text-center">'
                 f'<input type="checkbox" class="tfc-visible" data-field="{name}">'
@@ -679,7 +685,8 @@ class future_sections(forms.Form):
                 f'data-field="{name}" placeholder="{default_label}">'
                 '</td>'
                 '<td>'
-                f'<input type="number" class="form-control form-control-sm tfc-weight" '
+                f'<input type="number" readonly '
+                f'class="form-control form-control-sm tfc-weight" '
                 f'data-field="{name}" min="0" step="1">'
                 '</td>'
                 '</tr>'
@@ -692,6 +699,7 @@ class future_sections(forms.Form):
             '<div class="card-body">'
             '<table class="table table-sm table-bordered">'
             '<thead><tr>'
+            '<th style="width:32px"></th>'
             '<th>Field</th>'
             '<th class="text-center" style="width:80px">Visible</th>'
             '<th class="text-center" style="width:80px">Required</th>'
@@ -700,6 +708,7 @@ class future_sections(forms.Form):
             '</tr></thead>'
             '<tbody>'
             '<tr class="table-light">'
+            '<td></td>'
             '<td>Term <span class="badge badge-secondary">Always included</span></td>'
             '<td class="text-center"><input type="checkbox" checked disabled></td>'
             '<td class="text-center"><input type="checkbox" checked disabled></td>'
@@ -713,7 +722,8 @@ class future_sections(forms.Form):
         teaching_config_html += (
             '</tbody></table>'
             '<small class="form-text text-muted mb-3 d-block">'
-            'Lighter weighted fields appear at the top of the form.</small>'
+            'Drag a row by its handle to change the order fields appear in the '
+            'form. The weight column updates automatically.</small>'
             '<div class="form-group mt-3">'
             '<div class="custom-control custom-checkbox">'
             '<input type="checkbox" class="custom-control-input" id="tfc-show-syllabus">'
@@ -751,6 +761,9 @@ class future_sections(forms.Form):
         for name, default_label in add_teacher_fields:
             at_rows_html += (
                 '<tr>'
+                '<td class="fw-grip text-center text-muted" '
+                'style="cursor:move;width:32px;">'
+                '<i class="fas fa-grip-vertical"></i></td>'
                 f'<td>{default_label}</td>'
                 '<td class="text-center">'
                 f'<input type="checkbox" class="atfc-visible" data-field="{name}">'
@@ -763,7 +776,8 @@ class future_sections(forms.Form):
                 f'data-field="{name}" placeholder="{default_label}">'
                 '</td>'
                 '<td>'
-                f'<input type="number" class="form-control form-control-sm atfc-weight" '
+                f'<input type="number" readonly '
+                f'class="form-control form-control-sm atfc-weight" '
                 f'data-field="{name}" min="0" step="1">'
                 '</td>'
                 '</tr>'
@@ -775,6 +789,7 @@ class future_sections(forms.Form):
             '<div class="card-body">'
             '<table class="table table-sm table-bordered">'
             '<thead><tr>'
+            '<th style="width:32px"></th>'
             '<th>Field</th>'
             '<th class="text-center" style="width:80px">Visible</th>'
             '<th class="text-center" style="width:80px">Required</th>'
@@ -786,6 +801,7 @@ class future_sections(forms.Form):
         for name, default_label in always_included:
             add_teacher_config_html += (
                 '<tr class="table-light">'
+                '<td></td>'
                 f'<td>{default_label} <span class="badge badge-secondary">Always included</span></td>'
                 '<td class="text-center"><input type="checkbox" checked disabled></td>'
                 '<td class="text-center"><input type="checkbox" checked disabled></td>'
@@ -799,7 +815,8 @@ class future_sections(forms.Form):
         add_teacher_config_html += (
             '</tbody></table>'
             '<small class="form-text text-muted mb-3 d-block">'
-            'Lighter weighted fields appear at the top of the form.</small>'
+            'Drag a row by its handle to change the order fields appear in the '
+            'form. The weight column updates automatically.</small>'
             '</div></div>'
         )
 
