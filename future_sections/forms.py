@@ -255,10 +255,7 @@ class TeacherCourseSectionForm(forms.Form):
 
         # Generate configurable fields from schema
         # Dependent fields are always visible when their parent is visible
-        dependent_fields = {
-            'new_teacher_name': 'teacher_changed',
-            'new_highschool_title': 'highschool_title_changed',
-        }
+        dependent_fields = TeachingSectionFieldSchema.get_dependent_fields()
 
         for field_name in TeachingSectionFieldSchema.get_available_field_names():
             extra_kwargs = {}
@@ -281,6 +278,26 @@ class TeacherCourseSectionForm(forms.Form):
                 help_text_override=custom_help_texts.get(field_name),
                 **extra_kwargs,
             )
+
+        # File fields keep their previously stored URL in a hidden companion so
+        # that saving without re-uploading does not wipe the existing file.
+        file_initial = kwargs.get('initial') or {}
+        for file_name in TeachingSectionFieldSchema.get_file_field_names():
+            if file_name not in visible_fields:
+                continue
+            self.fields[f'{file_name}_existing'] = forms.CharField(
+                required=False,
+                widget=forms.HiddenInput(),
+            )
+            stored_url = file_initial.get(file_name)
+            if stored_url:
+                self.fields[f'{file_name}_existing'].initial = stored_url
+                self.fields[file_name].label = mark_safe(
+                    f"{self.fields[file_name].label}<br>"
+                    f"<small><a target='_blank' href='{stored_url}'>"
+                    f"Download Uploaded File</a></small>"
+                    f" or upload a new file below"
+                )
 
         # Set initial value for highschool_course_name if provided
         if kwargs.get('initial', {}).get('highschool_course_name'):
