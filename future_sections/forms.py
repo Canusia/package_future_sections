@@ -992,3 +992,52 @@ class TeacherCourseNotTeachingForm(forms.Form):
             raise ValidationError(_("Please enter the instructor's name"), code="invalid")
 
         return other_instructor
+
+
+class EmailNewTeacherForm(forms.Form):
+    """Compose box for emailing the new teacher named on a changed section.
+
+    Every rejection lives here rather than in the view, so a crafted POST is
+    checked identically to a modal submission.
+    """
+
+    MODE_CHOICES = (
+        ('start_app', 'Send a link to start an application'),
+        ('invite', 'Create an invitation for this teacher'),
+    )
+
+    section_index = forms.IntegerField(min_value=0, widget=forms.HiddenInput)
+    recipient = forms.EmailField(
+        label='To',
+        widget=forms.EmailInput(attrs={'class': 'form-control'}))
+    subject = forms.CharField(
+        widget=forms.TextInput(attrs={'class': 'form-control'}))
+    message = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 10}))
+    mode = forms.ChoiceField(
+        choices=MODE_CHOICES,
+        initial='start_app',
+        widget=forms.RadioSelect)
+    confirm_recipient = forms.BooleanField(
+        required=True,
+        label='I have checked this email address is correct',
+        error_messages={
+            'required': 'Confirm the email address before sending.'})
+
+    def __init__(self, *args, future_course=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.future_course = future_course
+        self.section = None
+
+    def clean_section_index(self):
+        index = self.cleaned_data['section_index']
+        sections = ((self.future_course.section_info or {}).get('sections')
+                    or []) if self.future_course else []
+        if index >= len(sections):
+            raise ValidationError('That section no longer exists.')
+        section = sections[index] or {}
+        if section.get('teacher_changed') != 'yes':
+            raise ValidationError(
+                'That section is not marked as having a new teacher.')
+        self.section = section
+        return index
