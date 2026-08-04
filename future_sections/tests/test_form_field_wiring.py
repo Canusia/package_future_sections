@@ -85,6 +85,31 @@ class FileCompanionFieldTests(_ConfigMixin, TestCase):
         self.assertEqual(form.fields['assessment_upload'].label,
                          'Assessment Upload')
 
+    def test_https_url_still_produces_the_download_link(self):
+        self._make_setting(fields=('term', 'assessment_upload'))
+        form = TeacherCourseSectionForm(
+            initial={'assessment_upload': 'https://x.test/a.pdf'})
+        label = str(form.fields['assessment_upload'].label)
+        self.assertIn('<a target="_blank"', label)
+        self.assertIn('href="https://x.test/a.pdf"', label)
+
+    def test_html_breaking_characters_in_url_are_escaped(self):
+        self._make_setting(fields=('term', 'assessment_upload'))
+        malicious_url = 'https://x.test/a".pdf'
+        form = TeacherCourseSectionForm(
+            initial={'assessment_upload': malicious_url})
+        label = str(form.fields['assessment_upload'].label)
+        self.assertNotIn('a".pdf', label)
+        self.assertIn('a&quot;.pdf', label)
+
+    def test_non_http_scheme_yields_plain_label_with_no_anchor(self):
+        self._make_setting(fields=('term', 'assessment_upload'))
+        form = TeacherCourseSectionForm(
+            initial={'assessment_upload': 'javascript:alert(1)'})
+        label = str(form.fields['assessment_upload'].label)
+        self.assertEqual(label, 'Assessment Upload')
+        self.assertNotIn('<a', label)
+
     def test_syllabus_handling_is_unchanged(self):
         Setting.objects.create(
             key='cis_future_sections',

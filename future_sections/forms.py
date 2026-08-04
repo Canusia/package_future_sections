@@ -1,6 +1,8 @@
 import json
+from urllib.parse import urlparse
 
 from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 from django.core.validators import validate_email
 from datetime import datetime
@@ -292,12 +294,15 @@ class TeacherCourseSectionForm(forms.Form):
             stored_url = file_initial.get(file_name)
             if stored_url:
                 self.fields[f'{file_name}_existing'].initial = stored_url
-                self.fields[file_name].label = mark_safe(
-                    f"{self.fields[file_name].label}<br>"
-                    f"<small><a target='_blank' href='{stored_url}'>"
-                    f"Download Uploaded File</a></small>"
-                    f" or upload a new file below"
-                )
+                if urlparse(stored_url).scheme.lower() in ('http', 'https'):
+                    self.fields[file_name].label = format_html(
+                        '{}<br><small><a target="_blank" '
+                        'rel="noopener noreferrer" href="{}">'
+                        'Download Uploaded File</a></small>'
+                        ' or upload a new file below',
+                        self.fields[file_name].label,
+                        stored_url,
+                    )
 
         # Set initial value for highschool_course_name if provided
         if kwargs.get('initial', {}).get('highschool_course_name'):
