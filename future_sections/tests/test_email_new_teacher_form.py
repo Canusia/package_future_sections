@@ -136,11 +136,18 @@ class ModeHelperTextTests(SimpleTestCase):
         self.assertIn('Nothing is created now', label)
         self.assertIn('public application form', label)
 
-    def test_invite_explains_the_account_and_the_second_email(self):
+    def test_invite_explains_the_account_and_the_direct_link(self):
         label = self._labels()['invite']
         self.assertIn('applicant account', label)
-        self.assertIn('verification email', label)
+        self.assertIn('links straight to it', label)
+        self.assertIn('without re-entering', label)
         self.assertIn('confident the address is correct', label)
+
+    def test_invite_does_not_promise_a_second_email(self):
+        # Invite mode carries the verification link in the staff message; a
+        # separate verification email is no longer sent.
+        self.assertNotIn('separate verification email',
+                         self._labels()['invite'])
 
     def test_mode_field_has_a_label_and_help_text(self):
         field = EmailNewTeacherForm(

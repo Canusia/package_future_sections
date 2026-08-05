@@ -1016,10 +1016,11 @@ class EmailNewTeacherForm(forms.Form):
         ('invite', mark_safe(
             'Create an invitation for this teacher'
             '<small class="form-text text-muted">'
-            'Also creates an applicant account from the name and email on '
-            'this section, and sends a separate verification email so the '
-            'teacher can confirm the address before setting a password. '
-            'Use this only when you are confident the address is correct.'
+            'Creates an applicant account from the name and email on this '
+            'section, and your message links straight to it — the teacher '
+            'confirms this address and sets a password without re-entering '
+            'their details. Use this only when you are confident the address '
+            'is correct.'
             '</small>')),
     )
 

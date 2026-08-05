@@ -194,11 +194,13 @@ def email_new_teacher(request):
                             'No email was sent.'),
             }, status=400)
 
-        if django_settings.DEBUG:
-            logger.info(
-                'DEBUG mode: skipping verification email to %s', recipient)
-        else:
-            applicant.send_verification_request_email()
+        # Point the teacher at the record we just made for them, rather than
+        # at start_app — that would ask them to register from scratch and
+        # collide with the account created here. This is the same link, to the
+        # same address, that send_verification_request_email would have sent,
+        # so it carries the same proof-of-control guarantee; sending it inline
+        # means one email instead of two saying different things.
+        context_values['link'] = applicant.verify_email_url
 
     context = Context(context_values)
     subject = Template(data['subject']).render(context)

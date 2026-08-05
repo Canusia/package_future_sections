@@ -37,29 +37,38 @@ class InviteModeTests(_Base):
         self.assertTrue(
             CustomUser.objects.filter(email='jane@zillah.test').exists())
 
-    @override_settings(DEBUG=False)
-    def test_sends_the_verification_email_when_debug_false(self):
-        # Container defaults to DEBUG=True (see
-        # test_verification_email_skipped_when_debug_true below), so this
-        # exercises the "real" deploy path explicitly.
+    def test_no_separate_verification_email_is_sent(self):
+        # The staff email now carries the verification link itself, so a
+        # second mail would duplicate it and split the teacher's attention.
         TeacherApplicant = _applicant_model()
-        with mock.patch.object(
-                TeacherApplicant, 'send_verification_request_email') as send:
-            self._post(mode='invite')
-        self.assertTrue(send.called)
-
-    @override_settings(DEBUG=True)
-    def test_verification_email_skipped_when_debug_true(self):
-        # Testing invite mode locally must never email a real person; the
-        # applicant record should still be created so the flow stays
-        # testable.
-        TeacherApplicant = _applicant_model()
-        before = TeacherApplicant.objects.count()
         with mock.patch.object(
                 TeacherApplicant, 'send_verification_request_email') as send:
             self._post(mode='invite')
         self.assertFalse(send.called)
-        self.assertEqual(TeacherApplicant.objects.count(), before + 1)
+
+    def test_staff_email_carries_the_verification_link(self):
+        # start_app would ask the invited teacher to register from scratch and
+        # collide with the account just created for them.
+        from django.urls import reverse
+        TeacherApplicant = _applicant_model()
+        self._post(mode='invite')
+        _flush()
+        applicant = TeacherApplicant.objects.get(
+            user__email='jane@zillah.test')
+        verify_path = reverse(
+            'applicant_app:verify_email',
+            kwargs={'verification_id': applicant.verification_id})
+        body = mail.outbox[0].body + str(mail.outbox[0].alternatives)
+        self.assertIn(verify_path, body)
+        self.assertNotIn(reverse('applicant_app:start_app'), body)
+
+    def test_start_app_mode_still_links_to_start_app(self):
+        from django.urls import reverse
+        self._post(mode='start_app')
+        _flush()
+        body = mail.outbox[0].body + str(mail.outbox[0].alternatives)
+        self.assertIn(reverse('applicant_app:start_app'), body)
+        self.assertNotIn('verify_email', body)
 
     def test_does_not_create_a_teacher_application(self):
         # complete_signup creates that record; a second one would be a
