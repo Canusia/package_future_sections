@@ -222,7 +222,11 @@ def email_new_teacher(request):
         'status': 'Success',
         'display': 'swal',
         'message': f'Email sent to {recipient}.',
-        'action': 'reload_future_courses',
+        # The compose box submits through `.fs-ajax-form`, whose success
+        # handler closes the modal and reloads the table only on
+        # 'reload_table'. 'reload_future_courses' is the `.course-action` GET
+        # handler's vocabulary and leaves the modal open here.
+        'action': 'reload_table',
     })
 
 

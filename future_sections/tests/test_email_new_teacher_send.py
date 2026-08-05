@@ -178,3 +178,25 @@ class StartAppSendTests(_Base):
         self._post()
         _flush()
         self.assertEqual(len(mail.outbox), 0)
+
+
+class ResponseContractTests(_Base):
+    """The compose box submits through `.fs-ajax-form`, whose success handler
+    only closes the modal and reloads when `action == 'reload_table'`.
+
+    `reload_future_courses` is the value the `.course-action` GET handler
+    understands; returning it here left the modal open after a successful send.
+    """
+
+    def test_successful_send_returns_reload_table(self):
+        import json
+        response = self._post()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content).get('action'),
+                         'reload_table')
+
+    def test_successful_send_reports_success_status(self):
+        import json
+        payload = json.loads(self._post().content)
+        self.assertEqual(payload.get('status'), 'Success')
+        self.assertIn('jane@zillah.test', payload.get('message', ''))
