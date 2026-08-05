@@ -213,6 +213,7 @@ Navigate to **CE Portal > Settings > Classes > Section Requests** to configure t
 | **School Personnel Tab Title** | Label for the School Personnel tab |
 | **Requesting Information For** | The academic year you are collecting section requests for. Derived from **Cycle Terms** on save — kept in the settings JSON for backward compatibility with existing `FutureCourse.academic_year` FK queries. |
 | **Previous Year Reference** | A prior academic year to show what was previously offered |
+| **Previous Year Class Status** | Which `ClassSection` statuses count toward the **Previous Year** column and the copy-last-year prefill. Choices come from `ClassSection.CLASS_STATUS`, whose stored values are codes (`A`, `C`) rather than labels. Leave every option unselected to count classes of any status. |
 | **Starting Date / Ending Date** | Survey window for submissions |
 | **Course Column Display Template** | Template for the Course column. Placeholders: `{course_name}`, `{course_title}`, `{credit_hours}` |
 
@@ -225,6 +226,8 @@ Drives which terms a cycle covers and which teachers are expected to respond. Cy
 | **Cycle Terms** | One or more `Term` rows the cycle is collecting forecasts for. All selected terms must share one Academic Year (validated in `clean()` and live-hinted in the settings JS). Schools running annually pick all terms in the AY; schools running per semester pick one term and re-open the cycle for the next. The **Requesting Information For** AY is derived from this selection on save. |
 | **Lookback Terms** | One or more `Term` rows that define **who's expected to respond**. The universe is the set of `TeacherCourseCertificate` rows whose teacher × course had an Active (`status='A'`) `ClassSection` in any selected term. Used by both the submission-form universe (`utils.get_course_certificates_for_user`) and the reminder pending-detection query. |
 | **Allow HS Administrators to create new teachers?** (existing) | When `Yes`, also includes `TeacherCourseCertificate` rows with `status='Applicant'` in the universe — applicants can be reminded even without prior Section history. When `No`, only teachers with a qualifying Section in the lookback terms are surfaced. |
+
+**Copying last year's sections.** When an instructor opens a course with no saved response, the formset is pre-populated from that teacher's previous-year sections — one row per previous term, with the term mapped through **Term Mapping**. This only runs when Term Mapping is configured; with an empty mapping nothing is copied and the form opens with a single blank row. Which previous-year classes qualify is governed by **Previous Year Class Status**, the same setting that drives the Previous Year column, so the two can never disagree. Terms present in the mapping but left unmapped still produce a row, with the term dropdown empty for the instructor to fill in.
 
 **Reminder behaviour.** `notify_pending_section_requests` anchors on the lookback universe (minus certs that already have a `FutureCourse` for the cycle's AY). The reminder email gains a new `{{missing_terms}}` shortcode listing the cycle terms each school hasn't yet responded for — computed per-school from `FutureCourse.section_info.sections[*].term` coverage. Schools whose submissions cover every cycle term render an empty `{{missing_terms}}`.
 
@@ -259,8 +262,12 @@ Drives which terms a cycle covers and which teachers are expected to respond. Cy
 | **Eligible Instructor Course Status** | Only instructor-course assignments with selected status(es) appear in requests |
 | **Allow HS Administrators to create new teachers?** | If Yes, shows the fields below |
 | **'Add New Teacher' Prompt** | Text displayed above the add teacher button (hidden if not allowed) |
-| **Create New Instructor App For** | Which instructor course statuses trigger a new instructor application (hidden if not allowed) |
+| **Create New Instructor App For** | Which instructor course statuses trigger a new instructor application (hidden if not allowed). Gated on the **certificate's** status, not on anything being new — it fires both from the add-teacher route and from any ordinary "Enter Course Details" save. |
 | **Default Status of Instructor Apps** | Default status assigned to new instructor applications created during section requests (hidden if not allowed) |
+| **'Enter Course Details' Button Label** | Wording of the button used to record planned sections. Plain text — markup is stripped on save. Leave blank for the default. |
+| **'Not Teaching' Button Label** | Wording of the button used to indicate a course will not be offered. Plain text. Leave blank for the default. |
+
+Both button labels apply to the HS admin/instructor portal and the CE portal, which render the same two buttons from separate markup.
 
 ### Section Request Review
 
@@ -275,12 +282,67 @@ Drives the post-submission review flow under `/faculty/future_sections/section_r
 
 > **Note on the JSON storage key:** review data is persisted as `FutureCourse.section_info['faculty_review']`. The key name is historical — it represents any reviewer role, not just `Faculty`.
 
+### New Teacher Outreach
+
+When an instructor marks a section as having a new teacher (**Did the teacher change?** = Yes), CE staff get an **Email &lt;name&gt;** action on that section in the CE Course Requests table. It opens a compose box with the captured address pre-filled and the message below as a starting point, editable before sending.
+
+| Setting | Description |
+|---------|-------------|
+| **New Teacher Email Subject** | Subject pre-filled in the compose box. Leave blank for the default. |
+| **New Teacher Email Message** | Body pre-filled in the compose box. Shortcodes: `{{new_teacher_name}}`, `{{course}}`, `{{highschool}}`, `{{academic_year}}`, `{{current_teacher_name}}`, `{{term_name}}`, `{{link}}`. Leave blank for the default. |
+
+Staff pick one of two modes per email. `{{link}}` resolves differently in each, and only one of them creates anything:
+
+```mermaid
+flowchart TD
+    A[Email &lt;name&gt; on a changed section] --> B[Compose box<br/>address pre-filled]
+    B --> C{Mode}
+    C -->|Send a link to<br/>start an application| D[Nothing created]
+    D --> E["{{link}} = public start_app form"]
+    C -->|Create an invitation| F{Address already<br/>an account?}
+    F -->|Yes, non-applicant role| G[Refused<br/>nothing created, no mail]
+    F -->|No, or applicant only| H[Create/reuse CustomUser<br/>+ unverified TeacherApplicant]
+    H --> I["{{link}} = that applicant's<br/>verification URL"]
+    E --> J[Send staff message]
+    I --> J
+    J --> K[History entry on the FutureCourse]
+```
+
+Notes on the invite path:
+
+- **It never emails a `complete_signup` link.** That view is public, does not check `account_verified`, and on POST sets a password and logs the user in. The verification URL is sent instead, so the recipient proves they control the address first.
+- **No `TeacherApplication` is created.** The self-serve signup flow creates that record once the teacher completes their profile; creating one here would leave a half-populated duplicate.
+- **An existing account with any non-applicant role is refused** rather than reused, so a mistyped address belonging to a student or administrator cannot have an applicant record attached to it.
+- Staff must tick a confirmation box before sending, because the address was typed by a high school administrator.
+- Sends are recorded in `FutureCourse.meta['history']`, which the CE table already renders. The **Notification History** tab is the scheduled reminder job's run log and does not include these.
+
 ### Form Configuration
 
 | Setting | Description |
 |---------|-------------|
 | **Teaching Form Configuration** | Visual UI for configuring which fields appear on the teaching form, their labels, required status, and display order |
 | **Add Teacher Form Configuration** | Visual UI for configuring the add teacher form fields |
+
+Rows in both tables are ordered by **dragging them by the grip handle**; the weight column renumbers itself and is read-only. Ordering is stored in the existing `weights` map, so saved configurations are unaffected. Drag behaviour comes from the shared `cis` asset `js/field_weights.js`, embedded as a `<script>` tag in the generated settings HTML — the settings page is injected with jQuery `.html()`, so a `Media`-declared file can lose the race and silently never bind.
+
+#### Configurable section fields
+
+`TeachingSectionFieldSchema` (`schemas.py`) is the single source of truth for the fields available on the teaching form. Adding a field there makes it appear in the settings table, the export headers, and the display-template placeholder list with no further wiring.
+
+| Widget type | Renders as | Notes |
+|-------------|-----------|-------|
+| `text` / `textarea` | text input / textarea | |
+| `checkbox` | boolean checkbox | |
+| `select` | dropdown | Choices from schema metadata or a tenant setting |
+| `date` | `<input type="date">` | Stored as an ISO `YYYY-MM-DD` string — `section_info` is a `JSONField` and `date` objects are not serializable |
+| `email` | email input | Validated as an address |
+| `file` | file upload | The stored value is the storage URL. A hidden `<name>_existing` companion carries the previous URL so saving without re-uploading does not lose the file |
+
+Fields declaring `depends_on` render underneath their parent and are revealed when it is answered "yes" — `new_teacher_name` and `new_teacher_email` under **Did the teacher change?**, `new_highschool_title` under **Did the high school title change?**.
+
+`start_date` and `end_date` are independent fields; when both are visible and filled, an end date earlier than the start date is rejected.
+
+**File-field values are allowlisted on save.** A value only persists if this request uploaded it or it already appears under that key elsewhere on the same record, so a posted URL cannot be substituted for an arbitrary one.
 
 ### Reviewed Status Email
 
@@ -349,8 +411,9 @@ future_sections/
 │       ├── teaching_course.html    # Teaching form modal
 │       ├── add_new_teacher.html    # Add teacher form modal
 │       └── ce/
-│           ├── index.html          # CE portal main page
-│           └── settings.html       # CE portal settings page
+│           ├── index.html              # CE portal main page
+│           ├── email_new_teacher.html  # New-teacher outreach compose box
+│           └── settings.html           # CE portal settings page
 ├── templatetags/
 │   └── future_sections_tags.py     # Custom template tags
 ├── urls/
@@ -392,7 +455,7 @@ future_sections/
 **CE Admin Portal** (`/ce/future_sections/`):
 - Main page (Course Requests dashboard)
 - Settings management
-- AJAX dispatcher for teaching/not-teaching actions
+- AJAX dispatcher for teaching/not-teaching actions and new-teacher outreach. Requires the `ce` role — like every other route in this URLconf, it is wrapped in `user_passes_test(user_has_cis_role)`.
 - Record detail, delete, bulk actions
 - Admin lookup and ad-hoc reminder sending
 - API endpoints for future class sections, projections, pending sections, notification logs
@@ -500,3 +563,20 @@ python manage.py register_settings
 2. Verify email configuration in Django settings
 3. Check that the instructor has a valid email address
 4. Bulk "Mark as Reviewed" bypasses `pre_save` signal — notifications only fire on `.save()`
+5. `send_html_mail` **queues** through django-mailer rather than delivering inline, so nothing leaves until the queue is processed. In tests, flush with `mailer.engine.send_all()`.
+
+### Previous Year column is blank for every school
+
+`ClassSection.status` stores codes (`A`, `C`), not labels. Check **Previous Year Class Status** selects the codes your data actually uses — an empty selection counts every status, which is the safe default. Also confirm **Previous Year Reference** points at an academic year that has sections.
+
+### Nothing is copied when opening a course
+
+Copying requires **Term Mapping** to be configured; an empty mapping disables it entirely and the form opens with one blank row. Check also that the previous-year sections match the teacher, course, and school on the certificate, and that their status is selected in **Previous Year Class Status**.
+
+### A new column or serializer field never reaches a CE table
+
+`rest_framework_datatables` filters each row down to the fields named in the `columns[i][data]` params the browser sends. A serializer field with no matching `<th data-data="...">` is stripped in transit, and JS reading it silently sees `undefined`. Either add a column for it or nest it inside a field that is already requested — `changed_teacher_sections` rides inside `section_display` for exactly this reason. Note that querying the API by hand without `columns[i][data]` params returns the full payload and will not reproduce the problem.
+
+### Settings page JS not binding
+
+The settings form is rendered with `render_crispy_form` and injected via jQuery `.html()`, which fetches injected `<script src>` tags asynchronously. A file declared only in `Media` can therefore execute after the code that depends on it. Embed the `<script>` tag in the generated HTML instead, as the field-ordering and settings assets do.
