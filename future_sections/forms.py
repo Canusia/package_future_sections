@@ -1002,9 +1002,25 @@ class EmailNewTeacherForm(forms.Form):
     checked identically to a modal submission.
     """
 
+    # Each label carries its own explanation because the two options differ in
+    # what they *create*, not just in wording — a reader cannot tell them apart
+    # from the choice text alone.
     MODE_CHOICES = (
-        ('start_app', 'Send a link to start an application'),
-        ('invite', 'Create an invitation for this teacher'),
+        ('start_app', mark_safe(
+            'Send a link to start an application'
+            '<small class="form-text text-muted">'
+            'Your message includes a link to the public application form. '
+            'The teacher enters their own name and email to begin. '
+            'Nothing is created now.'
+            '</small>')),
+        ('invite', mark_safe(
+            'Create an invitation for this teacher'
+            '<small class="form-text text-muted">'
+            'Also creates an applicant account from the name and email on '
+            'this section, and sends a separate verification email so the '
+            'teacher can confirm the address before setting a password. '
+            'Use this only when you are confident the address is correct.'
+            '</small>')),
     )
 
     section_index = forms.IntegerField(min_value=0, widget=forms.HiddenInput)
@@ -1020,6 +1036,8 @@ class EmailNewTeacherForm(forms.Form):
     mode = forms.ChoiceField(
         choices=MODE_CHOICES,
         initial='start_app',
+        label='How should this teacher reach the application?',
+        help_text='Both options send the message you have written above.',
         widget=forms.RadioSelect)
     confirm_recipient = forms.BooleanField(
         required=True,

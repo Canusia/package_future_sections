@@ -120,3 +120,34 @@ class EmailNewTeacherFormTests(SimpleTestCase):
         form = _form(_Course([CHANGED]), subject='Hi {% if %}')
         self.assertFalse(form.is_valid())
         self.assertIsNone(form.section)
+
+
+class ModeHelperTextTests(SimpleTestCase):
+    """The two modes differ in what they create, not just in wording, so each
+    choice explains itself in the compose box."""
+
+    def _labels(self):
+        form = EmailNewTeacherForm(future_course=_Course([CHANGED]))
+        return {value: str(label)
+                for value, label in form.fields['mode'].choices}
+
+    def test_start_app_explains_that_nothing_is_created(self):
+        label = self._labels()['start_app']
+        self.assertIn('Nothing is created now', label)
+        self.assertIn('public application form', label)
+
+    def test_invite_explains_the_account_and_the_second_email(self):
+        label = self._labels()['invite']
+        self.assertIn('applicant account', label)
+        self.assertIn('verification email', label)
+        self.assertIn('confident the address is correct', label)
+
+    def test_mode_field_has_a_label_and_help_text(self):
+        field = EmailNewTeacherForm(
+            future_course=_Course([CHANGED])).fields['mode']
+        self.assertTrue(field.label)
+        self.assertIn('send the message you have written', field.help_text)
+
+    def test_choice_values_are_unchanged(self):
+        # The view and its tests branch on these exact values.
+        self.assertEqual(sorted(self._labels()), ['invite', 'start_app'])
