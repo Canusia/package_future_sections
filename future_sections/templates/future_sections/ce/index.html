@@ -677,7 +677,7 @@
                                                             offer_info += '<br>' + displayText;
                                                         }
                                                     });
-                                                    $.each(row.changed_teacher_sections || [], function(k, cs) {
+                                                    $.each(sd.changed_teacher_sections || [], function(k, cs) {
                                                         var who = cs.new_teacher_name || cs.new_teacher_email || 'new teacher';
                                                         offer_info += '<br><a href="#" class="email-new-teacher" ' +
                                                             'data-toggle="modal" data-target="#teachingModal" ' +

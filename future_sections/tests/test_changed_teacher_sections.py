@@ -57,3 +57,37 @@ class ChangedTeacherSectionsTests(SimpleTestCase):
             self.assertEqual(
                 _changed({'sections': [{'teacher_changed': value}]}), [],
                 value)
+
+
+class SectionDisplayCarriesChangedSectionsTests(SimpleTestCase):
+    """`changed_teacher_sections` must also ride inside `section_display`.
+
+    rest_framework_datatables filters each row down to the fields named in
+    the `columns[i][data]` params the browser sends. A top-level serializer
+    field with no matching `<th data-data=...>` is stripped before it reaches
+    the CE table, so the email action silently never renders. `section_display`
+    is a requested column, so nesting the list inside it survives the filter.
+    """
+
+    def test_section_display_includes_changed_teacher_sections(self):
+        obj = _Obj({'teaching': 'yes', 'sections': [
+            {'teacher_changed': 'yes', 'new_teacher_email': 'j@x.com',
+             'new_teacher_name': 'Jane Roe'},
+        ]})
+        obj.section_display = []
+        display = FutureCourseSerializer().get_section_display(obj)
+        self.assertIn('changed_teacher_sections', display)
+        self.assertEqual(display['changed_teacher_sections'][0]['index'], 0)
+
+    def test_section_display_key_is_empty_when_nothing_flagged(self):
+        obj = _Obj({'teaching': 'yes', 'sections': [{'teacher_changed': 'no'}]})
+        obj.section_display = []
+        display = FutureCourseSerializer().get_section_display(obj)
+        self.assertEqual(display['changed_teacher_sections'], [])
+
+    def test_section_display_keeps_its_existing_keys(self):
+        obj = _Obj({'teaching': 'yes', 'sections': []})
+        obj.section_display = []
+        display = FutureCourseSerializer().get_section_display(obj)
+        for key in ('teaching', 'displays', 'faculty_review'):
+            self.assertIn(key, display, key)

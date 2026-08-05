@@ -63,9 +63,16 @@ class FutureCourseSerializer(serializers.ModelSerializer):
                 'teaching': info.get('teaching'),
                 'displays': obj.section_display,
                 'faculty_review': faculty_review,
+                # Nested here as well as exposed top-level because
+                # rest_framework_datatables strips any field the browser did
+                # not name in a columns[i][data] param, and there is no
+                # <th data-data="changed_teacher_sections"> to request it.
+                'changed_teacher_sections':
+                    self.get_changed_teacher_sections(obj),
             }
         except Exception:
-            return {'teaching': None, 'displays': [], 'faculty_review': None}
+            return {'teaching': None, 'displays': [], 'faculty_review': None,
+                    'changed_teacher_sections': []}
 
     def get_changed_teacher_sections(self, obj):
         """Sections flagged 'teacher changed', for the CE outreach action.
