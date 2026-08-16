@@ -224,3 +224,68 @@ class CampusFieldChoicesTests(TestCase):
         field = AddNewTeacherForm.base_fields['campus']
         self.assertFalse(field.required)
         self.assertEqual(field.empty_label, 'All Campuses')
+
+
+class AddNewTeacherFormInitTests(TestCase):
+    """Drives the real AddNewTeacherForm.__init__ (HS-admin branch) to pin
+    the two runtime effects of the All Campuses change: the campus queryset
+    coming from campuses_with_selectable_courses(), and active_campus
+    defaulting to (and falling back to) None rather than a campus."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from cis.models.highschool import HighSchool
+        from cis.models.highschool_administrator import (
+            HSAdministrator, HSAdministratorPosition, HSPosition,
+        )
+
+        cls.user = _hs_admin_user()
+        cls.ay = AcademicYear.objects.create(name='2099-2100')
+        cls.cohort = Cohort.objects.create(name='Co', designator='CO')
+
+        cls.stocked = Campus.objects.create(name='Stocked', code='S')
+        cls.other_stocked = Campus.objects.create(name='OtherStocked', code='OS')
+        cls.empty = Campus.objects.create(name='Empty', code='E')
+
+        Course.objects.create(
+            name='A1', title='Alpha Active', cohort=cls.cohort,
+            catalog_number='101', credit_hours=3, campus=cls.stocked,
+            status='Active')
+        Course.objects.create(
+            name='B1', title='Bravo Active', cohort=cls.cohort,
+            catalog_number='102', credit_hours=3, campus=cls.other_stocked,
+            status='Active')
+
+        highschool = HighSchool.objects.create(name='Test HS')
+        position = HSPosition.objects.create(name='Coordinator')
+        hsadmin = HSAdministrator.objects.create(user=cls.user)
+        HSAdministratorPosition.objects.create(
+            hsadmin=hsadmin, highschool=highschool, position=position,
+            status='Active')
+
+    def _request(self):
+        req = RequestFactory().get('/')
+        req.user = self.user
+        return req
+
+    def _form(self, data=None):
+        from future_sections.future_sections.forms import AddNewTeacherForm
+        return AddNewTeacherForm(
+            self._request(), self.ay, 'pathways', data=data)
+
+    def test_queryset_is_scoped_to_campuses_with_selectable_courses(self):
+        form = self._form()
+        queryset = form.fields['campus'].queryset
+        self.assertIn(self.stocked, queryset)
+        self.assertIn(self.other_stocked, queryset)
+        self.assertNotIn(self.empty, queryset)
+
+    def test_unbound_form_applies_no_campus_filter(self):
+        form = self._form()
+        titles = sorted(c.title for c in form.fields['course'].queryset)
+        self.assertEqual(titles, ['Alpha Active', 'Bravo Active'])
+
+    def test_garbage_campus_value_falls_back_to_no_filter_not_a_campus(self):
+        form = self._form(data={'campus': 'not-a-uuid'})
+        titles = sorted(c.title for c in form.fields['course'].queryset)
+        self.assertEqual(titles, ['Alpha Active', 'Bravo Active'])
