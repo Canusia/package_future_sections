@@ -188,6 +188,23 @@ class AddableCoursesAvailabilityRuleTests(TestCase):
         course = self._course('103', campus=self.campus, meta='2')
         self.assertNotIn(course, self._addable(self.campus))
 
+    def test_excludes_sis_import_string_zero(self):
+        """import_courses.py's raw `isopen` value can be a CSV '0'."""
+        course = self._course('106', campus=self.campus, meta='0')
+        self.assertNotIn(course, self._addable(self.campus))
+
+    def test_excludes_sis_import_string_false(self):
+        course = self._course('107', campus=self.campus, meta='false')
+        self.assertNotIn(course, self._addable(self.campus))
+
+    def test_excludes_sis_import_string_False(self):
+        course = self._course('108', campus=self.campus, meta='False')
+        self.assertNotIn(course, self._addable(self.campus))
+
+    def test_excludes_sis_import_boolean_false(self):
+        course = self._course('109', campus=self.campus, meta=False)
+        self.assertNotIn(course, self._addable(self.campus))
+
     def test_campusless_course_is_addable_under_any_campus(self):
         course = self._course('104', campus=None)
         self.assertIn(course, self._addable(self.campus))
@@ -196,6 +213,52 @@ class AddableCoursesAvailabilityRuleTests(TestCase):
     def test_campus_scoping_still_excludes_other_campuses(self):
         course = self._course('105', campus=self.other)
         self.assertNotIn(course, self._addable(self.campus))
+
+
+class AddableCoursesDistinctTitleTiebreakTests(TestCase):
+    """`distinct('title')` under Postgres DISTINCT ON needs a full tiebreak on
+    the ORDER BY or the survivor is planner-dependent. With the campus scope
+    now defaulting to All Campuses, same-titled courses on different campuses
+    are newly reachable in one queryset, so which row survives must be
+    deterministic and predictable — here, the one with the alphabetically
+    first campus name."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = _hs_admin_user()
+        cls.cohort = Cohort.objects.create(name='Co', designator='CO')
+        cls.campus_z = Campus.objects.create(name='Zed Campus', code='Z')
+        cls.campus_a = Campus.objects.create(name='Alpha Campus', code='A')
+
+        # Same title, different campuses/catalog numbers — a real EWU pattern
+        # (e.g. SPAN 201/202/203 all titled "INTERMEDIATE SPANISH & CULTURE").
+        cls.on_z = Course.objects.create(
+            name='DUP1', title='Duplicate Title', cohort=cls.cohort,
+            catalog_number='901', credit_hours=3, campus=cls.campus_z,
+            status='Active')
+        cls.on_a = Course.objects.create(
+            name='DUP2', title='Duplicate Title', cohort=cls.cohort,
+            catalog_number='902', credit_hours=3, campus=cls.campus_a,
+            status='Active')
+
+    def _request(self):
+        req = RequestFactory().get('/')
+        req.user = self.user
+        return req
+
+    def test_survivor_is_deterministic_and_matches_the_tiebreak(self):
+        first = list(addable_courses_for_user(
+            self._request(), None, None, None))
+        second = list(addable_courses_for_user(
+            self._request(), None, None, None))
+
+        dup_first = [c for c in first if c.title == 'Duplicate Title']
+        dup_second = [c for c in second if c.title == 'Duplicate Title']
+
+        self.assertEqual(len(dup_first), 1)
+        self.assertEqual(dup_first[0].id, dup_second[0].id)
+        # campus__name tiebreak: 'Alpha Campus' sorts before 'Zed Campus'.
+        self.assertEqual(dup_first[0].id, self.on_a.id)
 
 
 class CampusFieldChoicesTests(TestCase):
