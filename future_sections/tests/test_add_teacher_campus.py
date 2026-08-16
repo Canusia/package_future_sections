@@ -196,3 +196,31 @@ class AddableCoursesAvailabilityRuleTests(TestCase):
     def test_campus_scoping_still_excludes_other_campuses(self):
         course = self._course('105', campus=self.other)
         self.assertNotIn(course, self._addable(self.campus))
+
+
+class CampusFieldChoicesTests(TestCase):
+    def setUp(self):
+        from cis.models.course import Campus
+        self.stocked = Campus.objects.create(name='Stocked', code='S')
+        self.empty = Campus.objects.create(name='Empty', code='E')
+
+    def test_lists_only_campuses_with_selectable_courses(self):
+        from future_sections.future_sections.utils import (
+            campuses_with_selectable_courses,
+        )
+        from cis.models.course import Cohort, Course
+        Course.objects.create(
+            name='ENGL& 101', status='active', title='Course 101',
+            catalog_number='101', campus=self.stocked,
+            cohort=Cohort.objects.create(name='101', designator='C101&'),
+            meta={},
+        )
+        result = campuses_with_selectable_courses()
+        self.assertIn(self.stocked, result)
+        self.assertNotIn(self.empty, result)
+
+    def test_campus_field_is_optional_with_an_all_campuses_label(self):
+        from future_sections.future_sections.forms import AddNewTeacherForm
+        field = AddNewTeacherForm.base_fields['campus']
+        self.assertFalse(field.required)
+        self.assertEqual(field.empty_label, 'All Campuses')

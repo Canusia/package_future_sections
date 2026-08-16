@@ -574,7 +574,8 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
     campus = forms.ModelChoiceField(
         queryset=None,
         label='Campus',
-        empty_label=None,
+        required=False,
+        empty_label='All Campuses',
         widget=forms.Select(attrs={'class': 'col-md-10'}))
 
     course = CourseTitleChoiceField(
@@ -707,24 +708,26 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
             if field_name in custom_help_texts:
                 field.help_text = mark_safe(custom_help_texts[field_name])
 
-        # Campus dropdown, defaulting to the first campus. The course list is
-        # scoped to a campus: the submitted value when the form is bound (so a
-        # course chosen after switching campus still validates on POST),
-        # otherwise the default campus on first render.
+        # Campus dropdown. The course list is scoped to a campus: the
+        # submitted value when the form is bound (so a course chosen after
+        # switching campus still validates on POST), otherwise All Campuses
+        # on first render.
         from cis.models.course import Campus
         from django.core.exceptions import ValidationError
         from .utils import addable_courses_for_user
 
-        self.fields['campus'].queryset = Campus.objects.order_by('name')
-        default_campus = Campus.objects.order_by('name').first()
-        self.fields['campus'].initial = default_campus
+        # Campuses holding at least one selectable course; All Campuses (the
+        # empty choice) is the default and applies no campus filter. Courses
+        # with no campus are offered under every selection.
+        from .utils import campuses_with_selectable_courses
+        self.fields['campus'].queryset = campuses_with_selectable_courses()
 
-        active_campus = default_campus
+        active_campus = None
         if self.is_bound and self.data.get('campus'):
             try:
                 active_campus = Campus.objects.get(id=self.data.get('campus'))
             except (Campus.DoesNotExist, ValidationError, ValueError):
-                active_campus = default_campus
+                active_campus = None
 
         from cis.utils import user_has_highschool_admin_role, user_has_instructor_role
         from cis.models.teacher import Teacher
