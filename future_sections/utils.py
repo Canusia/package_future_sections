@@ -49,24 +49,74 @@ def get_fs_config():
     return fs_settings.from_db()
 
 
+# cis.utils.YES_NO_SELECT_OPTIONS: '' = Select, '1' = Yes, '2' = No.
+AVAILABLE_FOR_SI_NO = '2'
+
+
+def _not_explicitly_unavailable():
+    """Match every course except those explicitly marked No.
+
+    The isnull clause is load-bearing and must not be "simplified" away:
+    `available_for_si` is absent on most rows, so a bare
+    `exclude(meta__available_for_si='2')` compares against SQL NULL and
+    silently drops those rows instead of keeping them. Measured on live data
+    that exclusion returned 11 of 101 active courses.
+    """
+    from django.db.models import Q
+    return (
+        ~Q(meta__available_for_si=AVAILABLE_FOR_SI_NO)
+        | Q(meta__available_for_si__isnull=True)
+    )
+
+
+def selectable_courses(campus=None):
+    """Active, not-refused courses, optionally scoped to a campus.
+
+    Passing a campus also keeps courses with no campus, which are offered
+    everywhere. Mirrors instructor_app's rule of the same name — the two are
+    deliberately separate copies so the packages release independently.
+    """
+    from django.db.models import Q
+    from cis.models.course import Course
+
+    qs = Course.objects.filter(status__iexact='active').filter(
+        _not_explicitly_unavailable()
+    )
+    if campus is not None:
+        qs = qs.filter(Q(campus=campus) | Q(campus__isnull=True))
+    return qs
+
+
+def campuses_with_selectable_courses():
+    """Campuses holding at least one selectable course, ordered by name."""
+    from cis.models.course import Campus
+
+    campus_ids = (
+        selectable_courses()
+        .exclude(campus__isnull=True)
+        .values_list('campus', flat=True)
+        .distinct()
+    )
+    return Campus.objects.filter(id__in=campus_ids).order_by('name')
+
+
 def addable_courses_for_user(request, academic_year, course_type=None, campus=None):
     """Course queryset selectable in the add-teacher form.
 
-    Mirrors ``AddNewTeacherForm.__init__``: HS admins get all active courses;
-    instructors get only the courses they are certified for. When ``campus`` is
-    given the list is narrowed to that campus. Shared by the form (initial
-    render / bound validation) and the ``add-teacher-courses`` AJAX action so
-    the two never drift.
+    Mirrors ``AddNewTeacherForm.__init__``: HS admins get all selectable
+    courses; instructors get only the courses they are certified for. A course
+    is selectable when it is active and not explicitly marked unavailable to
+    new instructors. When ``campus`` is given the list is narrowed to that
+    campus plus courses with no campus, which are offered everywhere. Shared by
+    the form (initial render / bound validation) and the
+    ``add-teacher-courses`` AJAX action so the two never drift.
 
     ``course_type`` is accepted for forward-compatibility but, matching current
     behavior, is not used to filter the list.
     """
-    from cis.models.course import Course
     from cis.utils import user_has_highschool_admin_role, user_has_instructor_role
 
-    qs = Course.objects.filter(status__iexact='active')
-    if campus is not None:
-        qs = qs.filter(campus=campus)
+    qs = selectable_courses(campus)
 
     # HS admins see everything active; only instructors are cert-scoped. The
     # HS-admin check wins when a user happens to hold both roles (as in the form).

@@ -128,3 +128,71 @@ class AddTeacherCoursesEndpointTests(TestCase):
     def test_requires_academic_year_id(self):
         resp = self.client.get(self.url, {'campus': str(self.campus_a.id)})
         self.assertEqual(resp.status_code, 400)
+
+
+class AddableCoursesAvailabilityRuleTests(TestCase):
+    """Mirrors instructor_app's rule: active, not explicitly No, campus or null.
+
+    `available_for_si` is unset on most rows, and the two kinds of unset (meta
+    NULL, and meta dict without the key) behave oppositely under exclude() —
+    both are pinned here.
+    """
+
+    def setUp(self):
+        from cis.models.course import Campus
+        self.campus = Campus.objects.create(name='Main', code='M')
+        self.other = Campus.objects.create(name='Other', code='O')
+
+    def _request(self):
+        """A CE-staff-ish request: neither HS admin nor instructor, so no
+        certificate scoping is applied and the rule is what we measure."""
+        from unittest.mock import MagicMock
+        from django.contrib.auth.models import Group
+
+        from cis.models.customuser import CustomUser
+        Group.objects.get_or_create(name='ce')
+        user, _ = CustomUser.objects.get_or_create(
+            username='ce@x.com', defaults={'email': 'ce@x.com'})
+        request = MagicMock()
+        request.user = user
+        return request
+
+    def _course(self, catalog, campus=None, meta='unset'):
+        from cis.models.course import Cohort, Course
+        if meta == 'unset':
+            meta_value = {'some_other_key': 'x'}
+        elif meta is None:
+            meta_value = None
+        else:
+            meta_value = {'available_for_si': meta}
+        return Course.objects.create(
+            name=f'ENGL& {catalog}', status='active', title=f'Course {catalog}',
+            catalog_number=catalog, campus=campus,
+            cohort=Cohort.objects.create(name=catalog, designator=f'C{catalog}&'),
+            meta=meta_value,
+        )
+
+    def _addable(self, campus=None):
+        from future_sections.future_sections.utils import addable_courses_for_user
+        return addable_courses_for_user(self._request(), None, None, campus)
+
+    def test_includes_course_whose_meta_dict_lacks_the_key(self):
+        course = self._course('101', campus=self.campus)
+        self.assertIn(course, self._addable(self.campus))
+
+    def test_includes_course_whose_meta_is_null_entirely(self):
+        course = self._course('102', campus=self.campus, meta=None)
+        self.assertIn(course, self._addable(self.campus))
+
+    def test_excludes_course_explicitly_marked_no(self):
+        course = self._course('103', campus=self.campus, meta='2')
+        self.assertNotIn(course, self._addable(self.campus))
+
+    def test_campusless_course_is_addable_under_any_campus(self):
+        course = self._course('104', campus=None)
+        self.assertIn(course, self._addable(self.campus))
+        self.assertIn(course, self._addable(self.other))
+
+    def test_campus_scoping_still_excludes_other_campuses(self):
+        course = self._course('105', campus=self.other)
+        self.assertNotIn(course, self._addable(self.campus))
