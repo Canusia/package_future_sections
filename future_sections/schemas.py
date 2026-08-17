@@ -72,6 +72,22 @@ class TeachingSectionFieldSchema(BaseModel):
             "field_type": "string",
         },
     )
+    course_type: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Type of course",
+            "widget_type": "select",
+            "field_type": "string",
+        },
+    )
+    course_request_type: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "This is a:",
+            "widget_type": "select",
+            "field_type": "string",
+        },
+    )
     highschool_course_name: Optional[str] = Field(
         default=None,
         json_schema_extra={

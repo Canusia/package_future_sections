@@ -282,6 +282,21 @@ class TeacherCourseSectionForm(forms.Form):
             if stored_location not in location_values:
                 location_choices.append((stored_location, stored_location))
 
+        # Course-type selects. Unlike instruction_mode/location these are
+        # HIDDEN when unconfigured rather than rendered empty: they default to
+        # required, and a tenant that has not set options cannot satisfy an
+        # empty dropdown. Existing fields keep their current behavior.
+        option_driven = {
+            'course_type': parse_choice_list(
+                fs_config.get('course_types', ''), pairs=True),
+            'course_request_type': parse_choice_list(
+                fs_config.get('course_request_types', ''), pairs=True),
+        }
+        for name, parsed in option_driven.items():
+            stored = initial.get(name, '')
+            if parsed and stored and stored not in {c[0] for c in parsed}:
+                parsed.append((stored, stored))
+
         # Generate configurable fields from schema
         # Dependent fields are always visible when their parent is visible
         dependent_fields = TeachingSectionFieldSchema.get_dependent_fields()
@@ -298,6 +313,15 @@ class TeacherCourseSectionForm(forms.Form):
                 parent = dependent_fields[field_name]
                 if parent in visible_fields:
                     is_visible = True
+
+            if field_name in option_driven:
+                if not option_driven[field_name]:
+                    # No options configured — render nothing at all.
+                    self.fields[field_name] = (
+                        TeachingSectionFieldSchema.make_django_form_field(
+                            field_name, visible=False, required=False))
+                    continue
+                extra_kwargs['choices'] = option_driven[field_name]
 
             self.fields[field_name] = TeachingSectionFieldSchema.make_django_form_field(
                 field_name,
