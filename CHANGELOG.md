@@ -3,6 +3,17 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.6.1
+
+### Fixed
+
+* **Version metadata now matches the tag.** `setup.py` and `setup.cfg` still declared
+  `2026.5.2` when v2026.6.0 was tagged, so the wheel built from that tag reported the older
+  version. pip keys upgrades off the version string, meaning a tenant already on 2026.5.2
+  saw no upgrade and silently kept the old code unless it was reinstalled with
+  `--force-reinstall`. The v2026.6.0 tag is left as published; this release carries the
+  same code with correct metadata.
+
 ## 2026.6.0
 
 ### Added
