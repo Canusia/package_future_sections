@@ -3,6 +3,44 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.6.0
+
+### Added
+
+* **Two tenant-configurable selects on the Add Teacher form.** "Type of course"
+  (`course_type`) and "This is a:" (`course_request_type`) join the existing configurable
+  fields, so they appear in the Add Teacher Form Fields picker with the usual Visible /
+  Required / Custom Label / Weight controls and are stored in the same `JSONField` as
+  everything else — no migration.
+* **Two settings to drive them**, under Course Types and Course Request Types, alongside
+  Instruction Modes and Locations. Both are pipe-delimited and accept `value:Label` pairs,
+  so an option can be reworded later without orphaning records that already store it. Only
+  the first colon splits, meaning a label may contain a colon but a value may not. Values
+  are capped at 1000 characters rather than the 500 used by Instruction Modes, because a
+  realistic course-request label runs past 100 characters on its own.
+* `parse_choice_list(raw, pairs=False)` in `forms.py`, shared by all four option-list
+  settings, replacing two near-identical inline comprehensions.
+
+### Changed
+
+* Instruction Modes and Locations now parse through `parse_choice_list`. Their behaviour is
+  unchanged: pair-splitting is **opt-in**, and both call it with the default. A plain label
+  may legitimately contain a colon — `Hybrid: F2F and Online` is a real shape — and
+  splitting it would have silently changed both the stored value and the displayed label
+  for settings that already exist. They can adopt `pairs=True` later, deliberately.
+
+### Upgrade notes
+
+* **Nothing is required, and nothing changes until you configure it.** A field whose option
+  list is empty is not rendered at all, regardless of its Visible/Required setting. Both new
+  fields default to visible and required, so without that rule every tenant would inherit an
+  empty required dropdown it could not satisfy.
+* To adopt, set the option lists in Settings → Future Sections. They ship blank on purpose:
+  seeding one tenant's course vocabulary into a shared package would push it to all of them.
+* Prefer short stable values (`dual:Dual Credit`) over bare labels for these two fields. A
+  record holding a value you later remove from the list keeps that value selectable, but it
+  renders as the bare value, so slugs age better than prose.
+
 ## 2026.5.2
 
 ### Changed
