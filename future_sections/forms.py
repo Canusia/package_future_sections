@@ -23,21 +23,33 @@ from .schemas import TeachingSectionFieldSchema
 from .utils import sanitize_plain_text
 
 
-def parse_choice_list(raw):
+def parse_choice_list(raw, pairs=False):
     """Parse a pipe-delimited option list into Django choice pairs.
 
-    Each token is either ``value:Label`` or a bare ``Label`` used as both.
-    Only the FIRST colon splits, so a label may contain colons; a value may
-    not. Blank tokens and tokens with an empty value are dropped.
+    By default (``pairs=False``) every token becomes ``(token, token)`` —
+    this is the historical behavior of `instruction_modes` and
+    `location_options`, and it is preserved *exactly*, byte for byte,
+    because a plain label may legitimately contain a colon (e.g.
+    ``"Hybrid: F2F and Online"``). Splitting on that colon would silently
+    change both the stored value and the displayed label for existing
+    settings, so no colon splitting happens unless explicitly requested.
 
-    The bare form is what `instruction_modes` and `location_options` have
-    always used, and it keeps its exact previous meaning — this helper is a
-    superset, so those settings need no migration and can adopt pairs later.
+    With ``pairs=True``, each token is either ``value:Label`` or a bare
+    ``Label`` used as both, and only the FIRST colon splits (so a label may
+    still contain colons; a value may not). Use this for option lists that
+    are designed around distinct stored values from the start — it is not
+    a safe default for settings that already exist.
+
+    Blank tokens are dropped in both modes; in ``pairs=True`` mode, tokens
+    with an empty value are also dropped.
     """
     choices = []
     for token in (raw or '').split('|'):
         token = token.strip()
         if not token:
+            continue
+        if not pairs:
+            choices.append((token, token))
             continue
         value, sep, label = token.partition(':')
         value = value.strip()
