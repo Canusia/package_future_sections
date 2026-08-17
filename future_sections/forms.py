@@ -22,6 +22,32 @@ from .models import FutureCourse, FutureProjection
 from .schemas import TeachingSectionFieldSchema
 from .utils import sanitize_plain_text
 
+
+def parse_choice_list(raw):
+    """Parse a pipe-delimited option list into Django choice pairs.
+
+    Each token is either ``value:Label`` or a bare ``Label`` used as both.
+    Only the FIRST colon splits, so a label may contain colons; a value may
+    not. Blank tokens and tokens with an empty value are dropped.
+
+    The bare form is what `instruction_modes` and `location_options` have
+    always used, and it keeps its exact previous meaning — this helper is a
+    superset, so those settings need no migration and can adopt pairs later.
+    """
+    choices = []
+    for token in (raw or '').split('|'):
+        token = token.strip()
+        if not token:
+            continue
+        value, sep, label = token.partition(':')
+        value = value.strip()
+        if not value:
+            continue
+        label = label.strip() if sep else ''
+        choices.append((value, label or value))
+    return choices
+
+
 class SearchInstructorByCohortForm(forms.Form):
     cohort = forms.ModelMultipleChoiceField(
         queryset=Cohort.objects.all().order_by('name'),
@@ -222,14 +248,8 @@ class TeacherCourseSectionForm(forms.Form):
         custom_help_texts = form_config.get('help_texts', {})
 
         # Build instruction mode choices from settings
-        instruction_mode_choices = None
-        raw_modes = fs_config.get('instruction_modes', '')
-        if raw_modes:
-            instruction_mode_choices = [
-                (m.strip(), m.strip())
-                for m in raw_modes.split('|')
-                if m.strip()
-            ]
+        instruction_mode_choices = parse_choice_list(
+            fs_config.get('instruction_modes', '')) or None
 
         # If editing existing data, ensure stored instruction_mode value is in choices
         initial = kwargs.get('initial') or {}
@@ -240,14 +260,8 @@ class TeacherCourseSectionForm(forms.Form):
                 instruction_mode_choices.append((stored_mode, stored_mode))
 
         # Build location choices from settings (mirrors instruction_modes)
-        location_choices = None
-        raw_locations = fs_config.get('location_options', '')
-        if raw_locations:
-            location_choices = [
-                (loc.strip(), loc.strip())
-                for loc in raw_locations.split('|')
-                if loc.strip()
-            ]
+        location_choices = parse_choice_list(
+            fs_config.get('location_options', '')) or None
 
         # If editing existing data, ensure the stored location value is selectable
         stored_location = initial.get('location', '')
