@@ -469,6 +469,52 @@ class future_sections(forms.Form):
         })
     )
 
+    # ── Course Types ──────────────────────────────────────────────────────
+    course_types_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Course Types</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    course_types = forms.CharField(
+        max_length=1000,
+        required=False,
+        label="Available Course Types",
+        help_text='Pipe-delimited list for the "Type of course" field. Each entry '
+                  'is either <code>value:Label</code> or a plain label used as '
+                  'both. Only the first colon splits, so a label may contain a '
+                  'colon but a value may not. Using short stable values lets you '
+                  'reword a label later without orphaning saved records. '
+                  'Leave blank to hide the field.',
+        initial='',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'option_a:Option A|option_b:Option B'
+        })
+    )
+
+    course_request_types_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Course Request Types</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    course_request_types = forms.CharField(
+        max_length=1000,
+        required=False,
+        label="Available Course Request Types",
+        help_text='Pipe-delimited list for the "This is a:" field, in the same '
+                  '<code>value:Label</code> form as Course Types. '
+                  'Leave blank to hide the field.',
+        initial='',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'new:New Course|existing:Existing Course'
+        })
+    )
+
     # ── Reviewed Status Email ────────────────────────────────────────────
     reviewed_email_header = FFields.ReadOnlyField(
         required=False,
