@@ -88,6 +88,16 @@ class TeachingSectionFieldSchema(BaseModel):
             "field_type": "string",
         },
     )
+    section_number: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Section Number",
+            "default_help_text": (
+                "Pre-filled from last year's section when available"),
+            "widget_type": "text",
+            "field_type": "string",
+        },
+    )
     highschool_course_name: Optional[str] = Field(
         default=None,
         json_schema_extra={

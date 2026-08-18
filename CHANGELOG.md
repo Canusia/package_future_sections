@@ -5,7 +5,35 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 
 ## Unreleased
 
+### Added
+
+* **A `section_number` field** on the teaching form, off by default. Enable it under
+  Teaching Form Fields to give each pre-populated row a value that tells it apart from its
+  siblings in the same term.
+
 ### Changed
+
+* **"Enter Course Details" now pre-populates one row per previous-year section**, not one
+  per term. A teacher who taught the same course twice in a term used to get a single row
+  while the "Previous Year" column beside it counted two, and the admin had to notice and
+  re-add the rest by hand. Rows are ordered by term then section number, so the order no
+  longer varies between requests.
+
+  Each row carries the mapped term plus whichever of `section_number`,
+  `highschool_course_name`, `class_period` (from the prior section's `period_time`) and
+  `instruction_mode` the tenant has made visible. Hidden fields are deliberately not
+  pre-filled — their widgets still post, so a value copied into one would be stored without
+  anyone seeing it. `location` is never copied: `ClassSection.location` is a foreign key to
+  the SIS Location table while the form's select holds strings from the `location_options`
+  setting, and the two vocabularies do not match.
+
+  **A tenant whose teachers run several sections of a course in one term should enable
+  Section Number**, otherwise the extra rows arrive identical and there is nothing to edit
+  them against.
+
+* The formset's unreachable "Terms must be unique" branch is deleted. It was dead code
+  (`duplicates` was hardcoded `False`), and same-term rows are now the normal case, so
+  anyone "fixing" it by uncommenting the check would have broken pre-population silently.
 
 * **"Type of course" and "This is a:" are now Add Teacher fields.** Both selects moved out
   of Teaching Form Fields into the **Add Teacher Form Fields** card, where they get the

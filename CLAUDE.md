@@ -56,7 +56,19 @@ All FKs to cis models use explicit `related_name` with `fs_` prefix (e.g., `fs_f
 - `get_export_labels()` - Labels for CSV exports
 - `format_section_display()` - Renders section display from template
 
-Available fields: `estimated_enrollment`, `class_period`, `instruction_mode`, `highschool_course_name`, `number_of_sections`, `full_year`, `trimester`, `fall_only`, `spring_only`, `notes`, `teacher_changed`.
+Available fields: `estimated_enrollment`, `class_period`, `location`, `instruction_mode`, `section_number`, `highschool_course_name`, `number_of_sections`, `full_year`, `trimester`, `fall_only`, `spring_only`, `notes`, `teacher_changed`, `new_teacher_name`, `highschool_title_changed`, `new_highschool_title`, `start_date`, `end_date`, `assessment_upload`, `new_teacher_email`.
+
+`course_type` and `course_request_type` are declared on the same schema (so their values
+ride in the same `section_info` JSON) but are configured under **Add Teacher Form Fields**
+and rendered only by `AddNewTeacherForm` — `TeacherCourseSectionForm` always hides them.
+See `TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS`.
+
+## Tests
+
+The suite ships inside the wheel and runs in both deployment shapes, so no test module may
+spell out `future_sections.future_sections.*`. Use relative imports, or `PKG` from
+`future_sections/tests/__init__.py` where a string is required (e.g. `mock.patch`).
+`test_no_hardcoded_package_prefix.py` enforces this.
 
 ## Settings Form (`settings/future_sections.py`)
 

@@ -1047,23 +1047,16 @@ class TeacherCourseBaseLinkFormSet(BaseFormSet):
         if any(self.errors):
             return
         
-        terms = []
-        # number_of_sections = []
-        duplicates = False        
-        for form in self.forms:
-            if form.cleaned_data:
-                term = form.cleaned_data.get('term')
-                # number_of_sections = form.cleaned_data.get('number_of_sections')
-
-                # if term in terms:
-                #     duplicates = True
-                terms.append(term)
-
-                if duplicates:
-                    raise ValidationError(
-                        'Terms must be unique',
-                        code='duplicate_terms'
-                    )
+        # Rows may share a term: pre-population emits one row per
+        # previous-year section, so two sections taught in the same term
+        # arrive as two rows carrying the same term. A commented-out
+        # "Terms must be unique" check used to sit here, permanently
+        # unreachable; enforcing it would break that.
+        terms = [
+            form.cleaned_data.get('term')
+            for form in self.forms
+            if form.cleaned_data
+        ]
         if len(terms) == 0:
             raise ValidationError(
                 'Please enter at least 1 section information'

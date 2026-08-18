@@ -220,11 +220,38 @@ def build_prev_year_lookup(previous_academic_year_id, statuses=None):
     return lookup
 
 
+# Teaching-form field -> the ClassSection attribute it is copied from when a
+# previous-year section is pre-populated into a row.
+PREV_YEAR_FIELD_SOURCES = {
+    'section_number': 'section_number',
+    'highschool_course_name': 'highschool_course_name',
+    'class_period': 'period_time',
+    'instruction_mode': 'instruction_mode',
+}
+# `location` is deliberately absent: ClassSection.location is a FK to the SIS
+# Location table, while the form's location select holds strings from the
+# tenant's `location_options` setting. The two vocabularies do not match, so
+# copying one into the other would offer the admin an option nobody
+# configured.
+
+
 def build_initial_from_prev_year(teacher_course):
     """Build formset initial data from previous year ClassSections using term mapping.
 
-    Collapses to one row per previous-year term. Maps terms using the
-    ``term_mapping`` stored in settings. Unmapped terms get a blank term value.
+    One row per previous-year section — a teacher who taught the same course
+    twice in a term gets two rows, matching the count the "Previous Year"
+    column shows beside them. Rows are ordered by term then section number so
+    the order does not shift between requests.
+
+    Each row carries the mapped term plus whichever of
+    ``PREV_YEAR_FIELD_SOURCES`` the tenant has made visible in
+    ``teaching_form_config``. Hidden fields are left out on purpose: their
+    widgets still post, so pre-filling one would store last year's value
+    without anyone seeing it. Enabling **Section Number** is what makes two
+    rows from the same term distinguishable.
+
+    Maps terms using the ``term_mapping`` stored in settings. Unmapped terms
+    get a blank term value.
     """
     import json
     from cis.models.section import ClassSection
@@ -252,21 +279,22 @@ def build_initial_from_prev_year(teacher_course):
         teacher=teacher,
         course=course,
         **prev_year_status_filter(fs_config.get('prev_year_class_status')),
-    ).select_related('term').order_by('term__code')
+    ).select_related('term').order_by('term__code', 'section_number', 'id')
 
-    seen_terms = set()
+    try:
+        form_config = json.loads(fs_config.get('teaching_form_config', '{}'))
+    except (json.JSONDecodeError, TypeError):
+        form_config = {}
+    visible_fields = set(form_config.get('fields', []))
+
     initial_data = []
     for section in prev_sections:
-        prev_term_id = str(section.term_id)
-        if prev_term_id in seen_terms:
-            continue
-        seen_terms.add(prev_term_id)
-
-        mapped_term_id = term_mapping.get(prev_term_id, '')
-        initial_data.append({
-            'term': mapped_term_id or '',
-            'highschool_course_name': section.highschool_course_name or '',
-        })
+        row = {'term': term_mapping.get(str(section.term_id), '') or ''}
+        for field_name, attr in PREV_YEAR_FIELD_SOURCES.items():
+            if field_name not in visible_fields:
+                continue
+            row[field_name] = getattr(section, attr, None) or ''
+        initial_data.append(row)
 
     return initial_data
 
