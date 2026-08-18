@@ -63,6 +63,16 @@ ride in the same `section_info` JSON) but are configured under **Add Teacher For
 and rendered only by `AddNewTeacherForm` — `TeacherCourseSectionForm` always hides them.
 See `TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS`.
 
+## Releasing
+
+Releases are tag-driven (`vYYYY.MAJOR.MINOR`), but the metadata is not decorative: **bump
+`version` in `setup.py` and `setup.cfg` to the tag you are about to cut, in the commit you
+tag**, and add the CHANGELOG entry there too. pip keys upgrades off that string, so a tag
+whose metadata still names the previous version reads as already satisfied and tenants
+silently keep the old code — v2026.6.0 shipped declaring `2026.5.2` and no tenant on
+2026.5.2 could pick it up without `--force-reinstall`. Then bump each tenant's
+`webapp/requirements.txt` pin and, where this is a submodule, the submodule pointer.
+
 ## Tests
 
 The suite ships inside the wheel and runs in both deployment shapes, so no test module may
