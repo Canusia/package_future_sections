@@ -5,7 +5,7 @@ from cis.models.highschool import HighSchool
 from cis.models.section import ClassSection
 from cis.models.term import AcademicYear, Term
 
-from future_sections.future_sections.utils import build_prev_year_lookup
+from ..utils import build_prev_year_lookup
 
 
 class PrevYearLookupTests(TestCase):
@@ -134,14 +134,14 @@ class PrevYearStatusFilterTests(PrevYearLookupTests):
 
 class PrevYearStatusSettingTests(TestCase):
     def test_setting_field_is_declared_and_optional(self):
-        from future_sections.future_sections.settings.future_sections import (
+        from ..settings.future_sections import (
             future_sections as FSForm,
         )
         field = FSForm.base_fields['prev_year_class_status']
         self.assertFalse(field.required)
 
     def test_setting_choices_come_from_the_model(self):
-        from future_sections.future_sections.settings.future_sections import (
+        from ..settings.future_sections import (
             future_sections as FSForm,
         )
         field = FSForm.base_fields['prev_year_class_status']

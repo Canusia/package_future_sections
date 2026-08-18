@@ -3,7 +3,7 @@ from unittest import mock
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, RequestFactory
 
-from future_sections.future_sections.utils import build_section_info_from_formset as build_sections_payload
+from ..utils import build_section_info_from_formset as build_sections_payload
 
 
 class _FakeForm:

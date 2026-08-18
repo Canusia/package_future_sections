@@ -3,7 +3,7 @@ from django.test import TestCase, RequestFactory
 
 from cis.models.term import AcademicYear, Term
 
-from future_sections.future_sections.settings.future_sections import (
+from ..settings.future_sections import (
     future_sections as FSForm,
 )
 

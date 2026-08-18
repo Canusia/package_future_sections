@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.serializers import FutureCourseSerializer
+from ..serializers import FutureCourseSerializer
 
 
 class _Obj:

@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.forms import EmailNewTeacherForm
+from ..forms import EmailNewTeacherForm
 
 
 class _Course:

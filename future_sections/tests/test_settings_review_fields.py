@@ -1,7 +1,7 @@
 from django.http import QueryDict
 from django.test import TestCase, RequestFactory
 
-from future_sections.future_sections.settings.future_sections import future_sections as FSForm
+from ..settings.future_sections import future_sections as FSForm
 
 
 def _qdict(pairs):

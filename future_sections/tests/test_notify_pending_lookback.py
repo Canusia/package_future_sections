@@ -16,7 +16,7 @@ from cis.models.highschool_administrator import (
     HSAdministrator, HSAdministratorPosition, HSPosition,
 )
 
-from future_sections.future_sections.models import FutureCourse
+from ..models import FutureCourse
 
 
 class NotifyPendingLookbackTests(TestCase):

@@ -9,8 +9,8 @@ from cis.models.district import District
 from cis.models.teacher import Teacher, TeacherHighSchool, TeacherCourseCertificate
 from cis.models.settings import Setting
 
-from future_sections.future_sections.models import FutureCourse
-from future_sections.future_sections.review.helpers import (
+from ..models import FutureCourse
+from ..review.helpers import (
     visible_future_courses_for,
     create_or_attach_mentor,
     get_reviewer_roles,

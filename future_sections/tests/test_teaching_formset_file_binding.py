@@ -18,10 +18,10 @@ from django.test import TestCase, RequestFactory
 
 from cis.models.settings import Setting
 from cis.models.term import AcademicYear, Term
-from future_sections.future_sections.forms import (
+from ..forms import (
     TeacherCourseSectionForm, TeacherCourseBaseLinkFormSet,
 )
-from future_sections.future_sections.utils import (
+from ..utils import (
     build_section_info_from_formset,
 )
 

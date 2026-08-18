@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.settings.future_sections import (
+from ..settings.future_sections import (
     future_sections as FSForm,
     DEFAULT_NEW_TEACHER_EMAIL_SUBJECT,
     DEFAULT_NEW_TEACHER_EMAIL_MESSAGE,

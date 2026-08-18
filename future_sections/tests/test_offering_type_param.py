@@ -12,7 +12,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
-from future_sections.future_sections.views.api import resolve_offering_type
+from ..views.api import resolve_offering_type
 
 
 class ResolveOfferingTypeTests(SimpleTestCase):

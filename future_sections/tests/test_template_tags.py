@@ -3,8 +3,8 @@ import json
 from django.test import TestCase
 
 from cis.models.settings import Setting
-from future_sections.future_sections.forms import TeacherCourseSectionForm
-from future_sections.future_sections.templatetags.future_sections_tags import (
+from ..forms import TeacherCourseSectionForm
+from ..templatetags.future_sections_tags import (
     dependent_fields,
     get_existing_file_field,
     is_dependent_field,

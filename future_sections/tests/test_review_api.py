@@ -11,8 +11,8 @@ from cis.models.district import District
 from cis.models.teacher import Teacher, TeacherHighSchool, TeacherCourseCertificate
 from cis.models.settings import Setting
 
-from future_sections.future_sections.models import FutureCourse
-from future_sections.future_sections.review.api import SectionRequestViewSet
+from ..models import FutureCourse
+from ..review.api import SectionRequestViewSet
 
 
 def _world(reviewer_role='Faculty'):

@@ -4,9 +4,9 @@ from django import forms
 from django.test import SimpleTestCase, TestCase
 
 from cis.models.settings import Setting
-from future_sections.future_sections.forms import TeacherCourseSectionForm
-from future_sections.future_sections.schemas import TeachingSectionFieldSchema
-from future_sections.future_sections.settings.future_sections import (
+from ..forms import TeacherCourseSectionForm
+from ..schemas import TeachingSectionFieldSchema
+from ..settings.future_sections import (
     future_sections as fs_setting_form,
 )
 

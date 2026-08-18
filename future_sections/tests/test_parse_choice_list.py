@@ -8,7 +8,7 @@ exact previous meaning.
 """
 from django.test import TestCase
 
-from future_sections.future_sections.forms import parse_choice_list
+from ..forms import parse_choice_list
 
 
 class ParseChoiceListTests(TestCase):

@@ -31,6 +31,15 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 
 ### Fixed
 
+* **The packaged tests now run in pip-only tenants.** Every test module spelled the nested
+  `future_sections.future_sections.*` path, which only resolves where the package is
+  checked out as an in-tree editable submodule; in a flat pip install 28 of 32 modules
+  failed to import, so the suite that ships in the wheel gave those tenants nothing but
+  noise and no upgrade signal. Modules now use relative imports, and the one `mock.patch`
+  target that needs a string builds it from `PKG` in `future_sections/tests/__init__.py`,
+  resolved once via `find_spec`. A guard test fails if the nested prefix reappears.
+  (Canusia/package_future_sections#2)
+
 * **Version metadata now matches the tag.** `setup.py` and `setup.cfg` still declared
   `2026.5.2` when v2026.6.0 was tagged, so the wheel built from that tag reported the older
   version. pip keys upgrades off the version string, meaning a tenant already on 2026.5.2

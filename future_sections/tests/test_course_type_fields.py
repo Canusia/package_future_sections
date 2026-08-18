@@ -19,10 +19,10 @@ from cis.models.customuser import CustomUser
 from cis.models.settings import Setting
 from cis.models.term import AcademicYear
 
-from future_sections.future_sections.forms import (
+from ..forms import (
     AddNewTeacherForm, TeacherCourseSectionForm,
 )
-from future_sections.future_sections.schemas import TeachingSectionFieldSchema
+from ..schemas import TeachingSectionFieldSchema
 
 
 COURSE_TYPES = 'dual:Dual Credit|cpl:Credit for Prior Learning (CPL)'

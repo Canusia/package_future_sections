@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group
 from cis.models.customuser import CustomUser
 from cis.models.course import Course, CourseAdministrator, Cohort
 
-from future_sections.future_sections.review.forms import SectionRequestReviewForm
+from ..review.forms import SectionRequestReviewForm
 
 
 def _course():

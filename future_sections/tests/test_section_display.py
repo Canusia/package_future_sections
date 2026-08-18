@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.schemas import TeachingSectionFieldSchema
+from ..schemas import TeachingSectionFieldSchema
 
 
 class FileDisplayTests(SimpleTestCase):

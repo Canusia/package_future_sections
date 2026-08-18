@@ -4,7 +4,7 @@ from django import forms
 from django.test import TestCase
 
 from cis.models.settings import Setting
-from future_sections.future_sections.forms import TeacherCourseSectionForm
+from ..forms import TeacherCourseSectionForm
 
 
 class _ConfigMixin:

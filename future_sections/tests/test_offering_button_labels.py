@@ -11,7 +11,7 @@ import re
 
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.settings.future_sections import (
+from ..settings.future_sections import (
     future_sections as FSForm,
 )
 
@@ -103,7 +103,7 @@ class LabelsArePlainTextTests(SimpleTestCase):
     that are deliberately rendered as markup."""
 
     def test_settings_strip_markup_on_save(self):
-        from future_sections.future_sections.utils import sanitize_plain_text
+        from ..utils import sanitize_plain_text
         # The clean_* hooks delegate to this helper.
         self.assertEqual(
             sanitize_plain_text('<script>alert(1)</script>Go'), 'alert(1)Go')

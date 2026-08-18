@@ -18,7 +18,7 @@ from cis.models.teacher import (
 )
 from cis.models.term import AcademicYear
 
-from future_sections.future_sections.models import FutureCourse
+from ..models import FutureCourse
 
 # django-mailer's send_html_mail() queues an outgoing message rather than
 # delivering it; both Django's own mail and django-mailer's delivery engine

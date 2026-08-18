@@ -6,10 +6,11 @@ from django.test import override_settings
 
 from cis.models.customuser import CustomUser
 
-from future_sections.future_sections.tests.test_email_new_teacher_send import (
+from . import PKG
+from .test_email_new_teacher_send import (
     LOCMEM, _Base, _flush,
 )
-from future_sections.future_sections.utils import (
+from ..utils import (
     ExistingAccountNotApplicantError, get_or_create_applicant,
 )
 
@@ -108,7 +109,7 @@ class InviteModeTests(_Base):
 
     def test_applicant_failure_sends_no_staff_email(self):
         with mock.patch(
-                'future_sections.future_sections.utils.get_or_create_applicant',
+                f'{PKG}.utils.get_or_create_applicant',
                 side_effect=Exception('boom')):
             self._post(mode='invite')
         _flush()

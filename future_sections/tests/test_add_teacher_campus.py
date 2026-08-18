@@ -6,7 +6,7 @@ from cis.models.customuser import CustomUser
 from cis.models.course import Course, Campus, Cohort
 from cis.models.term import AcademicYear
 
-from future_sections.future_sections.utils import addable_courses_for_user
+from ..utils import addable_courses_for_user
 
 try:
     from django_login_history.models import post_login as _login_history_post_login
@@ -68,7 +68,7 @@ class AddableCoursesForUserTests(TestCase):
 class CampusFieldOrderingTests(TestCase):
     def test_campus_placed_immediately_before_course(self):
         from collections import OrderedDict
-        from future_sections.future_sections.forms import AddNewTeacherForm
+        from ..forms import AddNewTeacherForm
 
         form = AddNewTeacherForm.__new__(AddNewTeacherForm)
         form.fields = OrderedDict([
@@ -173,7 +173,7 @@ class AddableCoursesAvailabilityRuleTests(TestCase):
         )
 
     def _addable(self, campus=None):
-        from future_sections.future_sections.utils import addable_courses_for_user
+        from ..utils import addable_courses_for_user
         return addable_courses_for_user(self._request(), None, None, campus)
 
     def test_includes_course_whose_meta_dict_lacks_the_key(self):
@@ -268,7 +268,7 @@ class CampusFieldChoicesTests(TestCase):
         self.empty = Campus.objects.create(name='Empty', code='E')
 
     def test_lists_only_campuses_with_selectable_courses(self):
-        from future_sections.future_sections.utils import (
+        from ..utils import (
             campuses_with_selectable_courses,
         )
         from cis.models.course import Cohort, Course
@@ -283,7 +283,7 @@ class CampusFieldChoicesTests(TestCase):
         self.assertNotIn(self.empty, result)
 
     def test_campus_field_is_optional_with_an_all_campuses_label(self):
-        from future_sections.future_sections.forms import AddNewTeacherForm
+        from ..forms import AddNewTeacherForm
         field = AddNewTeacherForm.base_fields['campus']
         self.assertFalse(field.required)
         self.assertEqual(field.empty_label, 'All Campuses')
@@ -332,7 +332,7 @@ class AddNewTeacherFormInitTests(TestCase):
         return req
 
     def _form(self, data=None):
-        from future_sections.future_sections.forms import AddNewTeacherForm
+        from ..forms import AddNewTeacherForm
         return AddNewTeacherForm(
             self._request(), self.ay, 'pathways', data=data)
 

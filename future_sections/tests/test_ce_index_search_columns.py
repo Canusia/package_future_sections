@@ -15,15 +15,9 @@ import re
 
 from django.test import SimpleTestCase
 
-import importlib.util
-
 from cis.models import TeacherCourseCertificate
 
-if importlib.util.find_spec('future_sections.future_sections'):
-    from future_sections.future_sections.models import (
-        FutureCourse, FutureProjection)
-else:
-    from future_sections.models import FutureCourse, FutureProjection
+from ..models import FutureCourse, FutureProjection
 
 
 TEMPLATE = os.path.join(

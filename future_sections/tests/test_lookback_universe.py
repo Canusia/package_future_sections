@@ -11,7 +11,7 @@ from cis.models.teacher import (
 from cis.models.section import ClassSection
 from cis.models.settings import Setting
 
-from future_sections.future_sections.utils import get_lookback_universe
+from ..utils import get_lookback_universe
 
 
 def _build_world():
@@ -132,7 +132,7 @@ class GetCourseCertificatesForUserTests(TestCase):
     def test_instructor_sees_only_their_lookback_certs(self):
         from django.contrib.auth.models import Group
         from django.test import RequestFactory
-        from future_sections.future_sections.utils import get_course_certificates_for_user
+        from ..utils import get_course_certificates_for_user
 
         w = _build_world()
         Setting.objects.create(

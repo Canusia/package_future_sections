@@ -1,7 +1,7 @@
 from django import forms
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.schemas import TeachingSectionFieldSchema
+from ..schemas import TeachingSectionFieldSchema
 
 
 class NewFieldDeclarationTests(SimpleTestCase):

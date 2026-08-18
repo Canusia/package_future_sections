@@ -22,7 +22,7 @@ from cis.models.teacher import (
 )
 from cis.models.term import AcademicYear, Term
 
-from future_sections.future_sections.utils import build_initial_from_prev_year
+from ..utils import build_initial_from_prev_year
 
 
 class PrevYearCopyStatusTests(TestCase):

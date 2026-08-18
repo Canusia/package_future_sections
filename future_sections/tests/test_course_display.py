@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
-from future_sections.future_sections.utils import render_course_display
+from ..utils import render_course_display
 
 
 def _course(campus=None, name='Intro Bio', title='BIO 101', credit_hours=5):

@@ -4,7 +4,7 @@ from django.test import TestCase
 
 from cis.models.settings import Setting
 from cis.models.term import AcademicYear, Term
-from future_sections.future_sections.forms import TeacherCourseSectionForm
+from ..forms import TeacherCourseSectionForm
 
 
 class _DateFormMixin:
