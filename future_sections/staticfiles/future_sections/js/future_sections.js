@@ -376,13 +376,16 @@ function getCookie(name) {
                 'highschool_id': $(this).attr('data-highschool')
             };
 
-            // Handle course_type for add_new_teacher variants
+            // Which course list the add-teacher form offers. Named
+            // offering_type, not course_type: the form itself now has a
+            // tenant-configured course_type field, and the two would collide
+            // in the POST body.
             if (action === 'add_new_teacher_choice') {
-                data['course_type'] = 'cccl';
+                data['offering_type'] = 'cccl';
             } else if (action === 'add_new_teacher_facilitator') {
-                data['course_type'] = 'facilitator';
+                data['offering_type'] = 'facilitator';
             } else if (action === 'add_new_teacher') {
-                data['course_type'] = 'pathways';
+                data['offering_type'] = 'pathways';
             }
 
             var actionUrl = getActionUrl(action);

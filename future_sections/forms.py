@@ -60,6 +60,32 @@ def parse_choice_list(raw, pairs=False):
     return choices
 
 
+def build_course_type_choices(fs_config, initial=None):
+    """Choices for the two add-teacher-only selects, keyed by field name.
+
+    A field whose setting configures no options maps to ``None`` — the caller
+    renders nothing at all rather than an empty dropdown. A stored value that
+    is no longer among the configured options is appended so an existing
+    record stays editable.
+    """
+    initial = initial or {}
+    sources = {
+        'course_type': 'course_types',
+        'course_request_type': 'course_request_types',
+    }
+    built = {}
+    for field_name, setting_key in sources.items():
+        parsed = parse_choice_list(fs_config.get(setting_key, ''), pairs=True)
+        if not parsed:
+            built[field_name] = None
+            continue
+        stored = initial.get(field_name, '')
+        if stored and stored not in {c[0] for c in parsed}:
+            parsed.append((stored, stored))
+        built[field_name] = parsed
+    return built
+
+
 class SearchInstructorByCohortForm(forms.Form):
     cohort = forms.ModelMultipleChoiceField(
         queryset=Cohort.objects.all().order_by('name'),
@@ -220,6 +246,11 @@ class ConfirmClassSectionsForm(ConfirmHighSchoolAdministratorsForm, forms.Form):
 
 class TeacherCourseSectionForm(forms.Form):
 
+    # Asked only when a new teacher is being added, so they are driven by
+    # `add_teacher_form_config` in AddNewTeacherForm and never rendered by the
+    # ordinary teaching form, whatever `teaching_form_config` says.
+    ADD_TEACHER_ONLY_FIELDS = ('course_type', 'course_request_type')
+
     term = forms.ModelChoiceField(
         queryset=None,
         label='Term',
@@ -282,26 +313,20 @@ class TeacherCourseSectionForm(forms.Form):
             if stored_location not in location_values:
                 location_choices.append((stored_location, stored_location))
 
-        # Course-type selects. Unlike instruction_mode/location these are
-        # HIDDEN when unconfigured rather than rendered empty: they default to
-        # required, and a tenant that has not set options cannot satisfy an
-        # empty dropdown. Existing fields keep their current behavior.
-        option_driven = {
-            'course_type': parse_choice_list(
-                fs_config.get('course_types', ''), pairs=True),
-            'course_request_type': parse_choice_list(
-                fs_config.get('course_request_types', ''), pairs=True),
-        }
-        for name, parsed in option_driven.items():
-            stored = initial.get(name, '')
-            if parsed and stored and stored not in {c[0] for c in parsed}:
-                parsed.append((stored, stored))
-
         # Generate configurable fields from schema
         # Dependent fields are always visible when their parent is visible
         dependent_fields = TeachingSectionFieldSchema.get_dependent_fields()
 
         for field_name in TeachingSectionFieldSchema.get_available_field_names():
+            if field_name in self.ADD_TEACHER_ONLY_FIELDS:
+                # Declared on this schema so the value rides in the same
+                # JSONField, but only ever asked on the Add Teacher form.
+                # AddNewTeacherForm rebuilds them from add_teacher_form_config.
+                self.fields[field_name] = (
+                    TeachingSectionFieldSchema.make_django_form_field(
+                        field_name, visible=False, required=False))
+                continue
+
             extra_kwargs = {}
             if field_name == 'instruction_mode' and instruction_mode_choices:
                 extra_kwargs['choices'] = instruction_mode_choices
@@ -313,15 +338,6 @@ class TeacherCourseSectionForm(forms.Form):
                 parent = dependent_fields[field_name]
                 if parent in visible_fields:
                     is_visible = True
-
-            if field_name in option_driven:
-                if not option_driven[field_name]:
-                    # No options configured — render nothing at all.
-                    self.fields[field_name] = (
-                        TeachingSectionFieldSchema.make_django_form_field(
-                            field_name, visible=False, required=False))
-                    continue
-                extra_kwargs['choices'] = option_driven[field_name]
 
             self.fields[field_name] = TeachingSectionFieldSchema.make_django_form_field(
                 field_name,
@@ -664,7 +680,11 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
     ]
     
     
-    def __init__(self, request, academic_year, course_type, *args, **kwargs):
+    def __init__(self, request, academic_year, offering_type, *args, **kwargs):
+        """*offering_type* is the portal's course-list filter
+        (``pathways`` / ``cccl`` / ``facilitator``) passed through to
+        ``addable_courses_for_user`` — not the ``course_type`` form field,
+        which is a tenant-configured select answered by the user."""
         # Call parent __init__ which applies teaching form visibility rules from settings
         super().__init__(*args, **kwargs)
 
@@ -689,7 +709,9 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                     else:
                         field.widget = forms.TextInput(attrs={'class': 'form-control'})
 
-        # Visibility: only the new-teacher fields are configurable here
+        # Visibility: only the new-teacher fields are configurable here.
+        # The two course-type selects are configurable too but are rebuilt
+        # further down, since a select cannot be restored by swapping widgets.
         config_fields = add_teacher_config.get('fields', None)
         configurable_fields = {
             'teacher_first_name', 'teacher_last_name', 'teacher_email',
@@ -758,6 +780,31 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
             if field_name in custom_help_texts:
                 field.help_text = mark_safe(custom_help_texts[field_name])
 
+        # Course-type selects. Rebuilt rather than un-hidden because the
+        # parent renders them as HiddenInput CharFields; their options live in
+        # settings and a field with none configured stays hidden and optional
+        # regardless of the config, since nobody could satisfy an empty and
+        # by-default-required dropdown. Replacing an existing key keeps its
+        # position, so any ordering applied above survives.
+        at_visible = set(config_fields) if config_fields is not None else set()
+        at_required = set(config_required) if config_required is not None else set()
+
+        for field_name, choices in build_course_type_choices(
+                fs_config, self.initial).items():
+            visible = bool(choices) and field_name in at_visible
+            label = custom_labels.get(field_name)
+            help_text = custom_help_texts.get(field_name)
+            self.fields[field_name] = (
+                TeachingSectionFieldSchema.make_django_form_field(
+                    field_name,
+                    visible=visible,
+                    required=visible and field_name in at_required,
+                    label_override=mark_safe(label) if label else None,
+                    help_text_override=(
+                        mark_safe(help_text) if help_text else None),
+                    **({'choices': choices} if visible else {}),
+                ))
+
         # Campus dropdown. The course list is scoped to a campus: the
         # submitted value when the form is bound (so a course chosen after
         # switching campus still validates on POST), otherwise All Campuses
@@ -813,7 +860,7 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
 
             # Instructors: only courses they're certified for, scoped to campus.
             self.fields['course'].queryset = addable_courses_for_user(
-                request, academic_year, course_type, active_campus)
+                request, academic_year, offering_type, active_campus)
 
             self.fields['academic_year_id'].initial = academic_year.id
             self.fields['highschool'].queryset = highschools
@@ -828,7 +875,7 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
 
         # For HS Admins: all active courses in the selected campus.
         self.fields['course'].queryset = addable_courses_for_user(
-            request, academic_year, course_type, active_campus)
+            request, academic_year, offering_type, active_campus)
 
         self.fields['action'].initial = "add_new_teacher"
         self._order_campus_before_course()

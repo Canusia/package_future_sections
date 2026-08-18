@@ -56,6 +56,25 @@ from ..utils import (
 )
 
 
+def resolve_offering_type(request, default='pathways'):
+    """Which course list the add-teacher form offers.
+
+    One of ``pathways`` / ``cccl`` / ``facilitator``, chosen by the button the
+    user clicked and carried in the query string. Read from the query string
+    only: the Add Teacher form now has its own ``course_type`` field (a
+    tenant-configured select the user answers), so reading the legacy
+    ``course_type`` key out of POST data would pick up that answer instead.
+    The legacy query-string key is still honoured for browsers holding a
+    cached copy of the older JS.
+    """
+    return (
+        request.GET.get('offering_type')
+        or request.GET.get('course_type')
+        or request.data.get('offering_type')
+        or default
+    )
+
+
 class FutureSectionsActionViewSet(viewsets.ViewSet):
     """
     API ViewSet for future sections actions.
@@ -339,10 +358,9 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         # Handle both GET (form params) and POST (data params)
         if request.method == 'GET':
             academic_year_id = request.GET.get('academic_year_id')
-            course_type = request.GET.get('course_type', 'pathways')
         else:
             academic_year_id = request.data.get('academic_year_id')
-            course_type = request.data.get('course_type', 'pathways')
+        offering_type = resolve_offering_type(request)
 
         if not academic_year_id:
             return Response({
@@ -352,10 +370,11 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
 
         fs_config = get_fs_config()
         academic_year = get_object_or_404(AcademicYear, pk=academic_year_id)
-        form = AddNewTeacherForm(request, academic_year, course_type)
+        form = AddNewTeacherForm(request, academic_year, offering_type)
 
         if request.method == 'POST':
-            form = AddNewTeacherForm(request, academic_year, course_type, data=request.POST)
+            form = AddNewTeacherForm(
+                request, academic_year, offering_type, data=request.POST)
 
             if form.is_valid():
                 record = form.save(request, academic_year)
@@ -410,7 +429,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             'new_teacher_message': fs_config.get('new_teacher_message', 'change me'),
             'form_action_url': request.build_absolute_uri(),
             'is_admin': context['is_admin'],
-            'course_type': course_type,
+            'offering_type': offering_type,
             'courses_url': courses_url,
         })
 
@@ -422,7 +441,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         from cis.models.course import Campus
 
         academic_year_id = request.GET.get('academic_year_id')
-        course_type = request.GET.get('course_type', 'pathways')
+        offering_type = resolve_offering_type(request)
         campus_id = request.GET.get('campus')
 
         if not academic_year_id:
@@ -435,7 +454,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         campus = get_object_or_404(Campus, pk=campus_id) if campus_id else None
 
         courses = addable_courses_for_user(
-            request, academic_year, course_type, campus)
+            request, academic_year, offering_type, campus)
 
         return Response({
             'courses': [{'id': str(c.id), 'title': c.title} for c in courses],

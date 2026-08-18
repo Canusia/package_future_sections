@@ -3,7 +3,31 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
-## 2026.6.1
+## Unreleased
+
+### Changed
+
+* **"Type of course" and "This is a:" are now Add Teacher fields.** Both selects moved out
+  of Teaching Form Fields into the **Add Teacher Form Fields** card, where they get the
+  usual Visible / Required / Custom Label / Weight controls. They are the questions asked
+  when a *new* teacher is being added, and because `AddNewTeacherForm` subclasses the
+  teaching form, driving them from `teaching_form_config` also put them on the ordinary
+  section-request form with no way to separate the two. The plain teaching form no longer
+  renders them at all, whatever its config says. Option sources
+  (`course_types` / `course_request_types`), the hide-entirely-when-unconfigured rule and
+  the keep-a-retired-stored-value-selectable rule are unchanged, and nothing about how the
+  value is stored changed — still the same `section_info` JSON, still no migration.
+
+  **Tenants that enabled either field in Teaching Form Fields must re-enable it under Add
+  Teacher Form Fields**; the two configs are separate keys and the setting does not carry
+  over.
+
+* **The add-teacher course-list filter is now `offering_type`, not `course_type`.** It
+  selects which course list the form offers (`pathways` / `cccl` / `facilitator`) and used
+  to ride in the POST body under the same name as the new form field, so the user's answer
+  ("Dual Credit") could be read as the filter. It is now read from the query string only.
+  The legacy `course_type` query key is still accepted, so a browser holding a cached copy
+  of the older JS keeps working.
 
 ### Fixed
 

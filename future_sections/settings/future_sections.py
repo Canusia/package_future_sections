@@ -798,10 +798,17 @@ class future_sections(forms.Form):
             'setting:run_record', args=[request.GET.get('report_id')])
         self.helper.add_input(Submit('submit', 'Save Setting'))
 
-        # Build teaching form config visual UI
+        # Build teaching form config visual UI. The two course-type selects
+        # are asked only when adding a teacher, so they are configured in the
+        # Add Teacher card below and are not offered here.
+        from ..forms import TeacherCourseSectionForm
         schema_fields = TeachingSectionFieldSchema.get_available_field_names()
+        teaching_fields = [
+            name for name in schema_fields
+            if name not in TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS
+        ]
         rows_html = ""
-        for name in schema_fields:
+        for name in teaching_fields:
             meta = TeachingSectionFieldSchema.get_field_meta(name)
             default_label = meta.get("default_label", name)
             rows_html += (
@@ -893,6 +900,10 @@ class future_sections(forms.Form):
             ('teacher_first_name', 'Teacher First Name'),
             ('teacher_last_name', 'Teacher Last Name'),
             ('teacher_email', 'Teacher Email'),
+        ] + [
+            (name, TeachingSectionFieldSchema.get_field_meta(name).get(
+                'default_label', name))
+            for name in TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS
         ]
         always_included = [
             ('highschool', 'School'),

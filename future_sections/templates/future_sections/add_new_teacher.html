@@ -96,7 +96,7 @@
         var campusId = $('#id_campus').val();
         $.getJSON('{{ courses_url }}', {
             academic_year_id: '{{ academic_year.id }}',
-            course_type: '{{ course_type|escapejs }}',
+            offering_type: '{{ offering_type|escapejs }}',
             campus: campusId
         }).done(function (data) {
             var $course = $('#id_course');
