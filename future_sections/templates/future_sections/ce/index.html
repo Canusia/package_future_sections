@@ -649,16 +649,15 @@
                                                         ? '<span class="badge badge-info">Pending Review</span>'
                                                         : '<span class="badge badge-warning">Submitted</span>';
 
-                                                var review = (row.section_display && row.section_display.faculty_review) || null;
-                                                if (review && review.decision) {
-                                                    if (review.decision === 'approved') {
-                                                        var mentor = review.mentor_name || '';
-                                                        html += '<br><span class="badge badge-info mt-1">Approved</span>';
-                                                        if (mentor) {
-                                                            html += '<br><small class="text-muted">' + $('<div>').text(mentor).html() + '</small>';
-                                                        }
-                                                    } else {
-                                                        html += '<br><span class="badge badge-danger mt-1">Not approved</span>';
+                                                var rv = (row.section_display && row.section_display.review) || null;
+                                                if (rv) {
+                                                    html += '<br><span class="badge badge-secondary mt-1">' +
+                                                            rv.decided + ' of ' + rv.total + ' decided</span>';
+                                                    if (rv.approved) {
+                                                        html += ' <span class="badge badge-info">' + rv.approved + ' approved</span>';
+                                                    }
+                                                    if (rv.not_approved) {
+                                                        html += ' <span class="badge badge-danger">' + rv.not_approved + ' not approved</span>';
                                                     }
                                                 }
                                                 return html;

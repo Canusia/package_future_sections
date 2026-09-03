@@ -48,21 +48,27 @@ class FutureCourseSerializer(serializers.ModelSerializer):
         except Exception:
             return obj.teacher_course.course.title if obj.teacher_course else ''
 
+    def _review_summary(self, obj):
+        if not obj.review_round:
+            return None
+        rows = list(obj.reviews.filter(round=obj.review_round))
+        decided = [r for r in rows if r.decision]
+        return {
+            'round': obj.review_round,
+            'total': len(rows),
+            'decided': len(decided),
+            'approved': sum(1 for r in decided if r.decision == 'approved'),
+            'not_approved': sum(
+                1 for r in decided if r.decision == 'not_approved'),
+        }
+
     def get_section_display(self, obj):
         try:
             info = obj.section_info or {}
-            review = info.get('faculty_review') or {}
-            faculty_review = None
-            if review.get('decision'):
-                mentor = review.get('mentor') or {}
-                faculty_review = {
-                    'decision': review.get('decision'),
-                    'mentor_name': mentor.get('name', ''),
-                }
             return {
                 'teaching': info.get('teaching'),
                 'displays': obj.section_display,
-                'faculty_review': faculty_review,
+                'review': self._review_summary(obj),
                 # Nested here as well as exposed top-level because
                 # rest_framework_datatables strips any field the browser did
                 # not name in a columns[i][data] param, and there is no
@@ -71,7 +77,7 @@ class FutureCourseSerializer(serializers.ModelSerializer):
                     self.get_changed_teacher_sections(obj),
             }
         except Exception:
-            return {'teaching': None, 'displays': [], 'faculty_review': None,
+            return {'teaching': None, 'displays': [], 'review': None,
                     'changed_teacher_sections': []}
 
     def get_changed_teacher_sections(self, obj):
