@@ -99,3 +99,13 @@ class LegacyReviewConversionTests(TestCase):
             academic_year=self.ay, section_info={'sections': []})
         legacy.convert_legacy_reviews(global_apps)
         self.assertEqual(SectionRequestReview.objects.count(), 0)
+
+    def test_backwards_is_a_no_op_and_leaves_existing_rows_intact(self):
+        self._fc({
+            'decision': 'approved', 'comment': '', 'mentor': None,
+            'reviewer_id': str(self.reviewer.id), 'reviewer_name': 'Fiona',
+            'reviewed_on': '2026-09-03T19:26:04+00:00', 'history': []})
+        legacy.convert_legacy_reviews(global_apps)
+        self.assertEqual(SectionRequestReview.objects.count(), 1)
+        legacy.backwards(global_apps, None)
+        self.assertEqual(SectionRequestReview.objects.count(), 1)

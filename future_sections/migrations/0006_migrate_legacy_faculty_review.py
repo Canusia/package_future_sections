@@ -53,10 +53,22 @@ def forwards(apps, schema_editor):
 
 
 def backwards(apps, schema_editor):
-    """Rows are derived data; the JSON they came from was never deleted."""
-    SectionRequestReview = apps.get_model(
-        'future_sections', 'SectionRequestReview')
-    SectionRequestReview.objects.all().delete()
+    """No-op on purpose.
+
+    `SectionRequestReview` rows are derived data, and the
+    `section_info['faculty_review']` JSON they were derived from is
+    deliberately never deleted — so reversing this migration loses
+    nothing by leaving the rows in place. Forward re-application is
+    already idempotent (see the `exists()` guard in
+    `convert_legacy_reviews`), so reverse-then-forward lands back in the
+    same state.
+
+    Deleting rows here would also be actively wrong: by the time anyone
+    reverses this migration, the table can hold rows created by the live
+    quorum review workflow, not just ones this migration produced, and
+    there is nothing that distinguishes the two. Deleting indiscriminately
+    would wipe live review history along with the legacy conversion.
+    """
 
 
 class Migration(migrations.Migration):
