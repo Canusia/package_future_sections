@@ -50,14 +50,19 @@ def _faculty_review_cells(record):
             return ''
         return f'{user.first_name} {user.last_name}'.strip() or user.username
 
+    def _text(value):
+        # Collapse the join separator out of free-text so an embedded
+        # "; " can't be misread as another entry, shifting alignment.
+        return value.replace(';', ',') if value else ''
+
     return [
         str(record.review_round),
         '; '.join(_name(r.reviewer) for r in rows),
-        '; '.join(labels.get(r.decision, '') for r in rows if r.decision),
-        '; '.join(_name(r.mentor) for r in rows if r.mentor),
-        '; '.join(r.decided_on.strftime('%m/%d/%Y')
-                  for r in rows if r.decided_on),
-        '; '.join(r.comment for r in rows if r.comment),
+        '; '.join(labels.get(r.decision, '') for r in rows),
+        '; '.join(_name(r.mentor) for r in rows),
+        '; '.join(r.decided_on.strftime('%m/%d/%Y') if r.decided_on else ''
+                  for r in rows),
+        '; '.join(_text(r.comment) for r in rows),
     ]
 
 

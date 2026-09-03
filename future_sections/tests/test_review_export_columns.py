@@ -65,6 +65,32 @@ class ReviewExportColumnsTests(TestCase):
         cells = _faculty_review_cells(self.fc)
         self.assertEqual(cells, ['', '', '', '', '', ''])
 
+    def test_partially_decided_round_keeps_reviewers_positionally_aligned(self):
+        a = self._reviewer('a@x.com', first_name='Ann')
+        self._reviewer('d@x.com', first_name='Dee')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved', comment='fine')
+        cells = _faculty_review_cells(self.fc)
+        reviewers = cells[1].split('; ')
+        decisions = cells[2].split('; ')
+        self.assertEqual(len(reviewers), len(decisions))
+        ann_index = reviewers.index('Ann')
+        self.assertEqual(decisions[ann_index], 'Approved')
+        dee_index = reviewers.index('Dee')
+        self.assertEqual(decisions[dee_index], '')
+
+    def test_semicolon_in_comment_is_collapsed_so_it_cannot_join_as_a_cell(self):
+        a = self._reviewer('a@x.com', first_name='Ann')
+        d = self._reviewer('d@x.com', first_name='Dee')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved', comment='fine; great')
+        record_decision(self.fc, d, decision='not_approved', comment='no')
+        cells = _faculty_review_cells(self.fc)
+        comments = cells[5].split('; ')
+        self.assertEqual(len(comments), 2)
+        self.assertEqual(comments[0], 'fine, great')
+        self.assertEqual(comments[1], 'no')
+
     def test_only_the_live_round_is_exported(self):
         a = self._reviewer('a@x.com', first_name='Ann')
         open_review_round(self.fc)
