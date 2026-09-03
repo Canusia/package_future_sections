@@ -7,7 +7,9 @@ from django.utils.html import escape
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import BasePermission, IsAuthenticated
 
-from .helpers import visible_future_courses_for, get_faculty_review
+from .helpers import (
+    get_faculty_review, pending_for, reviewed_for, visible_future_courses_for,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,19 +113,16 @@ class SectionRequestViewSet(viewsets.ReadOnlyModelViewSet):
         return ctx
 
     def get_queryset(self):
-        qs = visible_future_courses_for(self.request.user)
+        tab = self.request.query_params.get('tab')
+        if tab == 'pending':
+            qs = pending_for(self.request.user)
+        elif tab == 'reviewed':
+            qs = reviewed_for(self.request.user)
+        else:
+            qs = visible_future_courses_for(self.request.user)
         academic_year = self.request.query_params.get('academic_year')
         if academic_year:
             qs = qs.filter(academic_year_id=academic_year)
-        tab = self.request.query_params.get('tab')
-        if tab in ('pending', 'reviewed'):
-            want_pending = (tab == 'pending')
-            ids = [
-                obj.pk for obj in qs
-                if (not (obj.section_info or {}).get('faculty_review', {}).get('decision'))
-                   == want_pending
-            ]
-            qs = qs.filter(pk__in=ids)
         return qs.order_by('-started_on')
 
     def filter_queryset(self, queryset):

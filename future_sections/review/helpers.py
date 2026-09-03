@@ -54,22 +54,44 @@ def mentor_assignment_enabled():
 
 
 def visible_future_courses_for(user):
-    """FutureCourse rows the user is allowed to see and review."""
+    """Requests the user holds a review slot on, in any round.
+
+    Membership of the snapshot — not the live CourseAdministrator rows —
+    is the gate, so deactivating a reviewer mid-round does not strand the
+    request and adding one does not pull them into a running round.
+    """
     if not user.is_authenticated:
         return FutureCourse.objects.none()
-    roles = get_reviewer_roles()
-    course_ids = CourseAdministrator.objects.filter(
-        user=user, role__in=roles, status='Active',
-    ).values_list('course_id', flat=True)
     return FutureCourse.objects.filter(
-        teacher_course__course_id__in=course_ids,
-    ).select_related(
+        reviews__reviewer=user,
+    ).distinct().select_related(
         'teacher_course__course',
         'teacher_course__teacher_highschool__highschool',
         'teacher_course__teacher_highschool__teacher__user',
         'academic_year',
         'submitted_by',
     )
+
+
+def pending_for(user):
+    """Requests awaiting this user's decision in the live round."""
+    from django.db.models import F
+    return visible_future_courses_for(user).filter(
+        status='pending_review',
+        reviews__reviewer=user,
+        reviews__round=F('review_round'),
+        reviews__decision='',
+    )
+
+
+def reviewed_for(user):
+    """Requests this user has already decided on, any round or status."""
+    from django.db.models import Exists, OuterRef
+
+    decided = SectionRequestReview.objects.filter(
+        future_course=OuterRef('pk'), reviewer=user,
+    ).exclude(decision='')
+    return visible_future_courses_for(user).filter(Exists(decided))
 
 
 def get_faculty_review(future_course):

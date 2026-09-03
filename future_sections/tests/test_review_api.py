@@ -13,6 +13,7 @@ from cis.models.settings import Setting
 
 from ..models import FutureCourse
 from ..review.api import SectionRequestViewSet
+from ..review.helpers import open_review_round
 
 
 def _world(reviewer_role='Faculty'):
@@ -40,6 +41,9 @@ def _world(reviewer_role='Faculty'):
         key='cis_future_sections',
         value={'reviewer_roles': [reviewer_role], 'require_review': 'Yes'},
     )
+    # Visibility is now gated by holding a review row, not just an Active
+    # CourseAdministrator row — open the round so the reviewer has one.
+    open_review_round(fc)
     return reviewer, fc
 
 
