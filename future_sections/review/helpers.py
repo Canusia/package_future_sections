@@ -94,17 +94,6 @@ def reviewed_for(user):
     return visible_future_courses_for(user).filter(Exists(decided))
 
 
-def get_faculty_review(future_course):
-    """Return the faculty_review dict, or None if no review yet."""
-    info = future_course.section_info or {}
-    return info.get('faculty_review')
-
-
-def is_pending(future_course):
-    review = get_faculty_review(future_course)
-    return not review or not review.get('decision')
-
-
 def create_or_attach_mentor(course, *, name, email, role=None):
     """
     Create-or-attach a mentor on `course`. User is always faculty-group +

@@ -7,9 +7,7 @@ from django.utils.html import escape
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import BasePermission, IsAuthenticated
 
-from .helpers import (
-    get_faculty_review, pending_for, reviewed_for, visible_future_courses_for,
-)
+from .helpers import pending_for, reviewed_for, visible_future_courses_for
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +76,28 @@ class SectionRequestSerializer(serializers.Serializer):
         return f'{u.first_name} {u.last_name}'.strip()
 
     def get_faculty_review_status(self, obj):
-        review = get_faculty_review(obj)
-        if not review or not review.get('decision'):
+        """This reviewer's own decision on this request.
+
+        Reviewed-tab requests are scoped to ones the logged-in reviewer has
+        personally decided on, so this reads their row — not a whole-round
+        summary (the model never computes an aggregate verdict). If the
+        request went through a CE reset and reopened, prefer their decision
+        in the highest round they've decided in.
+        """
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
             return 'Pending'
-        if review['decision'] == 'approved':
-            mentor_name = ((review.get('mentor') or {}).get('name') or '').strip()
+        row = obj.reviews.filter(
+            reviewer=user,
+        ).exclude(decision='').order_by('-round').first()
+        if not row:
+            return 'Pending'
+        if row.decision == 'approved':
+            mentor = row.mentor
+            mentor_name = (
+                f'{mentor.first_name} {mentor.last_name}'.strip() or mentor.username
+            ) if mentor else ''
             if mentor_name:
                 return ('Approved'
                         f'<br><small class="text-muted">{escape(mentor_name)}</small>')
