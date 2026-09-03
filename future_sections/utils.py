@@ -405,6 +405,29 @@ def validate_certificate_access(request, teacher_course):
             raise PermissionDenied("You do not have permission to access this course")
 
 
+def assert_editable(future_course, request):
+    """Refuse school-side edits once the request is under or past review.
+
+    CE staff are never locked out: the lock exists so the high school
+    administrator and instructor cannot change a request out from under the
+    reviewers, not to stop CE correcting it.
+
+    Raises:
+        PermissionDenied: if the request is locked and the caller is a high
+            school administrator or an instructor.
+    """
+    from cis.utils import user_has_cis_role
+    from .review.helpers import is_locked
+
+    if not future_course or not is_locked(future_course):
+        return
+    if user_has_cis_role(request.user):
+        return
+    raise PermissionDenied(
+        'This request is under review and can no longer be edited. '
+        'Contact your CE administrator.')
+
+
 def get_or_create_future_projection(highschool_id, user):
     """
     Get or create a FutureProjection for a highschool and academic year.
