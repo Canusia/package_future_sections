@@ -6,7 +6,6 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import Http404
 from django.shortcuts import render, redirect
-from django.utils.dateparse import parse_datetime
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -15,23 +14,22 @@ from cis.models.course import CourseAdministrator
 from cis.models.term import AcademicYear
 from cis.menu import draw_menu, FACULTY_MENU, cis_menu
 
+from ..models import SectionRequestReview
 from ..settings.future_sections import future_sections as fs_settings
 from ..schemas import TeachingSectionFieldSchema
 
 from .forms import SectionRequestReviewForm
 from .helpers import (
     visible_future_courses_for,
-    get_faculty_review,
-    save_faculty_review,
     create_or_attach_mentor,
+    record_decision,
+    NotAReviewerError,
     review_required,
     mentor_assignment_enabled,
     get_mentor_role,
 )
 
 logger = logging.getLogger(__name__)
-
-DECISION_LABELS = {'approved': 'Approved', 'not_approved': 'Not approved'}
 
 
 # Per-portal configuration. Each shim picks one of these.
@@ -65,18 +63,16 @@ def _get_visible_or_404(request, future_course_id):
     return fc
 
 
-def _initial_from_review(review, course=None, mentor_role='Faculty'):
-    if not review:
+def _initial_from_row(row, course=None, mentor_role='Faculty'):
+    if not row or not row.decision:
         return {}
     initial = {
-        'decision': review.get('decision', ''),
-        'comment': review.get('comment', ''),
+        'decision': row.decision,
+        'comment': row.comment,
     }
-    mentor = review.get('mentor') or {}
-    mentor_user_id = mentor.get('user_id')
-    if course is not None and mentor_user_id:
+    if course is not None and row.mentor_id:
         ca = CourseAdministrator.objects.filter(
-            course=course, user_id=mentor_user_id,
+            course=course, user_id=row.mentor_id,
             role=mentor_role, status='Active',
         ).first()
         if ca:
@@ -88,19 +84,6 @@ def _section_value(sec, name):
     if name == 'term':
         return sec.get('term_name') or sec.get('term') or ''
     return sec.get(name, '')
-
-
-def _build_review_display(review):
-    if not review or not review.get('decision'):
-        return None
-    reviewed_on_raw = review.get('reviewed_on') or ''
-    reviewed_on_dt = parse_datetime(reviewed_on_raw) if reviewed_on_raw else None
-    return {
-        'decision': DECISION_LABELS.get(review.get('decision'), review.get('decision', '')),
-        'reviewer_name': review.get('reviewer_name') or '',
-        'reviewed_on': reviewed_on_dt or reviewed_on_raw,
-        'comment': review.get('comment') or '',
-    }
 
 
 def _teaching_form_config():
@@ -198,42 +181,45 @@ def section_request_detail(request, future_course_id, *, portal):
         if form.is_valid():
             decision = form.cleaned_data['decision']
             comment = form.cleaned_data['comment']
-            mentor = None
+            mentor_user = None
             if decision == 'approved' and require_mentor:
                 if form.has_existing_options:
-                    ca = form.cleaned_data['existing_mentor']
-                    mentor = {
-                        'user_id': str(ca.user.id),
-                        'name': f'{ca.user.first_name} {ca.user.last_name}'.strip(),
-                        'email': ca.user.email,
-                    }
+                    mentor_user = form.cleaned_data['existing_mentor'].user
                 else:
-                    new_user = create_or_attach_mentor(
+                    mentor_user = create_or_attach_mentor(
                         course,
                         name=form.cleaned_data['new_mentor_name'],
                         email=form.cleaned_data['new_mentor_email'],
                         role=mentor_role,
                     )
-                    mentor = {
-                        'user_id': str(new_user.id),
-                        'name': f'{new_user.first_name} {new_user.last_name}'.strip(),
-                        'email': new_user.email,
-                    }
-            save_faculty_review(
-                fc, decision=decision, comment=comment,
-                mentor=mentor, reviewer=request.user,
-            )
+            try:
+                record_decision(
+                    fc, request.user,
+                    decision=decision, comment=comment,
+                    mentor=mentor_user,
+                )
+            except NotAReviewerError:
+                raise Http404('Not a reviewer on this round')
             messages.success(request, 'Review submitted.')
             return redirect(cfg['detail_url_name'], future_course_id=fc.id)
-    else:
-        review = get_faculty_review(fc)
+    live_rows = fc.reviews.filter(round=fc.review_round).select_related('reviewer')
+    my_row = live_rows.filter(reviewer=request.user).first()
+
+    if request.method != 'POST':
         form = SectionRequestReviewForm(
-            initial=_initial_from_review(review, course=course, mentor_role=mentor_role),
+            initial=_initial_from_row(my_row, course=course, mentor_role=mentor_role),
             course=course, mentor_role=mentor_role, require_mentor=require_mentor,
         )
 
-    review = get_faculty_review(fc)
-    review_display = _build_review_display(review)
+    other_decisions = [
+        {'reviewer_name': f'{r.reviewer.first_name} {r.reviewer.last_name}'.strip()
+                          or r.reviewer.username,
+         'decision': dict(SectionRequestReview.DECISION_CHOICES).get(
+             r.decision, ''),
+         'comment': r.comment,
+         'decided_on': r.decided_on}
+        for r in live_rows.exclude(reviewer=request.user) if r.decision
+    ]
     teaching_form_config = _teaching_form_config()
     field_specs = _section_field_specs(teaching_form_config)
     show_syllabus = bool(teaching_form_config.get('show_syllabus'))
@@ -260,8 +246,8 @@ def section_request_detail(request, future_course_id, *, portal):
             'course': course,
             'highschool': fc.teacher_course.teacher_highschool.highschool,
             'instructor': fc.teacher_course.teacher_highschool.teacher.user,
-            'review': review,
-            'review_display': review_display,
+            'my_row': my_row,
+            'other_decisions': other_decisions,
             'rendered_sections': rendered_sections,
             'form': form,
             'has_existing_mentor_options': form.has_existing_options,

@@ -105,33 +105,6 @@ def is_pending(future_course):
     return not review or not review.get('decision')
 
 
-def save_faculty_review(future_course, *, decision, comment, mentor, reviewer):
-    """Update section_info.faculty_review with the new decision."""
-    info = dict(future_course.section_info or {})
-    prior = info.get('faculty_review') or {}
-    history = list(prior.get('history') or [])
-    if prior.get('decision'):
-        history.append({
-            'decision': prior.get('decision'),
-            'comment': prior.get('comment', ''),
-            'mentor': prior.get('mentor'),
-            'reviewer_id': prior.get('reviewer_id'),
-            'reviewer_name': prior.get('reviewer_name'),
-            'reviewed_on': prior.get('reviewed_on'),
-        })
-    info['faculty_review'] = {
-        'decision': decision,
-        'comment': comment or '',
-        'mentor': mentor,
-        'reviewer_id': str(reviewer.id),
-        'reviewer_name': f'{reviewer.first_name} {reviewer.last_name}'.strip() or reviewer.username,
-        'reviewed_on': timezone.now().isoformat(),
-        'history': history,
-    }
-    future_course.section_info = info
-    future_course.save(update_fields=['section_info'])
-
-
 def create_or_attach_mentor(course, *, name, email, role=None):
     """
     Create-or-attach a mentor on `course`. User is always faculty-group +
