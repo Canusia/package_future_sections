@@ -673,6 +673,8 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'teaching': fc.section_info.get('teaching') if fc.section_info else None,
                 'sections': fc.section_info.get('sections', []) if fc.section_info else [],
                 'section_display': fc.section_display,  # Pre-formatted display from settings
+                'review_status': fc.status,
+                'is_locked': fc.status in FutureCourse.LOCKED_STATUSES,
             }
 
         # Build previous year section counts per (course, highschool, term)
@@ -707,6 +709,8 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'sections': offering.get('sections', []),
                 'section_display': offering.get('section_display', []),
                 'prev_year_sections': prev_year_sections,
+                'review_status': offering.get('review_status'),
+                'is_locked': bool(offering.get('is_locked')),
             })
 
         return Response(data)
