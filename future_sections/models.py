@@ -70,8 +70,13 @@ class FutureCourse(models.Model):
     """
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
+        ('pending_review', 'Pending Review'),
         ('reviewed', 'Reviewed'),
     ]
+
+    #: Statuses in which the high school administrator and instructor may no
+    #: longer edit the request. CE is never locked out.
+    LOCKED_STATUSES = ('pending_review', 'reviewed')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     academic_year = models.ForeignKey(
@@ -106,6 +111,13 @@ class FutureCourse(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default='submitted'
+    )
+
+    review_round = models.PositiveIntegerField(
+        default=0,
+        help_text='The live review round. Incremented each time CE marks the '
+                  'request pending review; SectionRequestReview rows carrying '
+                  'an earlier round are finished rounds kept as history.',
     )
 
     # Track status field changes for signal notifications
