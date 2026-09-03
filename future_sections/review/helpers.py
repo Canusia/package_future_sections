@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from cis.models.course import CourseAdministrator
 
-from ..models import FutureCourse
+from ..models import FutureCourse, SectionRequestReview
 from ..settings.future_sections import future_sections as fs_settings
 
 
@@ -172,3 +172,96 @@ def _get_or_create_mentor_user(CustomUser, *, email, first_name, last_name):
     user.set_unusable_password()
     user.save(update_fields=['password'])
     return user, True
+
+
+class NoReviewersError(Exception):
+    """No qualifying reviewer exists, so the round could never complete."""
+
+
+class NotAReviewerError(Exception):
+    """The user has no slot in the request's live review round."""
+
+
+def qualifying_reviewers(future_course):
+    """(user, role) pairs eligible to review *future_course* right now."""
+    roles = get_reviewer_roles()
+    admins = CourseAdministrator.objects.filter(
+        course=future_course.teacher_course.course,
+        role__in=roles, status='Active',
+    ).select_related('user')
+    seen, pairs = set(), []
+    for admin in admins:
+        if admin.user_id in seen:
+            continue
+        seen.add(admin.user_id)
+        pairs.append((admin.user, admin.role))
+    return pairs
+
+
+def open_review_round(future_course):
+    """Snapshot the reviewers, lock the request, return the new round."""
+    pairs = qualifying_reviewers(future_course)
+    if not pairs:
+        raise NoReviewersError(
+            'No qualifying reviewer for this course.')
+
+    round_number = (future_course.review_round or 0) + 1
+    with transaction.atomic():
+        SectionRequestReview.objects.bulk_create([
+            SectionRequestReview(
+                future_course=future_course, reviewer=user,
+                round=round_number, role=role,
+            )
+            for user, role in pairs
+        ])
+        future_course.review_round = round_number
+        future_course.status = 'pending_review'
+        future_course.save(update_fields=['review_round', 'status'])
+    return round_number
+
+
+def record_decision(future_course, reviewer, *, decision, comment='',
+                    mentor=None):
+    """Fill in *reviewer*'s slot, advancing the request when it is the last."""
+    try:
+        row = SectionRequestReview.objects.get(
+            future_course=future_course, reviewer=reviewer,
+            round=future_course.review_round,
+        )
+    except SectionRequestReview.DoesNotExist:
+        raise NotAReviewerError(
+            'You are not a reviewer on this round.')
+
+    row.decision = decision
+    row.comment = comment or ''
+    row.mentor = mentor
+    row.decided_on = timezone.now()
+    row.save(update_fields=['decision', 'comment', 'mentor', 'decided_on'])
+
+    if round_is_complete(future_course):
+        future_course.status = 'reviewed'
+        future_course.save(update_fields=['status'])
+    return row
+
+
+def round_is_complete(future_course):
+    """True when every slot in the live round has a decision."""
+    return not future_course.reviews.filter(
+        round=future_course.review_round, decision='',
+    ).exists()
+
+
+def reset_review(future_course):
+    """Return the request to `submitted` and unlock it.
+
+    Rows from the finished round keep their round number and are left
+    untouched — they are the history. The next `open_review_round` opens
+    round N+1.
+    """
+    future_course.status = 'submitted'
+    future_course.save(update_fields=['status'])
+
+
+def is_locked(future_course):
+    """True when the school may no longer edit this request."""
+    return future_course.status in FutureCourse.LOCKED_STATUSES
