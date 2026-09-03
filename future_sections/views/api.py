@@ -51,6 +51,7 @@ from ..utils import (
     build_initial_from_prev_year,
     build_prev_year_lookup,
     build_section_info_from_formset,
+    dependent_field_pairs,
     render_course_display,
     addable_courses_for_user,
 )
@@ -426,6 +427,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         return render(request, template, {
             'academic_year': academic_year,
             'form': form,
+            'dependent_pairs': json.dumps(dependent_field_pairs()),
             'new_teacher_message': fs_config.get('new_teacher_message', 'change me'),
             'form_action_url': request.build_absolute_uri(),
             'is_admin': context['is_admin'],

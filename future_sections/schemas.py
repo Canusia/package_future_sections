@@ -432,13 +432,20 @@ class TeachingSectionFieldSchema(BaseModel):
         section: dict,
         template: str,
         show_syllabus: bool = True,
+        choice_labels: dict | None = None,
     ) -> str:
         """Render a single section dict through *template*.
 
         Handles placeholder replacement, syllabus link, and cleanup — identical
         to the logic previously in ``FutureCourse.section_display``.
+
+        *choice_labels* maps ``{field_name: {stored_value: label}}`` for the
+        fields whose options are tenant-configured ``value:Label`` pairs, so
+        the display shows the label rather than the opaque stored code. A
+        value with no entry (a retired option) renders as itself.
         """
         display = template
+        choice_labels = choice_labels or {}
 
         file_fields = set(cls.get_file_field_names())
         date_fields = set(cls.get_date_field_names())
@@ -462,6 +469,8 @@ class TeachingSectionFieldSchema(BaseModel):
             elif value and key in date_fields:
                 value = _display_date(value)
             else:
+                if key in choice_labels:
+                    value = choice_labels[key].get(value, value)
                 # Ordinary section values (notes, class_period,
                 # highschool_course_name, etc.) come from instructor input
                 # and are substituted into a template that is rendered as

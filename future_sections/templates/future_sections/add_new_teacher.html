@@ -63,10 +63,10 @@
         }
     }
 
-    var dependentPairs = [
-        ['#id_teacher_changed', '#div_id_new_teacher_name', '#id_new_teacher_name'],
-        ['#id_highschool_title_changed', '#div_id_new_highschool_title', '#id_new_highschool_title'],
-    ];
+    // Derived from the schema's depends_on metadata (see
+    // utils.dependent_field_pairs) so a new conditional field needs no
+    // change here.
+    var dependentPairs = {{ dependent_pairs|default:"[]"|safe }};
 
     $.each(dependentPairs, function(_, pair) {
         $(document).on('change', pair[0], function() {

@@ -20,7 +20,7 @@ from cis.models.term import AcademicYear, Term
 from cis.validators import validate_html_short_code
 from .models import FutureCourse, FutureProjection
 from .schemas import TeachingSectionFieldSchema
-from .utils import sanitize_plain_text
+from .utils import CHOICE_LABEL_SOURCES, sanitize_plain_text
 
 
 def parse_choice_list(raw, pairs=False):
@@ -69,12 +69,8 @@ def build_course_type_choices(fs_config, initial=None):
     record stays editable.
     """
     initial = initial or {}
-    sources = {
-        'course_type': 'course_types',
-        'course_request_type': 'course_request_types',
-    }
     built = {}
-    for field_name, setting_key in sources.items():
+    for field_name, setting_key in CHOICE_LABEL_SOURCES.items():
         parsed = parse_choice_list(fs_config.get(setting_key, ''), pairs=True)
         if not parsed:
             built[field_name] = None
@@ -1008,8 +1004,33 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
         section_data = {}
         section_data['term'] = str(data.get('term'))
         section_data['term_name'] = str(data.get('term_name'))
-        section_data['estimated_enrollment'] = data.get('estimated_enrollment')
-        
+
+        # Every schema field rides along, mirroring what
+        # build_section_info_from_formset persists for the teaching formset.
+        # This form renders whatever `teaching_form_config` turns on, so a
+        # hand-listed subset silently dropped the rest: a tenant enabling
+        # class_period or start_date got them validated and then discarded.
+        # A field the tenant has not configured is hidden and cleans to '',
+        # which is stored as '' rather than left absent.
+        from cis.backends.storage_backend import PrivateMediaStorage
+        from django.utils.text import get_valid_filename
+
+        file_fields = set(TeachingSectionFieldSchema.get_file_field_names())
+        for field_name in TeachingSectionFieldSchema.get_available_field_names():
+            if field_name in file_fields:
+                uploaded = request.FILES.get(field_name)
+                if uploaded:
+                    storage = PrivateMediaStorage()
+                    safe_name = get_valid_filename(uploaded.name)
+                    section_data[field_name] = storage.url(storage.save(
+                        f'future_section/{future_course.id}/{safe_name}',
+                        uploaded))
+                else:
+                    section_data[field_name] = ''
+                continue
+            value = data.get(field_name)
+            section_data[field_name] = '' if value is None else value
+
         uploaded_file = request.FILES.get(f'syllabus')
 
         if uploaded_file:

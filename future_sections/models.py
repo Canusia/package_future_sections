@@ -11,6 +11,7 @@ import datetime
 from django.conf import settings
 from django.db import models
 from django.db.models import JSONField
+from django.utils.functional import cached_property
 from django.utils.safestring import mark_safe
 from django.core.mail import EmailMessage
 from django.template import Context, Template
@@ -451,10 +452,13 @@ class FutureCourse(models.Model):
         sections = self.section_info.get('sections', []) if self.section_info else []
         displays = []
 
+        from .utils import build_section_choice_labels
+        choice_labels = build_section_choice_labels(fs_config)
+
         for section in sections:
             displays.append(
                 TeachingSectionFieldSchema.format_section_display(
-                    section, display_template, show_syllabus
+                    section, display_template, show_syllabus, choice_labels
                 )
             )
 
@@ -470,34 +474,92 @@ class FutureCourse(models.Model):
         from django.utils.safestring import mark_safe
         return mark_safe('<br>'.join(self.section_display))
 
-    def additional_fields(self):
-        """Return list of additional field names from teaching_form_config.
+    @classmethod
+    def _export_field_config(cls):
+        """Return ``(field_names, label_overrides)`` for the export columns.
 
-        Validates configured names against the schema so typos are silently
-        dropped rather than causing downstream key errors.
+        Columns come from both form configs: the teaching form, plus the
+        add-teacher-only fields the tenant asks on the Add Teacher form.
+        Reading only `teaching_form_config` would drop the latter entirely,
+        since the teaching-form builder does not offer them. Names are
+        validated against the schema so typos are silently dropped rather
+        than causing downstream key errors.
+
+        Single source of truth for `additional_fields` (the column order)
+        and `get_export_labels` (the headers) so the two cannot disagree.
         """
         import json
         from .settings.future_sections import future_sections as fs_settings
         from .schemas import TeachingSectionFieldSchema
+        # Deferred: `forms` imports this module at import time.
+        from .forms import TeacherCourseSectionForm
 
+        add_teacher_only = set(TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS)
         fs_config = fs_settings.from_db()
-        try:
-            form_config = json.loads(fs_config.get('teaching_form_config', '{}'))
-        except (json.JSONDecodeError, TypeError):
-            form_config = {}
 
-        configured = form_config.get('fields', ['term', 'estimated_enrollment'])
-        valid_names = set(TeachingSectionFieldSchema.get_available_field_names()) | {'term'}
-        return [f for f in configured if f in valid_names]
+        def _load(key):
+            try:
+                return json.loads(fs_config.get(key, '{}')) or {}
+            except (json.JSONDecodeError, TypeError):
+                return {}
+
+        form_config = _load('teaching_form_config')
+        add_teacher_config = _load('add_teacher_form_config')
+
+        valid_names = set(
+            TeachingSectionFieldSchema.get_available_field_names()) | {'term'}
+
+        names = list(form_config.get('fields', ['term', 'estimated_enrollment']))
+        for name in add_teacher_config.get('fields', []):
+            if name in add_teacher_only and name not in names:
+                names.append(name)
+
+        # Add-teacher labels apply only to the fields that config owns, so a
+        # same-named override on the teaching form cannot capture them.
+        label_overrides = dict(form_config.get('labels', {}) or {})
+        for name, label in (add_teacher_config.get('labels', {}) or {}).items():
+            if name in add_teacher_only:
+                label_overrides[name] = label
+
+        return [f for f in names if f in valid_names], label_overrides
+
+    def additional_fields(self):
+        """Return the export column names configured for this tenant."""
+        return type(self)._export_field_config()[0]
+
+    @cached_property
+    def _section_choice_labels(self):
+        """`{field: {value: label}}` for the choice-backed section fields.
+
+        Cached per instance: the CSV export calls ``get_by_property`` once
+        per field per section per record, and each build reads the settings
+        row.
+        """
+        from .settings.future_sections import future_sections as fs_settings
+        from .utils import build_section_choice_labels
+        try:
+            return build_section_choice_labels(fs_settings.from_db())
+        except Exception:
+            return {}
 
     def get_by_property(self, index, key):
-        """Get section property by index and key from section_info."""
+        """Get section property by index and key from section_info.
+
+        Values of choice-backed fields are returned as their configured
+        label, matching what the section display shows and what the export
+        headers promise. A value with no configured option (a retired one)
+        is returned as itself.
+        """
+        from .utils import CHOICE_LABEL_SOURCES
+
         sections = self.section_info.get('sections', []) if self.section_info else []
         if index < len(sections):
             value = sections[index].get(key, '')
             # Handle term_name special case - when asking for 'term', return term_name if available
             if key == 'term' and sections[index].get('term_name'):
                 return sections[index].get('term_name')
+            if value and key in CHOICE_LABEL_SOURCES:
+                value = self._section_choice_labels.get(key, {}).get(value, value)
             return value if value is not None else ''
         return ''
 
@@ -508,18 +570,9 @@ class FutureCourse(models.Model):
         Merges schema default labels with any overrides from settings so that
         exports always have a human-readable header even without explicit config.
         """
-        import json
-        from .settings.future_sections import future_sections as fs_settings
         from .schemas import TeachingSectionFieldSchema
 
-        fs_config = fs_settings.from_db()
-        try:
-            form_config = json.loads(fs_config.get('teaching_form_config', '{}'))
-        except (json.JSONDecodeError, TypeError):
-            form_config = {}
-
-        active_fields = form_config.get('fields', ['term', 'estimated_enrollment'])
-        label_overrides = form_config.get('labels', {})
+        active_fields, label_overrides = cls._export_field_config()
         return TeachingSectionFieldSchema.get_export_labels(active_fields, label_overrides)
 
     @classmethod

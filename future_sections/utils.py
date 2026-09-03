@@ -146,6 +146,52 @@ def addable_courses_for_user(request, academic_year, course_type=None, campus=No
     return qs.distinct('title').order_by('title', 'campus__name', 'catalog_number')
 
 
+# Section fields whose options are tenant-configured `value:Label` pairs, and
+# the setting each one's vocabulary comes from. Only these two are parsed with
+# `pairs=True`; `instruction_modes` / `location_options` store the label as the
+# value, so they need no mapping.
+CHOICE_LABEL_SOURCES = {
+    'course_type': 'course_types',
+    'course_request_type': 'course_request_types',
+}
+
+
+def build_section_choice_labels(fs_config):
+    """Return ``{field_name: {stored_value: label}}`` for the choice-backed
+    section fields, for rendering a stored code as its configured label.
+
+    A field whose setting is blank maps to an empty dict rather than being
+    absent, so callers can tell "configured with no options" from "not a
+    choice-backed field at all".
+    """
+    from .forms import parse_choice_list
+
+    return {
+        field_name: dict(parse_choice_list(
+            (fs_config or {}).get(setting_key, ''), pairs=True))
+        for field_name, setting_key in CHOICE_LABEL_SOURCES.items()
+    }
+
+
+def dependent_field_pairs():
+    """Return ``[[parent_selector, container_selector, input_selector], …]``
+    for the add-teacher form's conditional fields.
+
+    Derived from the schema's ``depends_on`` metadata so declaring a new
+    dependent field wires up its show/hide behaviour too — the list used to
+    be hardcoded in the template, which is how `new_teacher_email` ended up
+    always visible despite declaring the same parent as `new_teacher_name`.
+
+    Selectors follow crispy-forms' ``div_id_<name>`` / ``id_<name>`` ids.
+    A pair whose field is hidden for this tenant simply matches nothing.
+    """
+    return [
+        [f'#id_{parent}', f'#div_id_{child}', f'#id_{child}']
+        for child, parent in
+        TeachingSectionFieldSchema.get_dependent_fields().items()
+    ]
+
+
 def render_course_display(template, course):
     """Expand the ``course_display_template`` placeholders for a Course.
 
