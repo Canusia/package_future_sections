@@ -207,6 +207,10 @@ def open_review_round(future_course):
 def record_decision(future_course, reviewer, *, decision, comment='',
                     mentor=None):
     """Fill in *reviewer*'s slot, advancing the request when it is the last."""
+    if future_course.status != 'pending_review':
+        raise NotAReviewerError(
+            'This request is not open for review.')
+
     try:
         row = SectionRequestReview.objects.get(
             future_course=future_course, reviewer=reviewer,

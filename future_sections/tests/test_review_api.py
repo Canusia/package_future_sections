@@ -13,7 +13,7 @@ from cis.models.settings import Setting
 
 from ..models import FutureCourse
 from ..review.api import SectionRequestViewSet
-from ..review.helpers import open_review_round, record_decision
+from ..review.helpers import open_review_round, record_decision, reset_review
 
 
 def _world(reviewer_role='Faculty'):
@@ -111,6 +111,18 @@ class FacultyReviewStatusTests(TestCase):
 
     def test_an_undecided_reviewer_sees_pending(self):
         [a], fc, _course = _world_multi(['a@x.com'])
+        status = _faculty_review_status(fc, a, tab='pending')
+        self.assertEqual(status, 'Pending')
+
+    def test_pending_tab_does_not_show_a_stale_prior_round_decision(self):
+        # Round 1: reviewer `a` decides, is reset by CE, round 2 opens with
+        # a fresh (undecided) slot for `a`. The Pending tab should show
+        # Pending, not their round-1 "Approved".
+        [a], fc, _course = _world_multi(['a@x.com'])
+        record_decision(fc, a, decision='approved', comment='')
+        fc.refresh_from_db()
+        reset_review(fc)
+        self.assertEqual(open_review_round(fc), 2)
         status = _faculty_review_status(fc, a, tab='pending')
         self.assertEqual(status, 'Pending')
 

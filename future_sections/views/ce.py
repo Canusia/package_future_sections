@@ -778,10 +778,19 @@ def bulk_actions(request):
 def mark_as_pending_review(request):
     """Open a review round on each selected request.
 
-    A request whose course has no qualifying reviewer is skipped and named
-    in the response: opening a round nobody can complete would strand it.
+    Only `submitted` requests are eligible: re-selecting an already
+    `pending_review` or `reviewed` request would open a new round on top
+    of a live or finished one, orphaning its decisions into indistinguishable
+    history (or silently un-reviewing it). Those are skipped and named in
+    the response, distinctly from courses with no qualifying reviewer.
     """
-    from ..review.helpers import NoReviewersError, open_review_round
+    from ..review.helpers import NoReviewersError, open_review_round, review_required
+
+    if not review_required():
+        return JsonResponse({
+            'status': 'warning', 'title': 'Review Disabled',
+            'message': 'Review is not enabled for this tenant.',
+            'action': 'display'})
 
     ids = request.GET.getlist('ids[]')
     if not ids:
@@ -790,28 +799,43 @@ def mark_as_pending_review(request):
             'message': 'Please select at least one record.',
             'action': 'display'})
 
-    marked, skipped = 0, []
+    marked, no_reviewer, already_open = 0, [], []
     for fc in FutureCourse.objects.filter(id__in=ids):
+        label = str(fc.teacher_course.course.title
+                    if fc.teacher_course else fc.id)
+        if fc.status != 'submitted':
+            already_open.append(label)
+            continue
         try:
             open_review_round(fc)
             marked += 1
         except NoReviewersError:
-            skipped.append(str(fc.teacher_course.course.title
-                               if fc.teacher_course else fc.id))
+            no_reviewer.append(label)
 
     message = f'Marked {marked} request(s) as pending review.'
-    if skipped:
+    if no_reviewer:
         message += (' Skipped, no reviewer assigned to the course: '
-                    + ', '.join(skipped) + '.')
+                    + ', '.join(no_reviewer) + '.')
+    if already_open:
+        message += (' Skipped, already pending review or reviewed: '
+                    + ', '.join(already_open) + '.')
     return JsonResponse({
-        'status': 'warning' if skipped else 'success',
+        'status': 'warning' if (no_reviewer or already_open) else 'success',
         'title': 'Pending Review',
         'message': message,
         'action': 'display'})
 
 
 def mark_as_reviewed(request):
-    """Mark selected future courses as reviewed"""
+    """Mark selected future courses as reviewed.
+
+    A request that is live in `pending_review` is refused rather than
+    force-closed: a bare status update would strand any undecided
+    reviewer's row (still `decision=''`, forever) and drop the request off
+    their Pending tab and the CE pending filter with no route to finish.
+    Reset (back to `submitted`) is the designed way out of a live round;
+    silently closing one here is the ambiguous behaviour we don't want.
+    """
     ids = request.GET.getlist('ids[]')
 
     if not ids:
@@ -822,15 +846,27 @@ def mark_as_reviewed(request):
             'action': 'display'
         })
 
-    # Update the status of selected records
-    updated_count = FutureCourse.objects.filter(
-        id__in=ids
-    ).update(status='reviewed')
+    courses = list(FutureCourse.objects.filter(id__in=ids))
+    live = [fc for fc in courses if fc.status == 'pending_review']
+    eligible_ids = [fc.id for fc in courses if fc.status != 'pending_review']
+
+    updated_count = 0
+    if eligible_ids:
+        updated_count = FutureCourse.objects.filter(
+            id__in=eligible_ids
+        ).update(status='reviewed')
+
+    message = f'Successfully marked {updated_count} request(s) as reviewed.'
+    if live:
+        labels = [str(fc.teacher_course.course.title
+                      if fc.teacher_course else fc.id) for fc in live]
+        message += (' Skipped, still pending review (reset to finish '
+                    'or wait for all reviewers): ' + ', '.join(labels) + '.')
 
     return JsonResponse({
-        'status': 'success',
+        'status': 'warning' if live else 'success',
         'title': 'Success',
-        'message': f'Successfully marked {updated_count} request(s) as reviewed.',
+        'message': message,
         'action': 'display'
     })
 

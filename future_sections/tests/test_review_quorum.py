@@ -131,12 +131,42 @@ class QuorumTests(TestCase):
         self.assertEqual(self.fc.status, 'reviewed')
 
     def test_a_reviewer_may_change_their_decision(self):
+        # Two reviewers so the round is still live (one slot undecided)
+        # after `a` posts their first decision -- this exercises "change
+        # within a live round", not a post-completion rewrite.
         a = self._reviewer('a@x.com')
+        self._reviewer('d@x.com')
         open_review_round(self.fc)
         record_decision(self.fc, a, decision='approved')
         record_decision(self.fc, a, decision='not_approved')
-        self.assertEqual(self.fc.reviews.get().decision, 'not_approved')
-        self.assertEqual(self.fc.reviews.count(), 1)
+        self.assertEqual(
+            self.fc.reviews.get(reviewer=a).decision, 'not_approved')
+        self.assertEqual(self.fc.reviews.count(), 2)
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'pending_review')
+
+    def test_a_decision_cannot_be_posted_after_reset(self):
+        a = self._reviewer('a@x.com')
+        b = self._reviewer('d@x.com')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved')
+        reset_review(self.fc)
+        with self.assertRaises(NotAReviewerError):
+            record_decision(self.fc, b, decision='approved')
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'submitted')
+        self.assertEqual(self.fc.reviews.get(round=1, reviewer=b).decision, '')
+
+    def test_a_decision_cannot_be_posted_on_a_reviewed_request(self):
+        a = self._reviewer('a@x.com')
+        d = self._reviewer('d@x.com')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved')
+        record_decision(self.fc, d, decision='not_approved')
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+        with self.assertRaises(NotAReviewerError):
+            record_decision(self.fc, a, decision='not_approved')
 
     # -- reset -----------------------------------------------------------
 

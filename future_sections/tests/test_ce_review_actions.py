@@ -117,6 +117,77 @@ class CEReviewActionsTests(TestCase):
         self.assertEqual(other.status, 'submitted')
         self.assertIn('Bravo', resp.json()['message'])
 
+    def test_reselecting_a_pending_review_request_does_not_reopen_a_round(self):
+        self._reviewer('a@x.com')
+        _safe_force_login(self.client, self.ce_user)
+        # Opens round 1.
+        self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.review_round, 1)
+        # Re-selecting the same (still pending_review) request must not
+        # open round 2 and orphan round 1's decisions.
+        resp = self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.review_round, 1)
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertIn('already', resp.json()['message'].lower())
+
+    def test_a_reviewed_request_is_not_reopened(self):
+        a = self._reviewer('a@x.com')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved')
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+        _safe_force_login(self.client, self.ce_user)
+        resp = self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.review_round, 1)
+        self.assertEqual(self.fc.status, 'reviewed')
+        self.assertIn('already', resp.json()['message'].lower())
+
+    def test_mark_as_reviewed_refuses_a_live_pending_review_request(self):
+        self._reviewer('a@x.com')
+        open_review_round(self.fc)
+        _safe_force_login(self.client, self.ce_user)
+        resp = self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_reviewed', 'ids[]': [str(self.fc.id)]})
+        body = resp.json()
+        self.assertEqual(body['status'], 'warning')
+        self.assertIn('pending review', body['message'].lower())
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'pending_review')
+
+    def test_mark_as_reviewed_still_works_on_a_plain_submitted_request(self):
+        _safe_force_login(self.client, self.ce_user)
+        resp = self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_reviewed', 'ids[]': [str(self.fc.id)]})
+        self.assertEqual(resp.json()['status'], 'success')
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+
+    def test_mark_as_pending_review_is_refused_when_review_disabled(self):
+        self._reviewer('a@x.com')
+        Setting.objects.filter(key='cis_future_sections').update(
+            value={'require_review': 'No', 'reviewer_roles': ['Faculty']})
+        _safe_force_login(self.client, self.ce_user)
+        resp = self.client.get(
+            reverse('future_sections_ce:bulk_actions'),
+            {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
+        body = resp.json()
+        self.assertEqual(body['status'], 'warning')
+        self.assertIn('review is not enabled', body['message'].lower())
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'submitted')
+        self.assertEqual(self.fc.reviews.count(), 0)
+
     def test_mark_as_submitted_resets_and_unlocks(self):
         a = self._reviewer('a@x.com')
         open_review_round(self.fc)

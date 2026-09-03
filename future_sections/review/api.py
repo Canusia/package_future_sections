@@ -83,14 +83,20 @@ class SectionRequestSerializer(serializers.Serializer):
         summary (the model never computes an aggregate verdict). If the
         request went through a CE reset and reopened, prefer their decision
         in the highest round they've decided in.
+
+        While the request is `pending_review`, the lookup is scoped to the
+        live round only: a reset-and-reopened request must not surface a
+        stale decision from a finished prior round for a slot the reviewer
+        has not yet filled in the new round.
         """
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         if not user or not user.is_authenticated:
             return 'Pending'
-        row = obj.reviews.filter(
-            reviewer=user,
-        ).exclude(decision='').order_by('-round').first()
+        rows = obj.reviews.filter(reviewer=user)
+        if obj.status == 'pending_review':
+            rows = rows.filter(round=obj.review_round)
+        row = rows.exclude(decision='').order_by('-round').first()
         if not row:
             return 'Pending'
         if row.decision == 'approved':
