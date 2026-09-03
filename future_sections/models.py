@@ -909,3 +909,45 @@ class FutureSection(models.Model):
             writer.writerow(row)
 
         return response
+
+
+class SectionRequestReview(models.Model):
+    """One reviewer's slot on one round of review for one section request.
+
+    A row with an empty ``decision`` is an outstanding ask. The set of rows
+    for ``future_course.review_round`` is the snapshot CE took when it marked
+    the request pending review: it fixes both who must decide and who is
+    allowed to, so later changes to a reviewer's CourseAdministrator rows
+    neither strand the request nor pull a newcomer into a running round.
+    """
+
+    DECISION_CHOICES = [
+        ('approved', 'Approved'),
+        ('not_approved', 'Not approved'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    future_course = models.ForeignKey(
+        FutureCourse, on_delete=models.CASCADE, related_name='reviews')
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='section_request_reviews')
+    round = models.PositiveIntegerField()
+    #: The CourseAdministrator role that qualified this reviewer, recorded at
+    #: snapshot time so it survives later changes to their roles.
+    role = models.CharField(max_length=50)
+    decision = models.CharField(
+        max_length=20, blank=True, default='', choices=DECISION_CHOICES)
+    comment = models.TextField(blank=True, default='')
+    mentor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='mentor_for_section_requests')
+    decided_on = models.DateTimeField(null=True, blank=True)
+    created_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('future_course', 'reviewer', 'round')
+        ordering = ['round', 'created_on']
+
+    def __str__(self):
+        return f'{self.reviewer} round {self.round}: {self.decision or "pending"}'
