@@ -576,11 +576,14 @@ def index(request):
     except:
         active_academic_year = AcademicYear.objects.last()
 
+    from ..review.helpers import review_required
+
     return render(
         request,
         template, {
             'menu': menu,
             'page_title': 'Course Requests',
+            'require_review': review_required(),
             'api_url': '/ce/future_sections/api/future_class_section?format=datatables',
             'future_projections_url': '/ce/future_sections/api/future_projection?format=datatables',
             'pending_api_url': '/ce/future_sections/api/pending_future_class_sections?format=datatables',
@@ -760,6 +763,9 @@ def bulk_actions(request):
     if action == 'mark_as_submitted':
         return mark_as_submitted(request)
 
+    if action == 'mark_as_pending_review':
+        return mark_as_pending_review(request)
+
     # Default response for unknown actions
     return JsonResponse({
         'status': 'error',
@@ -767,6 +773,41 @@ def bulk_actions(request):
         'message': 'Unknown action',
         'action': 'display'
     })
+
+
+def mark_as_pending_review(request):
+    """Open a review round on each selected request.
+
+    A request whose course has no qualifying reviewer is skipped and named
+    in the response: opening a round nobody can complete would strand it.
+    """
+    from ..review.helpers import NoReviewersError, open_review_round
+
+    ids = request.GET.getlist('ids[]')
+    if not ids:
+        return JsonResponse({
+            'status': 'warning', 'title': 'No Selection',
+            'message': 'Please select at least one record.',
+            'action': 'display'})
+
+    marked, skipped = 0, []
+    for fc in FutureCourse.objects.filter(id__in=ids):
+        try:
+            open_review_round(fc)
+            marked += 1
+        except NoReviewersError:
+            skipped.append(str(fc.teacher_course.course.title
+                               if fc.teacher_course else fc.id))
+
+    message = f'Marked {marked} request(s) as pending review.'
+    if skipped:
+        message += (' Skipped, no reviewer assigned to the course: '
+                    + ', '.join(skipped) + '.')
+    return JsonResponse({
+        'status': 'warning' if skipped else 'success',
+        'title': 'Pending Review',
+        'message': message,
+        'action': 'display'})
 
 
 def mark_as_reviewed(request):
@@ -795,7 +836,13 @@ def mark_as_reviewed(request):
 
 
 def mark_as_submitted(request):
-    """Mark selected future courses as submitted (reset status)"""
+    """Mark selected future courses as submitted (reset status).
+
+    Routed through `reset_review` so the reset semantics -- clearing status
+    but leaving prior-round review rows as history -- live in one place.
+    """
+    from ..review.helpers import reset_review
+
     ids = request.GET.getlist('ids[]')
 
     if not ids:
@@ -806,10 +853,10 @@ def mark_as_submitted(request):
             'action': 'display'
         })
 
-    # Update the status of selected records
-    updated_count = FutureCourse.objects.filter(
-        id__in=ids
-    ).update(status='submitted')
+    updated_count = 0
+    for fc in FutureCourse.objects.filter(id__in=ids):
+        reset_review(fc)
+        updated_count += 1
 
     return JsonResponse({
         'status': 'success',

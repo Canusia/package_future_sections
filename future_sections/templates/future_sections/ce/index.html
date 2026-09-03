@@ -68,6 +68,9 @@
                                                             <select class="form-control mt-2" name="status">
                                                                 <option value="">Filter By Status</option>
                                                                 <option value="submitted">Submitted</option>
+                                                                {% if require_review %}
+                                                                <option value="pending_review">Pending Review</option>
+                                                                {% endif %}
                                                                 <option value="reviewed">Reviewed</option>
                                                             </select>
                                                             &nbsp;
@@ -590,6 +593,16 @@
                                                 do_bulk_action('mark_as_reviewed', dt)
                                             }
                                         },
+                                        {% if require_review %}
+                                        {
+                                            className: 'btn btn-sm btn-info text-white text-light',
+                                            text: '<i class="fas fa-hourglass-half text-white"></i>&nbsp;Mark as Pending Review',
+                                            titleAttr: 'Send selected requests to the reviewers',
+                                            action: function (e, dt, node, config) {
+                                                do_bulk_action('mark_as_pending_review', dt)
+                                            }
+                                        },
+                                        {% endif %}
                                         {
                                             className: 'btn btn-sm btn-warning text-white text-light',
                                             text: '<i class="fas fa-undo text-white"></i>&nbsp;Mark as Submitted',
@@ -632,7 +645,9 @@
                                             'render': function (data, type, row, meta) {
                                                 var html = (row.status === 'reviewed')
                                                     ? '<span class="badge badge-success">Reviewed</span>'
-                                                    : '<span class="badge badge-warning">Submitted</span>';
+                                                    : (row.status === 'pending_review')
+                                                        ? '<span class="badge badge-info">Pending Review</span>'
+                                                        : '<span class="badge badge-warning">Submitted</span>';
 
                                                 var review = (row.section_display && row.section_display.faculty_review) || null;
                                                 if (review && review.decision) {
