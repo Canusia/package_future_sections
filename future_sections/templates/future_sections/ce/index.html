@@ -1153,11 +1153,14 @@
 
             $.blockUI();
             $.ajax({
-                type: 'GET',
+                type: 'POST',
                 url: "{% url 'future_sections_ce:send_review_reminder' %}",
                 data: {
                     future_course_id: futureCourseId,
                     reviewer_id: reviewerId
+                },
+                headers: {
+                    'X-CSRFToken': window.CSRF_TOKEN
                 },
                 success: function (resp) {
                     $.unblockUI();

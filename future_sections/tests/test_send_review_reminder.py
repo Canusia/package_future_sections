@@ -10,6 +10,8 @@ from django.contrib.auth.signals import user_logged_in
 from django.test import TestCase
 from django.urls import reverse
 
+from rest_framework.test import APIClient
+
 from cis.models.course import Campus, Cohort, Course, CourseAdministrator
 from cis.models.customuser import CustomUser
 from cis.models.settings import Setting
@@ -187,7 +189,7 @@ class SendReviewReminderViewTests(TestCase):
         open_review_round(self.fc)
         _safe_force_login(self.client, self.ce_user)
 
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:send_review_reminder'),
             {'future_course_id': str(self.fc.id), 'reviewer_id': str(reviewer.id)})
 
@@ -203,7 +205,7 @@ class SendReviewReminderViewTests(TestCase):
         outsider = _user('outsider@x.com')
         _safe_force_login(self.client, self.ce_user)
 
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:send_review_reminder'),
             {'future_course_id': str(self.fc.id), 'reviewer_id': str(outsider.id)})
 
@@ -217,10 +219,42 @@ class SendReviewReminderViewTests(TestCase):
             username='notce@x.com', email='notce@x.com', password='pw')
         _safe_force_login(self.client, non_ce)
 
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:send_review_reminder'),
             {'future_course_id': str(self.fc.id), 'reviewer_id': str(reviewer.id)})
         self.assertNotEqual(resp.status_code, 200)
+
+    def test_get_is_rejected_with_405_and_sends_nothing(self):
+        """PT-33-style regression: a forged/prefetched GET must not send
+        email. Mirrors cis/tests/test_pt33_remove_teaching_status_csrf.py's
+        `test_get_does_not_delete_and_returns_405`, adapted for a
+        "send mail" state change instead of a delete."""
+        reviewer = self._reviewer('r@x.com')
+        open_review_round(self.fc)
+        _safe_force_login(self.client, self.ce_user)
+
+        resp = self.client.get(
+            reverse('future_sections_ce:send_review_reminder'),
+            {'future_course_id': str(self.fc.id), 'reviewer_id': str(reviewer.id)})
+
+        self.assertEqual(resp.status_code, 405)
+
+    def test_session_post_without_csrf_token_is_rejected(self):
+        """A session-authenticated POST with no CSRF token must be
+        rejected, proving CsrfViewMiddleware enforcement (mirrors PT-33's
+        `test_session_post_without_csrf_token_is_rejected`)."""
+        reviewer = self._reviewer('r@x.com')
+        open_review_round(self.fc)
+        csrf_client = APIClient(enforce_csrf_checks=True)
+        _safe_force_login(csrf_client, self.ce_user)
+
+        resp = csrf_client.post(
+            reverse('future_sections_ce:send_review_reminder'),
+            {'future_course_id': str(self.fc.id), 'reviewer_id': str(reviewer.id)},
+            format='multipart')
+
+        self.assertEqual(resp.status_code, 403)
+
 
 
 class CEIndexReviewNotificationHistoryTabTests(TestCase):

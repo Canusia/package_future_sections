@@ -14,6 +14,7 @@ from django.forms.formsets import formset_factory
 from django.template.loader import get_template
 from django.utils.safestring import mark_safe
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.http import require_POST
 
 from mailer import send_html_mail
 
@@ -754,6 +755,7 @@ def send_pending_reminder(request):
     })
 
 
+@require_POST
 def send_review_reminder(request):
     """Send one reviewer a reminder about one outstanding section request.
 
@@ -763,9 +765,15 @@ def send_review_reminder(request):
     (future_course_id, reviewer_id) pair, and the model re-derives whether
     that reviewer actually holds an outstanding slot on the request's live
     round before sending anything.
+
+    POST-only (PT-33-style): sending mail is a state change, so a GET must
+    not trigger it -- a cross-site GET navigation or a link-prefetcher
+    hitting this URL while a CE session is live must not fire a real
+    email. `@require_POST` returns 405 on GET, and this view is not
+    csrf_exempt anywhere in the route chain, so CsrfViewMiddleware applies.
     """
-    future_course_id = request.GET.get('future_course_id')
-    reviewer_id = request.GET.get('reviewer_id')
+    future_course_id = request.POST.get('future_course_id')
+    reviewer_id = request.POST.get('reviewer_id')
 
     if not future_course_id or not reviewer_id:
         return JsonResponse({
