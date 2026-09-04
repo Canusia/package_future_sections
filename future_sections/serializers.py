@@ -51,8 +51,18 @@ class FutureCourseSerializer(serializers.ModelSerializer):
     def _review_summary(self, obj):
         if not obj.review_round:
             return None
-        rows = list(obj.reviews.filter(round=obj.review_round))
+        from .models import SectionRequestReview
+        rows = list(
+            obj.reviews.filter(round=obj.review_round)
+            .select_related('reviewer').order_by('created_on'))
         decided = [r for r in rows if r.decision]
+        labels = dict(SectionRequestReview.DECISION_CHOICES)
+
+        def _name(user):
+            if not user:
+                return ''
+            return f'{user.first_name} {user.last_name}'.strip() or user.username
+
         return {
             'round': obj.review_round,
             'total': len(rows),
@@ -60,6 +70,18 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             'approved': sum(1 for r in decided if r.decision == 'approved'),
             'not_approved': sum(
                 1 for r in decided if r.decision == 'not_approved'),
+            'reviewers': [
+                {
+                    'name': _name(r.reviewer),
+                    'role': r.role,
+                    'decision': labels.get(r.decision, ''),
+                    'decided_on': (
+                        r.decided_on.strftime('%m/%d/%Y')
+                        if r.decided_on else ''),
+                    'comment': r.comment or '',
+                }
+                for r in rows
+            ],
         }
 
     def get_section_display(self, obj):

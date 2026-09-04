@@ -651,8 +651,11 @@
 
                                                 var rv = (row.section_display && row.section_display.review) || null;
                                                 if (rv) {
-                                                    html += '<br><span class="badge badge-secondary mt-1">' +
-                                                            rv.decided + ' of ' + rv.total + ' decided</span>';
+                                                    html += '<br><a href="#" class="review-progress-link" ' +
+                                                            'data-toggle="modal" data-target="#reviewersModal" ' +
+                                                            'title="Show reviewers">' +
+                                                            '<span class="badge badge-secondary mt-1">' +
+                                                            rv.decided + ' of ' + rv.total + ' decided</span></a>';
                                                     if (rv.approved) {
                                                         html += ' <span class="badge badge-info">' + rv.approved + ' approved</span>';
                                                     }
@@ -967,6 +970,58 @@
                 });
             })
 
+        $(document).on('click', '.review-progress-link', function (e) {
+            e.preventDefault();
+            var rowData = table.row($(this).closest('tr')).data();
+            var rv = (rowData && rowData.section_display && rowData.section_display.review) || null;
+            var $body = $('#reviewersModal .modal-body').empty();
+            if (!rv) {
+                return;
+            }
+
+            var $heading = $('<p>').addClass('font-weight-bold');
+            $heading.text('Round ' + rv.round + ' — ' + rv.decided + ' of ' + rv.total + ' decided');
+            $body.append($heading);
+
+            var $list = $('<div>').addClass('list-group');
+            $.each(rv.reviewers || [], function (i, reviewer) {
+                var $item = $('<div>').addClass('list-group-item');
+
+                var $nameRole = $('<div>').addClass('d-flex justify-content-between');
+                var $name = $('<strong>');
+                $name.text(reviewer.name);
+                $nameRole.append($name);
+                var $role = $('<span>').addClass('text-muted');
+                $role.text(reviewer.role);
+                $nameRole.append($role);
+                $item.append($nameRole);
+
+                var $decisionLine = $('<div>').addClass('mt-1');
+                if (reviewer.decision) {
+                    var $decision = $('<span>').addClass(
+                        reviewer.decision === 'Approved' ? 'badge badge-info' : 'badge badge-danger');
+                    $decision.text(reviewer.decision);
+                    $decisionLine.append($decision);
+                    if (reviewer.decided_on) {
+                        $decisionLine.append(
+                            $('<span>').addClass('text-muted ml-2').text(reviewer.decided_on));
+                    }
+                } else {
+                    $decisionLine.append($('<span>').addClass('badge badge-light text-muted').text('Awaiting'));
+                }
+                $item.append($decisionLine);
+
+                if (reviewer.comment) {
+                    var $comment = $('<div>').addClass('mt-1 text-muted');
+                    $comment.text(reviewer.comment);
+                    $item.append($comment);
+                }
+
+                $list.append($item);
+            });
+            $body.append($list);
+        });
+
         $(document).on('click', '.email-new-teacher', function () {
             var $link = $(this);
             $.blockUI();
@@ -997,6 +1052,21 @@
     <div class="modal fade" data-backdrop="static" data-keyboard="false" id="teachingModal" tabindex="-1" role="dialog" aria-labelledby="teachingModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-scrollable modal-lg">
             <div class="modal-content">
+                <div class="modal-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reviewers Modal -->
+    <div class="modal fade" id="reviewersModal" tabindex="-1" role="dialog" aria-labelledby="reviewersModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reviewersModalLabel">Reviewers</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
                 <div class="modal-body"></div>
             </div>
         </div>
