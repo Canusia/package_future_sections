@@ -30,6 +30,11 @@
                     <li class="nav-item">
                         <a class="nav-link" data-toggle="tab" href="#notification_history">Notification History</a>
                     </li>
+                    {% if require_review %}
+                    <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#review_notification_history">Review Notification History</a>
+                    </li>
+                    {% endif %}
                 </ul>
             </div>
 
@@ -68,6 +73,9 @@
                                                             <select class="form-control mt-2" name="status">
                                                                 <option value="">Filter By Status</option>
                                                                 <option value="submitted">Submitted</option>
+                                                                {% if require_review %}
+                                                                <option value="pending_review">Pending Review</option>
+                                                                {% endif %}
                                                                 <option value="reviewed">Reviewed</option>
                                                             </select>
                                                             &nbsp;
@@ -590,6 +598,16 @@
                                                 do_bulk_action('mark_as_reviewed', dt)
                                             }
                                         },
+                                        {% if require_review %}
+                                        {
+                                            className: 'btn btn-sm btn-info text-white text-light',
+                                            text: '<i class="fas fa-hourglass-half text-white"></i>&nbsp;Mark as Pending Review',
+                                            titleAttr: 'Send selected requests to the reviewers',
+                                            action: function (e, dt, node, config) {
+                                                do_bulk_action('mark_as_pending_review', dt)
+                                            }
+                                        },
+                                        {% endif %}
                                         {
                                             className: 'btn btn-sm btn-warning text-white text-light',
                                             text: '<i class="fas fa-undo text-white"></i>&nbsp;Mark as Submitted',
@@ -632,18 +650,22 @@
                                             'render': function (data, type, row, meta) {
                                                 var html = (row.status === 'reviewed')
                                                     ? '<span class="badge badge-success">Reviewed</span>'
-                                                    : '<span class="badge badge-warning">Submitted</span>';
+                                                    : (row.status === 'pending_review')
+                                                        ? '<span class="badge badge-info">Pending Review</span>'
+                                                        : '<span class="badge badge-warning">Submitted</span>';
 
-                                                var review = (row.section_display && row.section_display.faculty_review) || null;
-                                                if (review && review.decision) {
-                                                    if (review.decision === 'approved') {
-                                                        var mentor = review.mentor_name || '';
-                                                        html += '<br><span class="badge badge-info mt-1">Approved</span>';
-                                                        if (mentor) {
-                                                            html += '<br><small class="text-muted">' + $('<div>').text(mentor).html() + '</small>';
-                                                        }
-                                                    } else {
-                                                        html += '<br><span class="badge badge-danger mt-1">Not approved</span>';
+                                                var rv = (row.section_display && row.section_display.review) || null;
+                                                if (rv) {
+                                                    html += '<br><a href="#" class="review-progress-link" ' +
+                                                            'data-toggle="modal" data-target="#reviewersModal" ' +
+                                                            'title="Show reviewers">' +
+                                                            '<span class="badge badge-secondary mt-1">' +
+                                                            rv.decided + ' of ' + rv.total + ' decided</span></a>';
+                                                    if (rv.approved) {
+                                                        html += ' <span class="badge badge-info">' + rv.approved + ' approved</span>';
+                                                    }
+                                                    if (rv.not_approved) {
+                                                        html += ' <span class="badge badge-danger">' + rv.not_approved + ' not approved</span>';
                                                     }
                                                 }
                                                 return html;
@@ -815,6 +837,107 @@
                 </div>
                 <!-- end tab # notification_history -->
 
+                {% if require_review %}
+                <div class="tab-pane" id="review_notification_history">
+                    <div class="bg-white border border-top-0">
+                        <div class="col-12 pt-3 mb-3">
+                            <table id="review_notification_log_table" class="table table-striped table-bordered" style="width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Scheduled For</th>
+                                        <th>Started</th>
+                                        <th>Completed</th>
+                                        <th>Summary</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </div>
+                    </div>
+                    <script>
+                        $(document).ready(function () {
+                            var table_review_notification_log = $('#review_notification_log_table').DataTable({
+                                ajax: '{{review_notification_log_api_url}}',
+                                serverSide: true,
+                                processing: true,
+                                ordering: true,
+                                order: [[0, 'desc']],
+                                pageLength: 25,
+                                columns: [
+                                    {
+                                        data: 'run_scheduled_for',
+                                        render: function (data) {
+                                            if (!data) return '—';
+                                            var d = new Date(data);
+                                            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                                        }
+                                    },
+                                    {
+                                        data: 'run_started_on',
+                                        render: function (data) {
+                                            if (!data) return '—';
+                                            var d = new Date(data);
+                                            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                                        }
+                                    },
+                                    {
+                                        data: 'run_completed_on',
+                                        render: function (data) {
+                                            if (!data) return '—';
+                                            var d = new Date(data);
+                                            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                                        }
+                                    },
+                                    {
+                                        data: 'summary',
+                                        render: function (data) {
+                                            return data || '—';
+                                        }
+                                    },
+                                    {
+                                        data: 'detailed_log',
+                                        orderable: false,
+                                        searchable: false,
+                                        render: function (data) {
+                                            if (!data || Object.keys(data).length === 0) return '—';
+
+                                            var html = '';
+                                            if (data.emails_sent && data.emails_sent.length > 0) {
+                                                html += '<strong>Emails Sent (' + data.emails_sent.length + '):</strong><ul class="mb-1">';
+                                                data.emails_sent.forEach(function (e) {
+                                                    html += '<li>' + (e.email || '') + ' (' + (e.pending_count || 0) + ' pending)</li>';
+                                                });
+                                                html += '</ul>';
+                                            }
+                                            if (data.errors && data.errors.length > 0) {
+                                                html += '<strong class="text-danger">Errors (' + data.errors.length + '):</strong><ul class="mb-1">';
+                                                data.errors.forEach(function (e) {
+                                                    if (typeof e === 'string') {
+                                                        html += '<li>' + e + '</li>';
+                                                    } else {
+                                                        html += '<li>' + (e.email || '') + ': ' + (e.error || '') + '</li>';
+                                                    }
+                                                });
+                                                html += '</ul>';
+                                            }
+                                            if (data.skipped && data.skipped.length > 0) {
+                                                html += '<strong>Skipped:</strong><ul class="mb-0">';
+                                                data.skipped.forEach(function (s) {
+                                                    html += '<li>' + s + '</li>';
+                                                });
+                                                html += '</ul>';
+                                            }
+                                            return html || '—';
+                                        }
+                                    }
+                                ]
+                            });
+                        });
+                    </script>
+                </div>
+                <!-- end tab # review_notification_history -->
+                {% endif %}
+
             </div>
         </div>
 
@@ -953,6 +1076,107 @@
                 });
             })
 
+        $(document).on('click', '.review-progress-link', function (e) {
+            e.preventDefault();
+            var rowData = table.row($(this).closest('tr')).data();
+            var rv = (rowData && rowData.section_display && rowData.section_display.review) || null;
+            var $body = $('#reviewersModal .modal-body').empty();
+            if (!rv) {
+                return;
+            }
+
+            var $heading = $('<p>').addClass('font-weight-bold');
+            $heading.text('Round ' + rv.round + ' — ' + rv.decided + ' of ' + rv.total + ' decided');
+            $body.append($heading);
+
+            var $list = $('<div>').addClass('list-group');
+            $.each(rv.reviewers || [], function (i, reviewer) {
+                var $item = $('<div>').addClass('list-group-item');
+
+                var $nameRole = $('<div>').addClass('d-flex justify-content-between');
+                var $name = $('<strong>');
+                $name.text(reviewer.name);
+                $nameRole.append($name);
+                var $role = $('<span>').addClass('text-muted');
+                $role.text(reviewer.role);
+                $nameRole.append($role);
+                $item.append($nameRole);
+
+                var $decisionLine = $('<div>').addClass('mt-1');
+                if (reviewer.decision_code === 'approved') {
+                    var $decision = $('<span>').addClass('badge badge-info');
+                    $decision.text(reviewer.decision);
+                    $decisionLine.append($decision);
+                    if (reviewer.decided_on) {
+                        $decisionLine.append(
+                            $('<span>').addClass('text-muted ml-2').text(reviewer.decided_on));
+                    }
+                } else if (reviewer.decision_code === 'not_approved') {
+                    var $decision = $('<span>').addClass('badge badge-danger');
+                    $decision.text(reviewer.decision);
+                    $decisionLine.append($decision);
+                    if (reviewer.decided_on) {
+                        $decisionLine.append(
+                            $('<span>').addClass('text-muted ml-2').text(reviewer.decided_on));
+                    }
+                } else {
+                    $decisionLine.append($('<span>').addClass('badge badge-light text-muted').text('Awaiting'));
+                }
+                $item.append($decisionLine);
+
+                if (reviewer.comment) {
+                    var $comment = $('<div>').addClass('mt-1 text-muted');
+                    $comment.text(reviewer.comment);
+                    $item.append($comment);
+                }
+
+                if (!reviewer.decision_code) {
+                    var $reminderBtn = $('<button>')
+                        .attr('type', 'button')
+                        .addClass('btn btn-sm btn-outline-primary send-review-reminder mt-2')
+                        .attr('data-future-course-id', rowData.id)
+                        .attr('data-reviewer-id', reviewer.reviewer_id)
+                        .text('Send reminder');
+                    $item.append($('<div>').append($reminderBtn));
+                }
+
+                $list.append($item);
+            });
+            $body.append($list);
+        });
+
+        $(document).on('click', '.send-review-reminder', function (e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var futureCourseId = $btn.data('future-course-id');
+            var reviewerId = $btn.data('reviewer-id');
+
+            $.blockUI();
+            $.ajax({
+                type: 'POST',
+                url: "{% url 'future_sections_ce:send_review_reminder' %}",
+                data: {
+                    future_course_id: futureCourseId,
+                    reviewer_id: reviewerId
+                },
+                headers: {
+                    'X-CSRFToken': window.CSRF_TOKEN
+                },
+                success: function (resp) {
+                    $.unblockUI();
+                    swal(resp.title || 'Success', resp.message, resp.status);
+                    if (resp.status === 'success') {
+                        $btn.prop('disabled', true).text('Reminder sent');
+                    }
+                },
+                error: function (xhr) {
+                    $.unblockUI();
+                    var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
+                    swal('Error', msg, 'error');
+                }
+            });
+        });
+
         $(document).on('click', '.email-new-teacher', function () {
             var $link = $(this);
             $.blockUI();
@@ -983,6 +1207,21 @@
     <div class="modal fade" data-backdrop="static" data-keyboard="false" id="teachingModal" tabindex="-1" role="dialog" aria-labelledby="teachingModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-scrollable modal-lg">
             <div class="modal-content">
+                <div class="modal-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reviewers Modal -->
+    <div class="modal fade" id="reviewersModal" tabindex="-1" role="dialog" aria-labelledby="reviewersModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reviewersModalLabel">Reviewers</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
                 <div class="modal-body"></div>
             </div>
         </div>

@@ -14,6 +14,7 @@ from django.forms.formsets import formset_factory
 from django.template.loader import get_template
 from django.utils.safestring import mark_safe
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.http import require_POST
 
 from mailer import send_html_mail
 
@@ -576,15 +577,19 @@ def index(request):
     except:
         active_academic_year = AcademicYear.objects.last()
 
+    from ..review.helpers import review_required
+
     return render(
         request,
         template, {
             'menu': menu,
             'page_title': 'Course Requests',
+            'require_review': review_required(),
             'api_url': '/ce/future_sections/api/future_class_section?format=datatables',
             'future_projections_url': '/ce/future_sections/api/future_projection?format=datatables',
             'pending_api_url': '/ce/future_sections/api/pending_future_class_sections?format=datatables',
             'notification_log_api_url': '/ce/future_sections/api/notification_logs/?format=datatables',
+            'review_notification_log_api_url': '/ce/future_sections/api/review_notification_logs/?format=datatables',
             'active_academic_year': active_academic_year,
             'academic_years': AcademicYear.objects.all().order_by('-name'),
             'enter_course_details_label': (
@@ -750,6 +755,44 @@ def send_pending_reminder(request):
     })
 
 
+@require_POST
+def send_review_reminder(request):
+    """Send one reviewer a reminder about one outstanding section request.
+
+    Used by the CE reviewers modal's per-reviewer "Send reminder" action.
+    All authorization happens server-side in
+    `FutureCourse.send_review_reminder`: the client only names a
+    (future_course_id, reviewer_id) pair, and the model re-derives whether
+    that reviewer actually holds an outstanding slot on the request's live
+    round before sending anything.
+
+    POST-only (PT-33-style): sending mail is a state change, so a GET must
+    not trigger it -- a cross-site GET navigation or a link-prefetcher
+    hitting this URL while a CE session is live must not fire a real
+    email. `@require_POST` returns 405 on GET, and this view is not
+    csrf_exempt anywhere in the route chain, so CsrfViewMiddleware applies.
+    """
+    future_course_id = request.POST.get('future_course_id')
+    reviewer_id = request.POST.get('reviewer_id')
+
+    if not future_course_id or not reviewer_id:
+        return JsonResponse({
+            'status': 'error',
+            'action': 'display',
+            'message': 'Missing required parameters.'
+        }, status=400)
+
+    success, message = FutureCourse.send_review_reminder(
+        future_course_id, reviewer_id)
+
+    return JsonResponse({
+        'status': 'success' if success else 'error',
+        'action': 'display',
+        'title': 'Email Sent' if success else 'Error',
+        'message': message
+    })
+
+
 def bulk_actions(request):
     """Handle bulk actions for future courses"""
     action = request.GET.get('action')
@@ -760,6 +803,9 @@ def bulk_actions(request):
     if action == 'mark_as_submitted':
         return mark_as_submitted(request)
 
+    if action == 'mark_as_pending_review':
+        return mark_as_pending_review(request)
+
     # Default response for unknown actions
     return JsonResponse({
         'status': 'error',
@@ -769,8 +815,67 @@ def bulk_actions(request):
     })
 
 
+def mark_as_pending_review(request):
+    """Open a review round on each selected request.
+
+    Only `submitted` requests are eligible: re-selecting an already
+    `pending_review` or `reviewed` request would open a new round on top
+    of a live or finished one, orphaning its decisions into indistinguishable
+    history (or silently un-reviewing it). Those are skipped and named in
+    the response, distinctly from courses with no qualifying reviewer.
+    """
+    from ..review.helpers import NoReviewersError, open_review_round, review_required
+
+    if not review_required():
+        return JsonResponse({
+            'status': 'warning', 'title': 'Review Disabled',
+            'message': 'Review is not enabled for this tenant.',
+            'action': 'display'})
+
+    ids = request.GET.getlist('ids[]')
+    if not ids:
+        return JsonResponse({
+            'status': 'warning', 'title': 'No Selection',
+            'message': 'Please select at least one record.',
+            'action': 'display'})
+
+    marked, no_reviewer, already_open = 0, [], []
+    for fc in FutureCourse.objects.filter(id__in=ids):
+        label = str(fc.teacher_course.course.title
+                    if fc.teacher_course else fc.id)
+        if fc.status != 'submitted':
+            already_open.append(label)
+            continue
+        try:
+            open_review_round(fc)
+            marked += 1
+        except NoReviewersError:
+            no_reviewer.append(label)
+
+    message = f'Marked {marked} request(s) as pending review.'
+    if no_reviewer:
+        message += (' Skipped, no reviewer assigned to the course: '
+                    + ', '.join(no_reviewer) + '.')
+    if already_open:
+        message += (' Skipped, already pending review or reviewed: '
+                    + ', '.join(already_open) + '.')
+    return JsonResponse({
+        'status': 'warning' if (no_reviewer or already_open) else 'success',
+        'title': 'Pending Review',
+        'message': message,
+        'action': 'display'})
+
+
 def mark_as_reviewed(request):
-    """Mark selected future courses as reviewed"""
+    """Mark selected future courses as reviewed.
+
+    A request that is live in `pending_review` is refused rather than
+    force-closed: a bare status update would strand any undecided
+    reviewer's row (still `decision=''`, forever) and drop the request off
+    their Pending tab and the CE pending filter with no route to finish.
+    Reset (back to `submitted`) is the designed way out of a live round;
+    silently closing one here is the ambiguous behaviour we don't want.
+    """
     ids = request.GET.getlist('ids[]')
 
     if not ids:
@@ -781,21 +886,39 @@ def mark_as_reviewed(request):
             'action': 'display'
         })
 
-    # Update the status of selected records
-    updated_count = FutureCourse.objects.filter(
-        id__in=ids
-    ).update(status='reviewed')
+    courses = list(FutureCourse.objects.filter(id__in=ids))
+    live = [fc for fc in courses if fc.status == 'pending_review']
+    eligible_ids = [fc.id for fc in courses if fc.status != 'pending_review']
+
+    updated_count = 0
+    if eligible_ids:
+        updated_count = FutureCourse.objects.filter(
+            id__in=eligible_ids
+        ).update(status='reviewed')
+
+    message = f'Successfully marked {updated_count} request(s) as reviewed.'
+    if live:
+        labels = [str(fc.teacher_course.course.title
+                      if fc.teacher_course else fc.id) for fc in live]
+        message += (' Skipped, still pending review (reset to finish '
+                    'or wait for all reviewers): ' + ', '.join(labels) + '.')
 
     return JsonResponse({
-        'status': 'success',
+        'status': 'warning' if live else 'success',
         'title': 'Success',
-        'message': f'Successfully marked {updated_count} request(s) as reviewed.',
+        'message': message,
         'action': 'display'
     })
 
 
 def mark_as_submitted(request):
-    """Mark selected future courses as submitted (reset status)"""
+    """Mark selected future courses as submitted (reset status).
+
+    Routed through `reset_review` so the reset semantics -- clearing status
+    but leaving prior-round review rows as history -- live in one place.
+    """
+    from ..review.helpers import reset_review
+
     ids = request.GET.getlist('ids[]')
 
     if not ids:
@@ -806,10 +929,10 @@ def mark_as_submitted(request):
             'action': 'display'
         })
 
-    # Update the status of selected records
-    updated_count = FutureCourse.objects.filter(
-        id__in=ids
-    ).update(status='submitted')
+    updated_count = 0
+    for fc in FutureCourse.objects.filter(id__in=ids):
+        reset_review(fc)
+        updated_count += 1
 
     return JsonResponse({
         'status': 'success',

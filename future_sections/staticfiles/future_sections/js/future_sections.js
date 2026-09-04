@@ -71,11 +71,15 @@ function getCookie(name) {
         var sections = row.sections || [];
         var certId = row.certificate_id;
         var academicYearId = row.academic_year_id;
+        var isLocked = !!row.is_locked;
 
         // No offering status set yet - show action buttons
         if (!offeringStatus) {
             if (!windowIsOpen) {
                 return '---';
+            }
+            if (isLocked) {
+                return '<span class="text-muted">Under review</span>';
             }
             return '<button type="button" class="btn btn-sm btn-primary course-action" ' +
                 'data-academic_year="' + academicYearId + '" ' +
@@ -96,7 +100,9 @@ function getCookie(name) {
         // Marked as not teaching
         if (offeringStatus === 'no') {
             var html = 'Marked as not offering';
-            if (windowIsOpen) {
+            if (isLocked) {
+                html += ' <span class="text-muted float-right">Under review</span>';
+            } else if (windowIsOpen) {
                 html += ' <a title="Delete not offering info" class="float-right course-action" ' +
                     'data-confirm="1" data-course-certificate="' + certId + '" ' +
                     'data-academic_year="' + academicYearId + '" ' +
@@ -108,7 +114,9 @@ function getCookie(name) {
 
         // Marked as teaching
         var html = 'Marked as Offering';
-        if (windowIsOpen) {
+        if (isLocked) {
+            html += '<span class="text-muted float-right">Under review</span>';
+        } else if (windowIsOpen) {
             html += '<a title="Delete offering info" class="float-right course-action" ' +
                 'data-confirm="1" data-course-certificate="' + certId + '" ' +
                 'data-academic_year="' + academicYearId + '" ' +

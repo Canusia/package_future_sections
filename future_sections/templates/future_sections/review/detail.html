@@ -41,12 +41,22 @@
     <p class="text-muted">No sections submitted.</p>
   {% endif %}
 
-  {% if review_display %}
-    <div class="alert alert-info">
-      <strong>Previous decision:</strong>
-      {{ review_display.decision }} by {{ review_display.reviewer_name }} on {{ review_display.reviewed_on|date:"m/d/Y g:i A" }}.
-      {% if review_display.comment %}<br>{{ review_display.comment }}{% endif %}
+  {% if my_row.decision %}
+    <div class="alert alert-secondary">
+      <strong>Your decision:</strong>
+      {{ my_row.get_decision_display }} on {{ my_row.decided_on|date:"m/d/Y g:i A" }}.
+      {% if my_row.comment %}<br>{{ my_row.comment }}{% endif %}
     </div>
+  {% endif %}
+
+  {% if other_decisions %}
+    {% for od in other_decisions %}
+      <div class="alert alert-info">
+        <strong>{{ od.reviewer_name }}:</strong>
+        {{ od.decision }} on {{ od.decided_on|date:"m/d/Y g:i A" }}.
+        {% if od.comment %}<br>{{ od.comment }}{% endif %}
+      </div>
+    {% endfor %}
   {% endif %}
 
   <h5 class="mt-4">Your review</h5>

@@ -15,7 +15,7 @@ Settings key: `cis_future_sections` in the `Setting` model.
 ## Models (`models.py`)
 
 - **FutureProjection** - Tracks a high school's overall survey progress. Unique on `(academic_year, highschool)`. Meta JSON stores confirmation status and history.
-- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`reviewed`) with `FieldTracker` for signal-based email notifications. Can create `TeacherApplication` via `create_teacher_application()`.
+- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`pending_review`/`reviewed`) with `FieldTracker` for signal-based email notifications. `pending_review` and `reviewed` are the locked statuses (`LOCKED_STATUSES`): while in either, the high school administrator and instructor may no longer edit the request — see `utils.assert_editable`. `review_round` tracks the live review round; reviewer decisions live in `SectionRequestReview` rows, not in `section_info`. Can create `TeacherApplication` via `create_teacher_application()`.
 - **FutureSection** - Legacy per-section model. `FutureCourse.section_info` now stores primary data, but this model is still used in CE portal deletion and exports.
 
 All FKs to cis models use explicit `related_name` with `fs_` prefix (e.g., `fs_futurecourse_set`).
@@ -112,5 +112,5 @@ Located in `staticfiles/future_sections/js/`. Must be registered in `STATICFILES
 - Role detection uses `cis.utils.user_has_highschool_admin_role()` / `user_has_instructor_role()`
 - `utils.py` provides shared helpers: `get_fs_config()`, `get_user_context()`, `validate_certificate_access()`, `get_or_create_future_projection()`, `add_history_entry()`
 - Emails use Django `Template` + `Context` with `cis/email.html` wrapper and `mailer.send_html_mail()`
-- DEBUG mode redirects all emails to test address
+- DEBUG mode redirects emails to the tenant's `testers` setting (comma-separated) via `route_notification_recipients`. With `DEBUG` on and `testers` empty, nothing is sent and the attempt is recorded as skipped — it never falls through to the real recipient. Note several older call sites still hardcode a redirect address; only the notifiers were converted in 2026.8.0.
 - Settings registered via `CONFIGURATORS` in `apps.py`, reports via `REPORTS`

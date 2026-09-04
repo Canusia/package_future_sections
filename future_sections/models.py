@@ -23,6 +23,52 @@ from model_utils import FieldTracker
 from cis.models.settings import Setting
 import importlib.util
 
+
+class NoTestRecipientsConfigured(Exception):
+    """DEBUG is on but the tenant has no ``testers`` configured.
+
+    Callers must treat this as "send nothing" and record the skip --
+    never fall back to sending to the real recipient just because the
+    tester list happens to be empty.
+    """
+    pass
+
+
+def route_notification_recipients(fs_config, real_email):
+    """Resolve the ``to`` list for a future_sections notification email.
+
+    Every tenant deployment of this shared package used to hardcode a
+    personal address (``kadaji@gmail.com``) as the DEBUG-mode redirect
+    target. That doesn't belong in code that ships to every tenant, so
+    routing instead goes through the tenant's own ``cis_future_sections``
+    settings, following the ``testers``/``DEBUG`` convention already used
+    elsewhere in the codebase (see ``cis/models/section.py``).
+
+    Args:
+        fs_config: the ``cis_future_sections`` settings dict. ``testers``
+            is a comma-separated string of addresses.
+        real_email: the actual intended recipient.
+
+    Returns:
+        list[str]: addresses to actually send to.
+
+    Raises:
+        NoTestRecipientsConfigured: ``DEBUG`` is truthy (the default,
+            since failing toward the testers list is the safe direction)
+            and no testers are configured. Never falls through to
+            ``real_email`` in that case.
+    """
+    from django.conf import settings as django_settings
+
+    if getattr(django_settings, 'DEBUG', True):
+        raw = (fs_config or {}).get('testers') or ''
+        testers = [t.strip() for t in raw.split(',') if t and t.strip()]
+        if not testers:
+            raise NoTestRecipientsConfigured()
+        return testers
+    return [real_email]
+
+
 class FutureProjection(models.Model):
     """
     Tracks a highschool's future section projection for an academic year.
@@ -70,8 +116,13 @@ class FutureCourse(models.Model):
     """
     STATUS_CHOICES = [
         ('submitted', 'Submitted'),
+        ('pending_review', 'Pending Review'),
         ('reviewed', 'Reviewed'),
     ]
+
+    #: Statuses in which the high school administrator and instructor may no
+    #: longer edit the request. CE is never locked out.
+    LOCKED_STATUSES = ('pending_review', 'reviewed')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     academic_year = models.ForeignKey(
@@ -106,6 +157,13 @@ class FutureCourse(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default='submitted'
+    )
+
+    review_round = models.PositiveIntegerField(
+        default=0,
+        help_text='The live review round. Incremented each time CE marks the '
+                  'request pending review; SectionRequestReview rows carrying '
+                  'an earlier round are finished rounds kept as history.',
     )
 
     # Track status field changes for signal notifications
@@ -724,6 +782,16 @@ class FutureCourse(models.Model):
             missing_terms_label = ', '.join(missing) if missing else ''
 
             try:
+                to = route_notification_recipients(fs_config, email)
+            except NoTestRecipientsConfigured:
+                detailed_log['skipped'].append({
+                    'email': email,
+                    'highschool': highschool.name,
+                    'reason': 'DEBUG is on and no testers are configured',
+                })
+                continue
+
+            try:
                 template = Template(message_template)
                 context = Context({
                     'admin_first_name': user.first_name,
@@ -739,11 +807,6 @@ class FutureCourse(models.Model):
                 # Render HTML email using standard template
                 html_template = get_template('cis/email.html')
                 html_body = html_template.render({'message': text_body})
-
-                # DEBUG mode: redirect to test email address
-                to = [email]
-                if getattr(django_settings, 'DEBUG', True):
-                    to = ['kadaji@gmail.com']
 
                 send_html_mail(
                     subject,
@@ -769,6 +832,256 @@ class FutureCourse(models.Model):
 
         summary = f"Sent {emails_sent} email(s), {errors} error(s)"
         return summary, detailed_log
+
+    @classmethod
+    def notify_pending_reviews(cls, *args, **kwargs):
+        """
+        Send notifications to reviewers with outstanding decisions.
+
+        One email per reviewer, listing every request across all courses
+        where they hold an undecided slot in the request's *live* round.
+
+        Returns:
+            tuple: (summary, detailed_log)
+        """
+        from django.conf import settings as django_settings
+        from django.db.models import F
+        from django.template.loader import get_template
+        from django.urls import reverse
+        from mailer import send_html_mail
+        from .settings.future_sections import future_sections as fs_settings
+        from .review.helpers import review_required
+
+        detailed_log = {
+            'emails_sent': [],
+            'errors': [],
+            'skipped': []
+        }
+        emails_sent = 0
+        errors = 0
+
+        if not review_required():
+            summary = "Skipped: review is not required"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        fs_config = fs_settings.from_db()
+
+        # Check if today is a notification date
+        today = datetime.date.today().strftime('%m/%d/%Y')
+        notification_dates_str = fs_config.get('review_notification_dates', '')
+        notification_dates = [d.strip() for d in notification_dates_str.split(',') if d.strip()]
+
+        if today not in notification_dates:
+            summary = f"Skipped: {today} is not a notification date"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        subject = fs_config.get(
+            'review_notification_subject',
+            'Reminder: Section Request Review Needed')
+        message_template = fs_config.get('review_notification_message', '')
+
+        if not message_template:
+            summary = "Error: No email message template configured"
+            detailed_log['errors'].append(summary)
+            return summary, detailed_log
+
+        # Outstanding slots: pending_review requests, live round, undecided.
+        outstanding = SectionRequestReview.objects.filter(
+            decision='',
+            future_course__status='pending_review',
+            round=F('future_course__review_round'),
+        ).select_related(
+            'reviewer',
+            'future_course__academic_year',
+            'future_course__teacher_course__course',
+            'future_course__teacher_course__teacher_highschool__highschool',
+            'future_course__teacher_course__teacher_highschool__teacher__user',
+        ).order_by('reviewer_id', 'future_course_id')
+
+        if not outstanding.exists():
+            summary = "No reviewers with pending decisions found"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        by_reviewer = {}
+        for row in outstanding:
+            entry = by_reviewer.setdefault(
+                row.reviewer_id, {'reviewer': row.reviewer, 'rows': []})
+            entry['rows'].append(row)
+
+        # Build link to the reviewer's queue
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+
+        for reviewer_id, info in by_reviewer.items():
+            reviewer = info['reviewer']
+            email = reviewer.email
+
+            if not email:
+                continue
+
+            try:
+                sent_to = cls._send_review_reminder_email(
+                    reviewer, info['rows'], subject, message_template, link,
+                    fs_config)
+                emails_sent += 1
+                detailed_log['emails_sent'].append({
+                    'email': sent_to,
+                    'pending_count': len(info['rows'])
+                })
+            except NoTestRecipientsConfigured:
+                detailed_log['skipped'].append({
+                    'email': email,
+                    'reason': 'DEBUG is on and no testers are configured',
+                })
+            except Exception as e:
+                errors += 1
+                detailed_log['errors'].append({
+                    'email': email,
+                    'error': str(e)
+                })
+
+        summary = f"Sent {emails_sent} email(s), {errors} error(s)"
+        return summary, detailed_log
+
+    @classmethod
+    def _send_review_reminder_email(cls, reviewer, rows, subject,
+                                      message_template, link, fs_config):
+        """Render and send one reviewer's reminder email for `rows`.
+
+        Shared by the bulk cron (`notify_pending_reviews`, one email per
+        reviewer listing every outstanding request) and the CE on-demand
+        single-reviewer send (`send_review_reminder`, one email about one
+        request) so both paths render and send identically -- including
+        the DEBUG-mode redirect (see `route_notification_recipients`).
+
+        Returns:
+            str: the real reviewer email (the intended recipient), for
+            the caller's audit log -- regardless of where the mail was
+            actually routed.
+            Raises `NoTestRecipientsConfigured` when DEBUG is on and no
+            testers are configured (nothing is sent in that case).
+            Raises whatever `send_html_mail` raises on failure.
+        """
+        from django.template.loader import get_template
+        from mailer import send_html_mail
+
+        email = reviewer.email
+        to = route_notification_recipients(fs_config, email)
+
+        rows_html = ''
+        for row in rows:
+            fc = row.future_course
+            course = str(fc.teacher_course.course)
+            highschool = fc.teacher_course.teacher_highschool.highschool.name
+            instructor = fc.teacher_course.teacher_highschool.teacher.user.get_full_name()
+            academic_year_name = str(fc.academic_year) if fc.academic_year else ''
+            rows_html += (
+                f'<li>{course} &mdash; {highschool} &mdash; '
+                f'{instructor} ({academic_year_name})</li>'
+            )
+        requests_html = f'<ul>{rows_html}</ul>'
+
+        template = Template(message_template)
+        context = Context({
+            'reviewer_first_name': reviewer.first_name,
+            'reviewer_last_name': reviewer.last_name,
+            'pending_count': len(rows),
+            'requests': mark_safe(requests_html),
+            'link': link
+        })
+        text_body = template.render(context)
+
+        # Render HTML email using standard template
+        html_template = get_template('cis/email.html')
+        html_body = html_template.render({'message': text_body})
+
+        from django.conf import settings as django_settings
+        send_html_mail(
+            subject,
+            text_body,
+            html_body,
+            django_settings.DEFAULT_FROM_EMAIL,
+            to
+        )
+        return email
+
+    @classmethod
+    def send_review_reminder(cls, future_course_id, reviewer_id):
+        """Send one reviewer a reminder about one outstanding section request.
+
+        This is the CE "chase this one person about this one request"
+        gesture from the reviewers modal. It must never trust the caller's
+        choice of recipient: it re-derives, server-side, that `reviewer_id`
+        holds an outstanding (undecided) `SectionRequestReview` slot on
+        `future_course_id`'s *live* round -- i.e. a row whose `round`
+        equals the course's current `review_round` -- and that the request
+        is still `pending_review`. Any other pairing is refused, so the
+        caller only ever *selects* among reviewers already known to be
+        outstanding; it cannot introduce a recipient.
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from django.conf import settings as django_settings
+        from django.core.exceptions import ValidationError
+        from django.db.models import F
+        from django.urls import reverse
+
+        from .settings.future_sections import future_sections as fs_settings
+
+        try:
+            row = SectionRequestReview.objects.select_related(
+                'reviewer',
+                'future_course__academic_year',
+                'future_course__teacher_course__course',
+                'future_course__teacher_course__teacher_highschool__highschool',
+                'future_course__teacher_course__teacher_highschool__teacher__user',
+            ).get(
+                future_course_id=future_course_id,
+                reviewer_id=reviewer_id,
+                decision='',
+                future_course__status='pending_review',
+                round=F('future_course__review_round'),
+            )
+        except (SectionRequestReview.DoesNotExist, ValidationError,
+                ValueError, TypeError):
+            # Includes malformed (non-UUID) ids -- refuse the same as "no
+            # matching row" rather than 500ing on client-supplied input.
+            return False, (
+                'This reviewer has no outstanding decision on this '
+                'request.')
+
+        reviewer = row.reviewer
+        if not reviewer.email:
+            return False, 'This reviewer has no email address on file.'
+
+        fs_config = fs_settings.from_db()
+        subject = fs_config.get(
+            'review_notification_subject',
+            'Reminder: Section Request Review Needed')
+        message_template = fs_config.get('review_notification_message', '')
+        if not message_template:
+            return False, (
+                'Review notification message template is not configured '
+                'in settings.')
+
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+
+        try:
+            sent_to = cls._send_review_reminder_email(
+                reviewer, [row], subject, message_template, link, fs_config)
+        except NoTestRecipientsConfigured:
+            return False, (
+                'Cannot send: DEBUG is on and no test recipients '
+                '("testers") are configured in settings.')
+        except Exception as e:
+            return False, f'Failed to send reminder: {e}'
+
+        return True, f'Sent reminder to {sent_to}.'
 
 
 class FutureSection(models.Model):
@@ -897,3 +1210,45 @@ class FutureSection(models.Model):
             writer.writerow(row)
 
         return response
+
+
+class SectionRequestReview(models.Model):
+    """One reviewer's slot on one round of review for one section request.
+
+    A row with an empty ``decision`` is an outstanding ask. The set of rows
+    for ``future_course.review_round`` is the snapshot CE took when it marked
+    the request pending review: it fixes both who must decide and who is
+    allowed to, so later changes to a reviewer's CourseAdministrator rows
+    neither strand the request nor pull a newcomer into a running round.
+    """
+
+    DECISION_CHOICES = [
+        ('approved', 'Approved'),
+        ('not_approved', 'Not approved'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    future_course = models.ForeignKey(
+        FutureCourse, on_delete=models.CASCADE, related_name='reviews')
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='section_request_reviews')
+    round = models.PositiveIntegerField()
+    #: The CourseAdministrator role that qualified this reviewer, recorded at
+    #: snapshot time so it survives later changes to their roles.
+    role = models.CharField(max_length=50)
+    decision = models.CharField(
+        max_length=20, blank=True, default='', choices=DECISION_CHOICES)
+    comment = models.TextField(blank=True, default='')
+    mentor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='mentor_for_section_requests')
+    decided_on = models.DateTimeField(null=True, blank=True)
+    created_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('future_course', 'reviewer', 'round')
+        ordering = ['round', 'created_on']
+
+    def __str__(self):
+        return f'{self.reviewer} round {self.round}: {self.decision or "pending"}'

@@ -18,13 +18,7 @@ from crispy_forms.layout import Submit
 
 from cis.utils import get_field
 from cis.models.term import AcademicYear
-from ..models import FutureCourse
-
-
-_DECISION_LABELS = {
-    'approved': 'Approved',
-    'not_approved': 'Not approved',
-}
+from ..models import FutureCourse, SectionRequestReview
 
 
 def _show_syllabus_enabled():
@@ -39,21 +33,36 @@ def _show_syllabus_enabled():
 
 
 def _faculty_review_cells(record):
-    """Return ordered list matching the faculty_review_labels header.
+    """Six cells describing the live review round, multi-value fields joined.
 
-    Empty strings when no review has been recorded.
+    Aggregated rather than one column per reviewer so the CSV stays
+    rectangular however many reviewers a course has.
     """
-    review = ((record.section_info or {}).get('faculty_review')) or {}
-    if not review.get('decision'):
-        return [''] * 6
-    mentor = review.get('mentor') or {}
+    if not record.review_round:
+        return ['', '', '', '', '', '']
+
+    rows = list(record.reviews.filter(round=record.review_round)
+                .select_related('reviewer', 'mentor').order_by('created_on'))
+    labels = dict(SectionRequestReview.DECISION_CHOICES)
+
+    def _name(user):
+        if not user:
+            return ''
+        return f'{user.first_name} {user.last_name}'.strip() or user.username
+
+    def _text(value):
+        # Collapse the join separator out of free-text so an embedded
+        # "; " can't be misread as another entry, shifting alignment.
+        return value.replace(';', ',') if value else ''
+
     return [
-        _DECISION_LABELS.get(review.get('decision'), review.get('decision', '')),
-        mentor.get('name', '') or '',
-        mentor.get('email', '') or '',
-        review.get('reviewer_name', '') or '',
-        review.get('reviewed_on', '') or '',
-        review.get('comment', '') or '',
+        str(record.review_round),
+        '; '.join(_name(r.reviewer) for r in rows),
+        '; '.join(labels.get(r.decision, '') for r in rows),
+        '; '.join(_name(r.mentor) for r in rows),
+        '; '.join(r.decided_on.strftime('%m/%d/%Y') if r.decided_on else ''
+                  for r in rows),
+        '; '.join(_text(r.comment) for r in rows),
     ]
 
 
@@ -118,12 +127,12 @@ class future_classes(forms.Form):
 
         # Faculty review fields appended after the per-section dynamic fields.
         faculty_review_labels = [
-            'Faculty Review Decision',
-            'Faculty Review Mentor',
-            'Faculty Review Mentor Email',
-            'Faculty Review Reviewer',
-            'Faculty Review Reviewed On',
-            'Faculty Review Comment',
+            'Review Round',
+            'Reviewers',
+            'Review Decisions',
+            'Review Mentors',
+            'Reviewed On',
+            'Review Comments',
         ]
 
         stream = io.StringIO()

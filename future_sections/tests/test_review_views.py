@@ -21,6 +21,7 @@ from cis.models.teacher import Teacher, TeacherHighSchool, TeacherCourseCertific
 from cis.models.settings import Setting
 
 from ..models import FutureCourse
+from ..review.helpers import open_review_round
 
 
 def _world(reviewer_role='Faculty'):
@@ -47,6 +48,9 @@ def _world(reviewer_role='Faculty'):
     fc = FutureCourse.objects.create(teacher_course=tcc, academic_year=ay)
     CourseAdministrator.objects.create(
         course=course, user=user, role=reviewer_role, status='Active')
+    # Visibility is now gated by holding a review row, not just an Active
+    # CourseAdministrator row — open the round so the reviewer has one.
+    open_review_round(fc)
     return user, fc
 
 

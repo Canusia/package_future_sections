@@ -7,6 +7,7 @@ class _Obj:
     """Stand-in for FutureCourse — the field only reads section_info."""
     def __init__(self, section_info):
         self.section_info = section_info
+        self.review_round = 0
 
 
 def _changed(section_info):
@@ -89,5 +90,5 @@ class SectionDisplayCarriesChangedSectionsTests(SimpleTestCase):
         obj = _Obj({'teaching': 'yes', 'sections': []})
         obj.section_display = []
         display = FutureCourseSerializer().get_section_display(obj)
-        for key in ('teaching', 'displays', 'faculty_review'):
+        for key in ('teaching', 'displays', 'review'):
             self.assertIn(key, display, key)

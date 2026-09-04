@@ -44,6 +44,7 @@ from ..utils import (
     get_fs_config,
     get_user_context,
     validate_certificate_access,
+    assert_editable,
     get_or_create_future_projection,
     add_history_entry,
     get_user_highschools,
@@ -129,6 +130,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         validate_certificate_access(request, teacher_course)
 
         future_course = FutureCourse.get_or_add(teacher_course, academic_year, submitter=request.user)
+        assert_editable(future_course, request)
 
         is_new = future_course.section_info == {}
         if is_new:
@@ -279,6 +281,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             {'teaching': 'no'},
             submitter=request.user
         )
+        assert_editable(future_course, request)
 
         if not future_course.meta:
             future_course.meta = {'fp': str(fp.id), 'history': []}
@@ -331,6 +334,7 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
 
         if future_course_qs.exists():
             future_course = future_course_qs.first()
+            assert_editable(future_course, request)
             fp_id = future_course.meta.get('fp') if future_course.meta else None
 
             if fp_id:
@@ -669,6 +673,8 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'teaching': fc.section_info.get('teaching') if fc.section_info else None,
                 'sections': fc.section_info.get('sections', []) if fc.section_info else [],
                 'section_display': fc.section_display,  # Pre-formatted display from settings
+                'review_status': fc.status,
+                'is_locked': fc.status in FutureCourse.LOCKED_STATUSES,
             }
 
         # Build previous year section counts per (course, highschool, term)
@@ -703,6 +709,8 @@ class CourseRequestViewSet(viewsets.ViewSet):
                 'sections': offering.get('sections', []),
                 'section_display': offering.get('section_display', []),
                 'prev_year_sections': prev_year_sections,
+                'review_status': offering.get('review_status'),
+                'is_locked': bool(offering.get('is_locked')),
             })
 
         return Response(data)

@@ -996,6 +996,12 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
             submitter=request.user
         )
 
+        # get_or_add returns an existing record when one is already there, so
+        # without this an add-teacher submission could append a section to a
+        # request that is locked under review.
+        from .utils import assert_editable
+        assert_editable(future_course, request)
+
         if future_course.section_info:
             initial_data = future_course.section_info.get('sections')
         else:

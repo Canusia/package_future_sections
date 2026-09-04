@@ -7,7 +7,7 @@ from django.utils.html import escape
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import BasePermission, IsAuthenticated
 
-from .helpers import visible_future_courses_for, get_faculty_review
+from .helpers import pending_for, reviewed_for, visible_future_courses_for
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +76,34 @@ class SectionRequestSerializer(serializers.Serializer):
         return f'{u.first_name} {u.last_name}'.strip()
 
     def get_faculty_review_status(self, obj):
-        review = get_faculty_review(obj)
-        if not review or not review.get('decision'):
+        """This reviewer's own decision on this request.
+
+        Reviewed-tab requests are scoped to ones the logged-in reviewer has
+        personally decided on, so this reads their row — not a whole-round
+        summary (the model never computes an aggregate verdict). If the
+        request went through a CE reset and reopened, prefer their decision
+        in the highest round they've decided in.
+
+        While the request is `pending_review`, the lookup is scoped to the
+        live round only: a reset-and-reopened request must not surface a
+        stale decision from a finished prior round for a slot the reviewer
+        has not yet filled in the new round.
+        """
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
             return 'Pending'
-        if review['decision'] == 'approved':
-            mentor_name = ((review.get('mentor') or {}).get('name') or '').strip()
+        rows = obj.reviews.filter(reviewer=user)
+        if obj.status == 'pending_review':
+            rows = rows.filter(round=obj.review_round)
+        row = rows.exclude(decision='').order_by('-round').first()
+        if not row:
+            return 'Pending'
+        if row.decision == 'approved':
+            mentor = row.mentor
+            mentor_name = (
+                f'{mentor.first_name} {mentor.last_name}'.strip() or mentor.username
+            ) if mentor else ''
             if mentor_name:
                 return ('Approved'
                         f'<br><small class="text-muted">{escape(mentor_name)}</small>')
@@ -111,19 +134,16 @@ class SectionRequestViewSet(viewsets.ReadOnlyModelViewSet):
         return ctx
 
     def get_queryset(self):
-        qs = visible_future_courses_for(self.request.user)
+        tab = self.request.query_params.get('tab')
+        if tab == 'pending':
+            qs = pending_for(self.request.user)
+        elif tab == 'reviewed':
+            qs = reviewed_for(self.request.user)
+        else:
+            qs = visible_future_courses_for(self.request.user)
         academic_year = self.request.query_params.get('academic_year')
         if academic_year:
             qs = qs.filter(academic_year_id=academic_year)
-        tab = self.request.query_params.get('tab')
-        if tab in ('pending', 'reviewed'):
-            want_pending = (tab == 'pending')
-            ids = [
-                obj.pk for obj in qs
-                if (not (obj.section_info or {}).get('faculty_review', {}).get('decision'))
-                   == want_pending
-            ]
-            qs = qs.filter(pk__in=ids)
         return qs.order_by('-started_on')
 
     def filter_queryset(self, queryset):

@@ -15,6 +15,7 @@ from ..review.helpers import (
     create_or_attach_mentor,
     get_reviewer_roles,
     get_mentor_role,
+    open_review_round,
 )
 
 
@@ -46,6 +47,9 @@ def _world():
 
 class VisibleCoursesHonorsSettingsTests(TestCase):
     def test_dean_visible_when_dean_is_in_reviewer_roles(self):
+        # Visibility is now gated by holding a review-row snapshot, not by
+        # the live CourseAdministrator role, so the round must actually be
+        # opened while 'Dean' qualifies for the Dean row to be created.
         w = _world()
         Setting.objects.create(
             key='cis_future_sections',
@@ -53,10 +57,15 @@ class VisibleCoursesHonorsSettingsTests(TestCase):
         )
         CourseAdministrator.objects.create(
             course=w['course'], user=w['reviewer'], role='Dean', status='Active')
+        open_review_round(w['fc'])
         qs = visible_future_courses_for(w['reviewer'])
         self.assertIn(w['fc'], list(qs))
 
     def test_dean_hidden_when_only_faculty_is_in_reviewer_roles(self):
+        # A Dean-role CourseAdministrator does not qualify when the setting
+        # only allows Faculty, so no review row is ever snapshotted for
+        # them and they stay hidden even once the round opens (via a
+        # separate Faculty reviewer).
         w = _world()
         Setting.objects.create(
             key='cis_future_sections',
@@ -64,8 +73,14 @@ class VisibleCoursesHonorsSettingsTests(TestCase):
         )
         CourseAdministrator.objects.create(
             course=w['course'], user=w['reviewer'], role='Dean', status='Active')
+        faculty_reviewer = CustomUser.objects.create(
+            username='faculty@example.com', email='faculty@example.com')
+        CourseAdministrator.objects.create(
+            course=w['course'], user=faculty_reviewer, role='Faculty', status='Active')
+        open_review_round(w['fc'])
         qs = visible_future_courses_for(w['reviewer'])
         self.assertNotIn(w['fc'], list(qs))
+        self.assertIn(w['fc'], list(visible_future_courses_for(faculty_reviewer)))
 
     def test_default_roles_when_no_setting(self):
         # Backward-compat: if the setting row doesn't exist, fall back to

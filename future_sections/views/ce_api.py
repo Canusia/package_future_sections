@@ -4,6 +4,8 @@ CE Portal API ViewSets for Future Sections
 import json
 import logging
 
+from django.db.models import Exists, OuterRef
+
 from rest_framework import viewsets, serializers
 
 from cis.utils import CIS_user_only
@@ -11,7 +13,7 @@ from ..serializers import FutureCourseSerializer, FutureProjectionSerializer
 from cis.serializers.teacher import TeacherCourseCertificateSerializer
 
 from cis.models.crontab import CronLog
-from ..models import FutureCourse, FutureProjection
+from ..models import FutureCourse, FutureProjection, SectionRequestReview
 from ..settings.future_sections import future_sections as fs_settings
 
 from cis.models.teacher import TeacherCourseCertificate
@@ -68,6 +70,17 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         return CronLog.objects.filter(
             cron__command='notify_pending_section_requests'
+        ).order_by('-run_scheduled_for')
+
+
+class ReviewNotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for review notification run history from CronLog"""
+    serializer_class = NotificationLogSerializer
+    permission_classes = [CIS_user_only]
+
+    def get_queryset(self):
+        return CronLog.objects.filter(
+            cron__command='notify_pending_reviews'
         ).order_by('-run_scheduled_for')
 
 
@@ -204,14 +217,27 @@ class FutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         if status:
             records = records.filter(status=status)
 
-        # Filter by faculty review state stored in section_info.faculty_review.decision
+        # Filter by individual SectionRequestReview decisions in the live
+        # round. This matches on the *presence* of a decision, not an
+        # aggregate outcome for the request — a request with both an
+        # approved and a not_approved decision in the same round matches
+        # both 'approved' and 'not_approved', by design.
         faculty_review = self.request.GET.get('faculty_review')
-        if faculty_review == 'approved':
-            records = records.filter(section_info__faculty_review__decision='approved')
-        elif faculty_review == 'not_approved':
-            records = records.filter(section_info__faculty_review__decision='not_approved')
+        if faculty_review in ('approved', 'not_approved'):
+            matching = SectionRequestReview.objects.filter(
+                future_course=OuterRef('pk'), round=OuterRef('review_round'),
+                decision=faculty_review,
+            )
+            records = records.filter(Exists(matching))
         elif faculty_review == 'pending':
-            # No faculty_review block, or faculty_review without a decision yet.
-            records = records.filter(section_info__faculty_review__decision__isnull=True)
+            # Awaiting someone: still in review, with at least one
+            # undecided slot in the live round. A request never sent for
+            # review has no rows and does not count as pending.
+            undecided = SectionRequestReview.objects.filter(
+                future_course=OuterRef('pk'), round=OuterRef('review_round'),
+                decision='',
+            )
+            records = records.filter(
+                status='pending_review').filter(Exists(undecided))
 
         return records
