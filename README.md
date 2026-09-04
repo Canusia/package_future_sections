@@ -273,14 +273,66 @@ Both button labels apply to the HS admin/instructor portal and the CE portal, wh
 
 Drives the post-submission review flow under `/faculty/future_sections/section_requests/` and `/ce/future_sections/section_requests/`.
 
+Review is a **quorum**, not a single decision. When CE marks a batch pending review,
+`open_review_round()` snapshots every currently-qualifying reviewer (an Active
+`CourseAdministrator` row in one of the **Reviewer Roles**, on the request's course) as a
+`SectionRequestReview` row for that round and moves the request to `pending_review`. Each
+snapshotted reviewer files their own decision; once every row in the live round has one, the
+request advances to `reviewed` automatically. **`reviewed` carries no aggregate verdict** —
+it only means everyone has weighed in, and CE reads the individual decisions to act on it.
+CE can reset a `pending_review` or `reviewed` request back to `submitted`, which unlocks it;
+the finished round's rows are left in place as history, and the next `open_review_round()`
+call starts round `N+1`.
+
+```mermaid
+flowchart LR
+    A[submitted] -->|CE marks pending review| B[pending_review]
+    B -->|last reviewer decides| C[reviewed]
+    B -->|CE reset| A
+    C -->|CE reset| A
+```
+
+While a request is `pending_review` or `reviewed` (`FutureCourse.LOCKED_STATUSES`), the high
+school administrator and instructor can no longer edit it — the teaching formset save, the
+add-teacher form, and the mark-teaching/not-teaching API actions all refuse the write, and
+the school-facing table hides the edit controls on a locked row. CE is never locked out of
+its own controls.
+
 | Setting | Description |
 |---------|-------------|
-| **Do course proposals need to be reviewed?** | If Yes, designated `CourseAdministrator` rows on the course can review submitted requests. If No, the review list and detail URLs return 404 and the faculty/CE menu entries are inert. |
-| **Reviewer Roles** | Which `CourseAdministrator.role` values are allowed to review (hidden when review is disabled). A user sees a request iff they have an Active row in one of these roles on the request's course. To add a role to this dropdown, edit `CourseAdministrator.ROLE_OPTIONS` in `cis/models/course.py` (see [Installation Step 5b](#5b-add-reviewer-role-to-courseadministrator)). |
-| **Assign a mentor during review?** | Only visible when review is required. If Yes, approving a request requires picking or creating a mentor; the mentor is stored on the request's `section_info.faculty_review.mentor` and added as a `CourseAdministrator` row on the course. If No, approvals submit with just decision + comment (hidden mentor row in the review form). |
+| **Do course proposals need to be reviewed?** | If Yes, designated `CourseAdministrator` rows on the course can review submitted requests. If No, the review list and detail URLs return 404 and the faculty/CE menu entries are inert, and the request never reaches `pending_review`. |
+| **Reviewer Roles** | Which `CourseAdministrator.role` values are allowed to review (hidden when review is disabled). Read at the moment CE opens a round: those are the users snapshotted onto it. A user sees a request iff they hold a `SectionRequestReview` row on it — snapshot membership, not their current `CourseAdministrator` status, so deactivating a reviewer mid-round does not strand the request and adding one does not pull them into a round already running. To add a role to this dropdown, edit `CourseAdministrator.ROLE_OPTIONS` in `cis/models/course.py` (see [Installation Step 5b](#5b-add-reviewer-role-to-courseadministrator)). |
+| **Assign a mentor during review?** | Only visible when review is required. If Yes, approving a request requires picking or creating a mentor; the mentor is stored as a foreign key on the reviewer's `SectionRequestReview` row and added as a `CourseAdministrator` row on the course. If No, approvals submit with just decision + comment (hidden mentor row in the review form). |
 | **Mentor CourseAdministrator Role** | Which role the mentor's `CourseAdministrator` row gets on the course (defaults to `Faculty`). Hidden when review is disabled OR mentor assignment is disabled. The mentor user is always added to the `faculty` group with a `FacultyCoordinator` record, regardless of this role. |
 
-> **Note on the JSON storage key:** review data is persisted as `FutureCourse.section_info['faculty_review']`. The key name is historical — it represents any reviewer role, not just `Faculty`.
+The CE index shows quorum progress ("2 of 3 decided") on a three-way status badge; clicking
+it opens a **Reviewers modal** listing each snapshot reviewer, their qualifying role,
+decision (or Awaiting), decision date, comment, and — for anyone still undecided — a
+**Send reminder** action. See [Pending Review Notifications](#pending-review-notifications)
+for the scheduled version of that reminder.
+
+> **Storage:** review decisions live in `SectionRequestReview` rows (one per reviewer per
+> round), not in JSON. Older records created before this quorum model shipped had their
+> single decision stored at `FutureCourse.section_info['faculty_review']`; migration `0006`
+> converts that JSON (including its `history` list) into `SectionRequestReview` rows once,
+> and leaves the original JSON in place as a backstop.
+
+### Pending Review Notifications
+
+Scheduled reminders to reviewers who still have an outstanding decision in the live round.
+Recipients are derived from the round's `SectionRequestReview` snapshot, not configured —
+there is no roles field here, unlike Pending Request Notifications below.
+
+| Setting | Description |
+|---------|-------------|
+| **Pending Review Notification Dates** | Specific dates to send reminder notifications to reviewers with an undecided slot. |
+| **Notification Time (Cron Expression)** | Cron schedule for `notify_pending_reviews` (`Min Hr Day Month WeekDay`). |
+| **Pending Review Notification Subject** | Subject line for the reviewer reminder email. |
+| **Pending Review Notification Message** | Email template listing everything one reviewer owes. Shortcodes: `{{reviewer_first_name}}`, `{{reviewer_last_name}}`, `{{pending_count}}`, `{{requests}}`, `{{link}}`. |
+
+One email is sent per reviewer per run, listing every request they have not yet decided on.
+A **Review Notification History** tab on the CE index shows the send log, alongside the
+per-reviewer on-demand **Send reminder** action in the Reviewers modal.
 
 ### New Teacher Outreach
 
@@ -424,14 +476,15 @@ future_sections/
 │   └── faculty.py            # Faculty portal review routes
 ├── review/
 │   ├── __init__.py
-│   ├── helpers.py            # Reviewer-role lookup, review JSON read/write, mentor create-or-attach
+│   ├── helpers.py            # Reviewer-role lookup, quorum snapshot/decision/lock, mentor create-or-attach
 │   ├── forms.py              # SectionRequestReviewForm (mentor_role + require_mentor)
 │   ├── api.py                # SectionRequestSerializer + portal-agnostic ViewSet
 │   └── views.py              # section_request_list / _detail with portal shims
 ├── management/
 │   └── commands/
 │       ├── migrate_future_sections_data.py  # Data migration from cis app
-│       └── notify_pending_section_requests.py # Pending reminder emails
+│       ├── notify_pending_section_requests.py # Pending reminder emails (HS admins)
+│       └── notify_pending_reviews.py       # Pending reminder emails (reviewers)
 └── views/
     ├── __init__.py
     ├── api.py            # Action and data ViewSets
