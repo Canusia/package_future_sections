@@ -72,6 +72,7 @@ class FutureCourseSerializer(serializers.ModelSerializer):
                 1 for r in decided if r.decision == 'not_approved'),
             'reviewers': [
                 {
+                    'reviewer_id': str(r.reviewer_id),
                     'name': _name(r.reviewer),
                     'role': r.role,
                     'decision': labels.get(r.decision, ''),

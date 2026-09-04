@@ -871,50 +871,12 @@ class FutureCourse(models.Model):
             if not email:
                 continue
 
-            rows_html = ''
-            for row in info['rows']:
-                fc = row.future_course
-                course = str(fc.teacher_course.course)
-                highschool = fc.teacher_course.teacher_highschool.highschool.name
-                instructor = fc.teacher_course.teacher_highschool.teacher.user.get_full_name()
-                academic_year_name = str(fc.academic_year) if fc.academic_year else ''
-                rows_html += (
-                    f'<li>{course} &mdash; {highschool} &mdash; '
-                    f'{instructor} ({academic_year_name})</li>'
-                )
-            requests_html = f'<ul>{rows_html}</ul>'
-
             try:
-                template = Template(message_template)
-                context = Context({
-                    'reviewer_first_name': reviewer.first_name,
-                    'reviewer_last_name': reviewer.last_name,
-                    'pending_count': len(info['rows']),
-                    'requests': mark_safe(requests_html),
-                    'link': link
-                })
-                text_body = template.render(context)
-
-                # Render HTML email using standard template
-                html_template = get_template('cis/email.html')
-                html_body = html_template.render({'message': text_body})
-
-                # DEBUG mode: redirect to test email address
-                to = [email]
-                if getattr(django_settings, 'DEBUG', True):
-                    to = ['kadaji@gmail.com']
-
-                send_html_mail(
-                    subject,
-                    text_body,
-                    html_body,
-                    django_settings.DEFAULT_FROM_EMAIL,
-                    to
-                )
-
+                sent_to = cls._send_review_reminder_email(
+                    reviewer, info['rows'], subject, message_template, link)
                 emails_sent += 1
                 detailed_log['emails_sent'].append({
-                    'email': email,
+                    'email': sent_to,
                     'pending_count': len(info['rows'])
                 })
             except Exception as e:
@@ -926,6 +888,140 @@ class FutureCourse(models.Model):
 
         summary = f"Sent {emails_sent} email(s), {errors} error(s)"
         return summary, detailed_log
+
+    @classmethod
+    def _send_review_reminder_email(cls, reviewer, rows, subject,
+                                      message_template, link):
+        """Render and send one reviewer's reminder email for `rows`.
+
+        Shared by the bulk cron (`notify_pending_reviews`, one email per
+        reviewer listing every outstanding request) and the CE on-demand
+        single-reviewer send (`send_review_reminder`, one email about one
+        request) so both paths render and send identically -- including
+        the DEBUG-mode redirect.
+
+        Returns:
+            str: the email address actually sent to (the DEBUG test
+            address when `DEBUG` is truthy, otherwise the reviewer's own).
+            Raises whatever `send_html_mail` raises on failure.
+        """
+        from django.conf import settings as django_settings
+        from django.template.loader import get_template
+        from mailer import send_html_mail
+
+        email = reviewer.email
+
+        rows_html = ''
+        for row in rows:
+            fc = row.future_course
+            course = str(fc.teacher_course.course)
+            highschool = fc.teacher_course.teacher_highschool.highschool.name
+            instructor = fc.teacher_course.teacher_highschool.teacher.user.get_full_name()
+            academic_year_name = str(fc.academic_year) if fc.academic_year else ''
+            rows_html += (
+                f'<li>{course} &mdash; {highschool} &mdash; '
+                f'{instructor} ({academic_year_name})</li>'
+            )
+        requests_html = f'<ul>{rows_html}</ul>'
+
+        template = Template(message_template)
+        context = Context({
+            'reviewer_first_name': reviewer.first_name,
+            'reviewer_last_name': reviewer.last_name,
+            'pending_count': len(rows),
+            'requests': mark_safe(requests_html),
+            'link': link
+        })
+        text_body = template.render(context)
+
+        # Render HTML email using standard template
+        html_template = get_template('cis/email.html')
+        html_body = html_template.render({'message': text_body})
+
+        # DEBUG mode: redirect to test email address
+        to = [email]
+        if getattr(django_settings, 'DEBUG', True):
+            to = ['kadaji@gmail.com']
+
+        send_html_mail(
+            subject,
+            text_body,
+            html_body,
+            django_settings.DEFAULT_FROM_EMAIL,
+            to
+        )
+        return email
+
+    @classmethod
+    def send_review_reminder(cls, future_course_id, reviewer_id):
+        """Send one reviewer a reminder about one outstanding section request.
+
+        This is the CE "chase this one person about this one request"
+        gesture from the reviewers modal. It must never trust the caller's
+        choice of recipient: it re-derives, server-side, that `reviewer_id`
+        holds an outstanding (undecided) `SectionRequestReview` slot on
+        `future_course_id`'s *live* round -- i.e. a row whose `round`
+        equals the course's current `review_round` -- and that the request
+        is still `pending_review`. Any other pairing is refused, so the
+        caller only ever *selects* among reviewers already known to be
+        outstanding; it cannot introduce a recipient.
+
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from django.conf import settings as django_settings
+        from django.core.exceptions import ValidationError
+        from django.db.models import F
+        from django.urls import reverse
+
+        from .settings.future_sections import future_sections as fs_settings
+
+        try:
+            row = SectionRequestReview.objects.select_related(
+                'reviewer',
+                'future_course__academic_year',
+                'future_course__teacher_course__course',
+                'future_course__teacher_course__teacher_highschool__highschool',
+                'future_course__teacher_course__teacher_highschool__teacher__user',
+            ).get(
+                future_course_id=future_course_id,
+                reviewer_id=reviewer_id,
+                decision='',
+                future_course__status='pending_review',
+                round=F('future_course__review_round'),
+            )
+        except (SectionRequestReview.DoesNotExist, ValidationError,
+                ValueError, TypeError):
+            # Includes malformed (non-UUID) ids -- refuse the same as "no
+            # matching row" rather than 500ing on client-supplied input.
+            return False, (
+                'This reviewer has no outstanding decision on this '
+                'request.')
+
+        reviewer = row.reviewer
+        if not reviewer.email:
+            return False, 'This reviewer has no email address on file.'
+
+        fs_config = fs_settings.from_db()
+        subject = fs_config.get(
+            'review_notification_subject',
+            'Reminder: Section Request Review Needed')
+        message_template = fs_config.get('review_notification_message', '')
+        if not message_template:
+            return False, (
+                'Review notification message template is not configured '
+                'in settings.')
+
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+
+        try:
+            sent_to = cls._send_review_reminder_email(
+                reviewer, [row], subject, message_template, link)
+        except Exception as e:
+            return False, f'Failed to send reminder: {e}'
+
+        return True, f'Sent reminder to {sent_to}.'
 
 
 class FutureSection(models.Model):

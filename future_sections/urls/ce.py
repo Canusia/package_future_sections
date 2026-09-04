@@ -8,7 +8,8 @@ from rest_framework import routers
 
 from ..views.ce import (
     index, detail, settings, delete_section, future_sections_actions,
-    bulk_actions, get_highschool_admins, send_pending_reminder
+    bulk_actions, get_highschool_admins, send_pending_reminder,
+    send_review_reminder
 )
 from ..views.ce_api import (
     PendingFutureClassSectionViewSet,
@@ -91,6 +92,11 @@ urlpatterns = [
         'send_pending_reminder',
         user_passes_test(user_has_cis_role, login_url='/')(send_pending_reminder),
         name='send_pending_reminder'
+    ),
+    path(
+        'send_review_reminder',
+        user_passes_test(user_has_cis_role, login_url='/')(send_review_reminder),
+        name='send_review_reminder'
     ),
     path('section_requests/',
          user_passes_test(user_has_cis_role, login_url='/')(

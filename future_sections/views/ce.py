@@ -588,6 +588,7 @@ def index(request):
             'future_projections_url': '/ce/future_sections/api/future_projection?format=datatables',
             'pending_api_url': '/ce/future_sections/api/pending_future_class_sections?format=datatables',
             'notification_log_api_url': '/ce/future_sections/api/notification_logs/?format=datatables',
+            'review_notification_log_api_url': '/ce/future_sections/api/review_notification_logs/?format=datatables',
             'active_academic_year': active_academic_year,
             'academic_years': AcademicYear.objects.all().order_by('-name'),
             'enter_course_details_label': (
@@ -750,6 +751,37 @@ def send_pending_reminder(request):
         'action': 'display',
         'title': 'Email Sent',
         'message': f'Sent reminder to {emails_sent} administrator(s) at {highschool.name}.'
+    })
+
+
+def send_review_reminder(request):
+    """Send one reviewer a reminder about one outstanding section request.
+
+    Used by the CE reviewers modal's per-reviewer "Send reminder" action.
+    All authorization happens server-side in
+    `FutureCourse.send_review_reminder`: the client only names a
+    (future_course_id, reviewer_id) pair, and the model re-derives whether
+    that reviewer actually holds an outstanding slot on the request's live
+    round before sending anything.
+    """
+    future_course_id = request.GET.get('future_course_id')
+    reviewer_id = request.GET.get('reviewer_id')
+
+    if not future_course_id or not reviewer_id:
+        return JsonResponse({
+            'status': 'error',
+            'action': 'display',
+            'message': 'Missing required parameters.'
+        }, status=400)
+
+    success, message = FutureCourse.send_review_reminder(
+        future_course_id, reviewer_id)
+
+    return JsonResponse({
+        'status': 'success' if success else 'error',
+        'action': 'display',
+        'title': 'Email Sent' if success else 'Error',
+        'message': message
     })
 
 
