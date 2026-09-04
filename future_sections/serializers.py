@@ -5,7 +5,8 @@ from cis.serializers.highschool import HighSchoolSerializer
 from cis.serializers.highschool_admin import CustomUserSerializer
 from cis.serializers.teacher import TeacherCourseCertificateSerializer
 
-from .models import FutureProjection, FutureCourse, FutureSection
+from .models import (
+    FutureProjection, FutureCourse, FutureSection, SectionRequestReview)
 
 
 class FutureProjectionSerializer(serializers.ModelSerializer):
@@ -51,7 +52,6 @@ class FutureCourseSerializer(serializers.ModelSerializer):
     def _review_summary(self, obj):
         if not obj.review_round:
             return None
-        from .models import SectionRequestReview
         rows = list(
             obj.reviews.filter(round=obj.review_round)
             .select_related('reviewer').order_by('created_on'))
@@ -75,6 +75,7 @@ class FutureCourseSerializer(serializers.ModelSerializer):
                     'name': _name(r.reviewer),
                     'role': r.role,
                     'decision': labels.get(r.decision, ''),
+                    'decision_code': r.decision or '',
                     'decided_on': (
                         r.decided_on.strftime('%m/%d/%Y')
                         if r.decided_on else ''),

@@ -95,6 +95,21 @@ class ReviewBadgePayloadTests(TestCase):
         self.assertEqual(second['decided_on'], '')
         self.assertEqual(second['comment'], '')
 
+    def test_reviewers_decision_code_is_raw_for_all_three_states(self):
+        a = self._reviewer('a@x.com')
+        b = self._reviewer('b@x.com')
+        self._reviewer('c@x.com')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved')
+        record_decision(self.fc, b, decision='not_approved')
+        review = FutureCourseSerializer(self.fc).data['section_display']['review']
+        codes = {r['name']: r['decision_code'] for r in review['reviewers']}
+        self.assertEqual(codes, {
+            'a@x.com': 'approved',
+            'b@x.com': 'not_approved',
+            'c@x.com': '',
+        })
+
     def test_reviewers_ordered_by_created_on_matching_csv_export(self):
         a = self._reviewer('a@x.com')
         b = self._reviewer('b@x.com')

@@ -997,9 +997,16 @@
                 $item.append($nameRole);
 
                 var $decisionLine = $('<div>').addClass('mt-1');
-                if (reviewer.decision) {
-                    var $decision = $('<span>').addClass(
-                        reviewer.decision === 'Approved' ? 'badge badge-info' : 'badge badge-danger');
+                if (reviewer.decision_code === 'approved') {
+                    var $decision = $('<span>').addClass('badge badge-info');
+                    $decision.text(reviewer.decision);
+                    $decisionLine.append($decision);
+                    if (reviewer.decided_on) {
+                        $decisionLine.append(
+                            $('<span>').addClass('text-muted ml-2').text(reviewer.decided_on));
+                    }
+                } else if (reviewer.decision_code === 'not_approved') {
+                    var $decision = $('<span>').addClass('badge badge-danger');
                     $decision.text(reviewer.decision);
                     $decisionLine.append($decision);
                     if (reviewer.decided_on) {
