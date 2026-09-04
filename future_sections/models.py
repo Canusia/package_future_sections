@@ -23,6 +23,52 @@ from model_utils import FieldTracker
 from cis.models.settings import Setting
 import importlib.util
 
+
+class NoTestRecipientsConfigured(Exception):
+    """DEBUG is on but the tenant has no ``testers`` configured.
+
+    Callers must treat this as "send nothing" and record the skip --
+    never fall back to sending to the real recipient just because the
+    tester list happens to be empty.
+    """
+    pass
+
+
+def route_notification_recipients(fs_config, real_email):
+    """Resolve the ``to`` list for a future_sections notification email.
+
+    Every tenant deployment of this shared package used to hardcode a
+    personal address (``kadaji@gmail.com``) as the DEBUG-mode redirect
+    target. That doesn't belong in code that ships to every tenant, so
+    routing instead goes through the tenant's own ``cis_future_sections``
+    settings, following the ``testers``/``DEBUG`` convention already used
+    elsewhere in the codebase (see ``cis/models/section.py``).
+
+    Args:
+        fs_config: the ``cis_future_sections`` settings dict. ``testers``
+            is a comma-separated string of addresses.
+        real_email: the actual intended recipient.
+
+    Returns:
+        list[str]: addresses to actually send to.
+
+    Raises:
+        NoTestRecipientsConfigured: ``DEBUG`` is truthy (the default,
+            since failing toward the testers list is the safe direction)
+            and no testers are configured. Never falls through to
+            ``real_email`` in that case.
+    """
+    from django.conf import settings as django_settings
+
+    if getattr(django_settings, 'DEBUG', True):
+        raw = (fs_config or {}).get('testers') or ''
+        testers = [t.strip() for t in raw.split(',') if t and t.strip()]
+        if not testers:
+            raise NoTestRecipientsConfigured()
+        return testers
+    return [real_email]
+
+
 class FutureProjection(models.Model):
     """
     Tracks a highschool's future section projection for an academic year.
@@ -736,6 +782,16 @@ class FutureCourse(models.Model):
             missing_terms_label = ', '.join(missing) if missing else ''
 
             try:
+                to = route_notification_recipients(fs_config, email)
+            except NoTestRecipientsConfigured:
+                detailed_log['skipped'].append({
+                    'email': email,
+                    'highschool': highschool.name,
+                    'reason': 'DEBUG is on and no testers are configured',
+                })
+                continue
+
+            try:
                 template = Template(message_template)
                 context = Context({
                     'admin_first_name': user.first_name,
@@ -751,11 +807,6 @@ class FutureCourse(models.Model):
                 # Render HTML email using standard template
                 html_template = get_template('cis/email.html')
                 html_body = html_template.render({'message': text_body})
-
-                # DEBUG mode: redirect to test email address
-                to = [email]
-                if getattr(django_settings, 'DEBUG', True):
-                    to = ['kadaji@gmail.com']
 
                 send_html_mail(
                     subject,
@@ -873,11 +924,17 @@ class FutureCourse(models.Model):
 
             try:
                 sent_to = cls._send_review_reminder_email(
-                    reviewer, info['rows'], subject, message_template, link)
+                    reviewer, info['rows'], subject, message_template, link,
+                    fs_config)
                 emails_sent += 1
                 detailed_log['emails_sent'].append({
                     'email': sent_to,
                     'pending_count': len(info['rows'])
+                })
+            except NoTestRecipientsConfigured:
+                detailed_log['skipped'].append({
+                    'email': email,
+                    'reason': 'DEBUG is on and no testers are configured',
                 })
             except Exception as e:
                 errors += 1
@@ -891,25 +948,28 @@ class FutureCourse(models.Model):
 
     @classmethod
     def _send_review_reminder_email(cls, reviewer, rows, subject,
-                                      message_template, link):
+                                      message_template, link, fs_config):
         """Render and send one reviewer's reminder email for `rows`.
 
         Shared by the bulk cron (`notify_pending_reviews`, one email per
         reviewer listing every outstanding request) and the CE on-demand
         single-reviewer send (`send_review_reminder`, one email about one
         request) so both paths render and send identically -- including
-        the DEBUG-mode redirect.
+        the DEBUG-mode redirect (see `route_notification_recipients`).
 
         Returns:
-            str: the email address actually sent to (the DEBUG test
-            address when `DEBUG` is truthy, otherwise the reviewer's own).
+            str: the real reviewer email (the intended recipient), for
+            the caller's audit log -- regardless of where the mail was
+            actually routed.
+            Raises `NoTestRecipientsConfigured` when DEBUG is on and no
+            testers are configured (nothing is sent in that case).
             Raises whatever `send_html_mail` raises on failure.
         """
-        from django.conf import settings as django_settings
         from django.template.loader import get_template
         from mailer import send_html_mail
 
         email = reviewer.email
+        to = route_notification_recipients(fs_config, email)
 
         rows_html = ''
         for row in rows:
@@ -938,11 +998,7 @@ class FutureCourse(models.Model):
         html_template = get_template('cis/email.html')
         html_body = html_template.render({'message': text_body})
 
-        # DEBUG mode: redirect to test email address
-        to = [email]
-        if getattr(django_settings, 'DEBUG', True):
-            to = ['kadaji@gmail.com']
-
+        from django.conf import settings as django_settings
         send_html_mail(
             subject,
             text_body,
@@ -1017,7 +1073,11 @@ class FutureCourse(models.Model):
 
         try:
             sent_to = cls._send_review_reminder_email(
-                reviewer, [row], subject, message_template, link)
+                reviewer, [row], subject, message_template, link, fs_config)
+        except NoTestRecipientsConfigured:
+            return False, (
+                'Cannot send: DEBUG is on and no test recipients '
+                '("testers") are configured in settings.')
         except Exception as e:
             return False, f'Failed to send reminder: {e}'
 

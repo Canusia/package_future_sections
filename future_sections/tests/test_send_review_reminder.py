@@ -7,9 +7,11 @@ outstanding slot in the *live* round before sending anything.
 """
 from django.contrib.auth.models import Group
 from django.contrib.auth.signals import user_logged_in
-from django.test import TestCase
+from django.core import mail
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from mailer.engine import send_all
 from rest_framework.test import APIClient
 
 from cis.models.course import Campus, Cohort, Course, CourseAdministrator
@@ -39,6 +41,14 @@ def _safe_force_login(client, user):
         client.force_login(user)
     finally:
         user_logged_in.connect(post_login)
+
+
+LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
+
+
+def _flush():
+    """Flush django-mailer's queue into mail.outbox."""
+    send_all()
 
 
 BASE_SETTINGS = {
@@ -138,6 +148,55 @@ class SendReviewReminderModelTests(TestCase):
         success, message = FutureCourse.send_review_reminder(
             'not-a-uuid', 'also-not-a-uuid')
         self.assertFalse(success)
+
+    @override_settings(DEBUG=True, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_true_routes_to_testers_not_the_reviewer(self):
+        """Django forces DEBUG=False during tests, so exercise the DEBUG
+        branch explicitly via override_settings."""
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['testers'] = 'tester1@x.com, tester2@x.com'
+        setting.save()
+        reviewer = self._reviewer('r@x.com')
+        open_review_round(self.fc)
+
+        success, message = FutureCourse.send_review_reminder(
+            self.fc.id, reviewer.id)
+        _flush()
+
+        self.assertTrue(success)
+        self.assertIn('r@x.com', message)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(sorted(mail.outbox[0].to),
+                          ['tester1@x.com', 'tester2@x.com'])
+        self.assertNotIn('r@x.com', mail.outbox[0].to)
+
+    @override_settings(DEBUG=True, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_true_and_blank_testers_fails_clearly_and_sends_nothing(self):
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['testers'] = ''
+        setting.save()
+        reviewer = self._reviewer('r@x.com')
+        open_review_round(self.fc)
+
+        success, message = FutureCourse.send_review_reminder(
+            self.fc.id, reviewer.id)
+        _flush()
+
+        self.assertFalse(success)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(DEBUG=False, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_false_uses_the_real_recipient(self):
+        reviewer = self._reviewer('r@x.com')
+        open_review_round(self.fc)
+
+        success, message = FutureCourse.send_review_reminder(
+            self.fc.id, reviewer.id)
+        _flush()
+
+        self.assertTrue(success)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['r@x.com'])
 
     def test_previous_round_row_after_reset_is_refused(self):
         reviewer = self._reviewer('r@x.com')

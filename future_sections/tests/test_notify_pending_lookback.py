@@ -1,6 +1,9 @@
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.core import mail
+from django.test import TestCase, override_settings
 from datetime import date
+
+from mailer.engine import send_all
 
 from cis.models.customuser import CustomUser
 from cis.models.course import Course, Cohort
@@ -17,6 +20,13 @@ from cis.models.highschool_administrator import (
 )
 
 from ..models import FutureCourse
+
+LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
+
+
+def _flush():
+    """Flush django-mailer's queue into mail.outbox."""
+    send_all()
 
 
 class NotifyPendingLookbackTests(TestCase):
@@ -103,3 +113,53 @@ class NotifyPendingLookbackTests(TestCase):
         )
         summary, log = FutureCourse.notify_pending_section_requests()
         self.assertEqual(len(log['emails_sent']), 0)
+
+    def _set_settings(self, **overrides):
+        from cis.models.settings import Setting
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value.update(overrides)
+        setting.save()
+
+    @override_settings(DEBUG=True, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_true_routes_to_testers_not_the_admin(self):
+        """Django forces DEBUG=False during tests, so exercise the DEBUG
+        branch explicitly via override_settings."""
+        self._world()
+        self._set_settings(testers='tester1@x.com, tester2@x.com')
+
+        summary, log = FutureCourse.notify_pending_section_requests()
+        _flush()
+
+        self.assertEqual(len(log['emails_sent']), 1)
+        # Audit trail still names the real intended recipient...
+        self.assertEqual(log['emails_sent'][0]['email'], 'admin@x.com')
+        # ...but the mail itself went to the tenant's configured testers.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(sorted(mail.outbox[0].to),
+                          ['tester1@x.com', 'tester2@x.com'])
+        self.assertNotIn('admin@x.com', mail.outbox[0].to)
+
+    @override_settings(DEBUG=True, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_true_and_blank_testers_sends_nothing_and_is_skipped(self):
+        self._world()
+        self._set_settings(testers='')
+
+        summary, log = FutureCourse.notify_pending_section_requests()
+        _flush()
+
+        self.assertEqual(len(log['emails_sent']), 0)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(log['skipped'],
+                         'Blank testers under DEBUG must be recorded as skipped.')
+
+    @override_settings(DEBUG=False, EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_debug_false_uses_the_real_recipient(self):
+        self._world()
+
+        summary, log = FutureCourse.notify_pending_section_requests()
+        _flush()
+
+        self.assertEqual(len(log['emails_sent']), 1)
+        self.assertEqual(log['emails_sent'][0]['email'], 'admin@x.com')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['admin@x.com'])
