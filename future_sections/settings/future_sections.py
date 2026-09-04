@@ -618,6 +618,51 @@ class future_sections(forms.Form):
         help_text='Email template for pending request reminders. Shortcodes: {{admin_first_name}}, {{admin_last_name}}, {{highschool}}, {{academic_year}}, {{pending_count}}, {{link}}, {{start_date}}, {{end_date}}. <a href="#" class="float-right" onClick="do_bulk_action(\'future_sections\', \'pending_notification_message\')" >See Preview</a>'
     )
 
+    # ── Pending Review Notifications ─────────────────────────────────────
+    review_notification_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Pending Review Notifications</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    review_notification_dates = forms.CharField(
+        required=False,
+        help_text='Select specific dates to send notifications to reviewers who have not decided',
+        label="Pending Review Notification Dates",
+        widget=forms.TextInput(attrs={
+            'class': 'form-control pending-notification-dates-picker',
+            'placeholder': 'Click to select dates',
+            'readonly': 'readonly'
+        })
+    )
+
+    review_notification_cron = forms.CharField(
+        max_length=20,
+        required=False,
+        help_text='Min Hr Day Month WeekDay (e.g., "0 8 * * *" for 8:00 AM)',
+        label="Notification Time (Cron Expression)",
+        validators=[validate_cron]
+    )
+
+    review_notification_subject = forms.CharField(
+        max_length=200,
+        required=False,
+        label='Pending Review Notification Subject',
+        help_text='Subject line for the reminder email.'
+    )
+
+    review_notification_message = forms.CharField(
+        max_length=None,
+        required=False,
+        widget=forms.Textarea,
+        validators=[validate_html_short_code],
+        label='Pending Review Notification Message',
+        help_text='Email template for reviewer reminders. Shortcodes: '
+                  '{{reviewer_first_name}}, {{reviewer_last_name}}, '
+                  '{{pending_count}}, {{requests}}, {{link}}.'
+    )
+
     # ── Confirmation Email (sent to HS Admin after submission) ───────────
     confirmation_email_header = FFields.ReadOnlyField(
         required=False,
@@ -1202,7 +1247,7 @@ class future_sections(forms.Form):
             )
 
     def install(self):
-        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}', 'require_review': 'Yes', 'reviewer_roles': ['Faculty', 'Dept. Chair', 'Dean'], 'assign_mentor': 'Yes', 'mentor_default_role': 'Faculty', 'cycle_terms': [], 'lookback_terms': []}
+        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'review_notification_dates': '', 'review_notification_cron': '0 8 * * *', 'review_notification_subject': 'Reminder: Section Request Review Needed', 'review_notification_message': '<p>Dear {{reviewer_first_name}},</p><p>You have {{pending_count}} section request(s) awaiting your review.</p>{{requests}}<p>Please visit the review queue to submit your decisions: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}', 'require_review': 'Yes', 'reviewer_roles': ['Faculty', 'Dept. Chair', 'Dean'], 'assign_mentor': 'Yes', 'mentor_default_role': 'Faculty', 'cycle_terms': [], 'lookback_terms': []}
 
         try:
             setting = Setting.objects.get(key=self.key)
@@ -1257,6 +1302,15 @@ class future_sections(forms.Form):
             )
             cron.cron = cron_expr
             cron.save()
+
+        # Save cron schedule to CronTab for pending review notifications
+        review_cron_expr = self.cleaned_data.get('review_notification_cron')
+        if review_cron_expr:
+            review_cron, review_created = CronTab.objects.get_or_create(
+                command='notify_pending_reviews'
+            )
+            review_cron.cron = review_cron_expr
+            review_cron.save()
 
         result = {}
         for key, value in self.cleaned_data.items():

@@ -73,6 +73,17 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
         ).order_by('-run_scheduled_for')
 
 
+class ReviewNotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for review notification run history from CronLog"""
+    serializer_class = NotificationLogSerializer
+    permission_classes = [CIS_user_only]
+
+    def get_queryset(self):
+        return CronLog.objects.filter(
+            cron__command='notify_pending_reviews'
+        ).order_by('-run_scheduled_for')
+
+
 class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for pending future class sections (not yet responded to)"""
     serializer_class = PendingTeacherCourseSerializer

@@ -14,7 +14,8 @@ from ..views.ce_api import (
     PendingFutureClassSectionViewSet,
     FutureProjectionViewSet,
     FutureClassSectionViewSet,
-    NotificationLogViewSet
+    NotificationLogViewSet,
+    ReviewNotificationLogViewSet
 )
 from ..review import views as rv
 from ..review.api import SectionRequestViewSet
@@ -34,6 +35,7 @@ router.register('future_class_section', FutureClassSectionViewSet, basename='fut
 router.register('future_projection', FutureProjectionViewSet, basename='future_projection')
 router.register('pending_future_class_sections', PendingFutureClassSectionViewSet, basename='pending_future_class_sections')
 router.register('notification_logs', NotificationLogViewSet, basename='notification_logs')
+router.register('review_notification_logs', ReviewNotificationLogViewSet, basename='review_notification_logs')
 
 
 review_router = routers.DefaultRouter()

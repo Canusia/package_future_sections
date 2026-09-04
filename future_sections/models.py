@@ -782,6 +782,151 @@ class FutureCourse(models.Model):
         summary = f"Sent {emails_sent} email(s), {errors} error(s)"
         return summary, detailed_log
 
+    @classmethod
+    def notify_pending_reviews(cls, *args, **kwargs):
+        """
+        Send notifications to reviewers with outstanding decisions.
+
+        One email per reviewer, listing every request across all courses
+        where they hold an undecided slot in the request's *live* round.
+
+        Returns:
+            tuple: (summary, detailed_log)
+        """
+        from django.conf import settings as django_settings
+        from django.db.models import F
+        from django.template.loader import get_template
+        from django.urls import reverse
+        from mailer import send_html_mail
+        from .settings.future_sections import future_sections as fs_settings
+        from .review.helpers import review_required
+
+        detailed_log = {
+            'emails_sent': [],
+            'errors': [],
+            'skipped': []
+        }
+        emails_sent = 0
+        errors = 0
+
+        if not review_required():
+            summary = "Skipped: review is not required"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        fs_config = fs_settings.from_db()
+
+        # Check if today is a notification date
+        today = datetime.date.today().strftime('%m/%d/%Y')
+        notification_dates_str = fs_config.get('review_notification_dates', '')
+        notification_dates = [d.strip() for d in notification_dates_str.split(',') if d.strip()]
+
+        if today not in notification_dates:
+            summary = f"Skipped: {today} is not a notification date"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        subject = fs_config.get(
+            'review_notification_subject',
+            'Reminder: Section Request Review Needed')
+        message_template = fs_config.get('review_notification_message', '')
+
+        if not message_template:
+            summary = "Error: No email message template configured"
+            detailed_log['errors'].append(summary)
+            return summary, detailed_log
+
+        # Outstanding slots: pending_review requests, live round, undecided.
+        outstanding = SectionRequestReview.objects.filter(
+            decision='',
+            future_course__status='pending_review',
+            round=F('future_course__review_round'),
+        ).select_related(
+            'reviewer',
+            'future_course__academic_year',
+            'future_course__teacher_course__course',
+            'future_course__teacher_course__teacher_highschool__highschool',
+            'future_course__teacher_course__teacher_highschool__teacher__user',
+        ).order_by('reviewer_id', 'future_course_id')
+
+        if not outstanding.exists():
+            summary = "No reviewers with pending decisions found"
+            detailed_log['skipped'].append(summary)
+            return summary, detailed_log
+
+        by_reviewer = {}
+        for row in outstanding:
+            entry = by_reviewer.setdefault(
+                row.reviewer_id, {'reviewer': row.reviewer, 'rows': []})
+            entry['rows'].append(row)
+
+        # Build link to the reviewer's queue
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+
+        for reviewer_id, info in by_reviewer.items():
+            reviewer = info['reviewer']
+            email = reviewer.email
+
+            if not email:
+                continue
+
+            rows_html = ''
+            for row in info['rows']:
+                fc = row.future_course
+                course = str(fc.teacher_course.course)
+                highschool = fc.teacher_course.teacher_highschool.highschool.name
+                instructor = fc.teacher_course.teacher_highschool.teacher.user.get_full_name()
+                academic_year_name = str(fc.academic_year) if fc.academic_year else ''
+                rows_html += (
+                    f'<li>{course} &mdash; {highschool} &mdash; '
+                    f'{instructor} ({academic_year_name})</li>'
+                )
+            requests_html = f'<ul>{rows_html}</ul>'
+
+            try:
+                template = Template(message_template)
+                context = Context({
+                    'reviewer_first_name': reviewer.first_name,
+                    'reviewer_last_name': reviewer.last_name,
+                    'pending_count': len(info['rows']),
+                    'requests': mark_safe(requests_html),
+                    'link': link
+                })
+                text_body = template.render(context)
+
+                # Render HTML email using standard template
+                html_template = get_template('cis/email.html')
+                html_body = html_template.render({'message': text_body})
+
+                # DEBUG mode: redirect to test email address
+                to = [email]
+                if getattr(django_settings, 'DEBUG', True):
+                    to = ['kadaji@gmail.com']
+
+                send_html_mail(
+                    subject,
+                    text_body,
+                    html_body,
+                    django_settings.DEFAULT_FROM_EMAIL,
+                    to
+                )
+
+                emails_sent += 1
+                detailed_log['emails_sent'].append({
+                    'email': email,
+                    'pending_count': len(info['rows'])
+                })
+            except Exception as e:
+                errors += 1
+                detailed_log['errors'].append({
+                    'email': email,
+                    'error': str(e)
+                })
+
+        summary = f"Sent {emails_sent} email(s), {errors} error(s)"
+        return summary, detailed_log
+
 
 class FutureSection(models.Model):
     """Section info for each instructor"""
