@@ -6,6 +6,9 @@ reasons (the review flow originally lived in the `faculty` app). It now
 represents review by any qualifying CourseAdministrator role configured
 in the `cis_future_sections` setting.
 """
+import json
+import logging
+
 from django.contrib.auth.models import Group
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -15,6 +18,8 @@ from cis.models.course import CourseAdministrator
 from ..models import FutureCourse, SectionRequestReview
 from ..settings.future_sections import future_sections as fs_settings
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_REVIEWER_ROLES = ['Faculty', 'Dept. Chair', 'Dean']
 DEFAULT_MENTOR_ROLE = 'Faculty'
@@ -33,6 +38,35 @@ def get_reviewer_roles():
     roles = cfg.get('reviewer_roles') or DEFAULT_REVIEWER_ROLES
     # Stored as either a list or a CheckboxSelectMultiple's value list.
     return list(roles) if isinstance(roles, (list, tuple)) else DEFAULT_REVIEWER_ROLES
+
+
+def get_reviewer_weights():
+    """Return `{role: weight}` for every configured reviewer role.
+
+    Lower weight is asked first; roles sharing a weight form one stage. A
+    role the config omits weighs 0, and an absent or unparsable config
+    weighs every role 0 — one stage, i.e. exactly the parallel behaviour
+    this replaced.
+    """
+    cfg = _settings()
+    raw = cfg.get('reviewer_role_config') or ''
+    parsed = {}
+    if isinstance(raw, dict):
+        parsed = raw
+    elif raw:
+        try:
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                parsed = loaded
+        except (ValueError, TypeError):
+            parsed = {}
+
+    weights = {}
+    for role in get_reviewer_roles():
+        value = parsed.get(role, 0)
+        weights[role] = value if isinstance(value, int) and not isinstance(
+            value, bool) else 0
+    return weights
 
 
 def get_mentor_role():
@@ -74,14 +108,42 @@ def visible_future_courses_for(user):
 
 
 def pending_for(user):
-    """Requests awaiting this user's decision in the live round."""
-    from django.db.models import F
+    """Requests awaiting this user's decision **in the current stage**.
+
+    A later-stage reviewer still sees the request (see
+    `visible_future_courses_for`) but it is not in their queue until their
+    stage opens — otherwise "only the first reviewer is asked" would be
+    contradicted by the queue itself. A paused request is in nobody's
+    queue: staff drive it by hand.
+
+    The stage test is deliberately a single correlated `Exists` over *this
+    user's own* undecided row, with a nested `Exists` asking whether any
+    earlier-weight row on the **same** request and round is still
+    undecided. Expressing it as chained `.filter()` calls across the
+    multi-valued `reviews` relation would instead produce independent
+    joins, and could match a request whose *minimum* undecided weight
+    belongs to somebody else's row — leaking a later stage's request into
+    this user's queue.
+    """
+    from django.db.models import Exists, OuterRef
+
+    earlier_undecided = SectionRequestReview.objects.filter(
+        future_course=OuterRef('future_course'),
+        round=OuterRef('round'),
+        weight__lt=OuterRef('weight'),
+        decision='',
+    )
+    my_current_stage_row = SectionRequestReview.objects.filter(
+        future_course=OuterRef('pk'),
+        round=OuterRef('review_round'),
+        reviewer=user,
+        decision='',
+    ).exclude(Exists(earlier_undecided))
+
     return visible_future_courses_for(user).filter(
         status='pending_review',
-        reviews__reviewer=user,
-        reviews__round=F('review_round'),
-        reviews__decision='',
-    )
+        review_paused_on__isnull=True,
+    ).filter(Exists(my_current_stage_row)).distinct()
 
 
 def reviewed_for(user):
@@ -167,25 +229,32 @@ class NotAReviewerError(Exception):
 
 
 def qualifying_reviewers(future_course):
-    """(user, role) pairs eligible to review *future_course* right now."""
-    roles = get_reviewer_roles()
+    """(user, role, weight) triples eligible to review *future_course* now.
+
+    One entry per user: someone holding several qualifying roles is asked
+    once, under their **lowest-weight** role, so a Dean-and-Faculty is
+    asked at the earlier stage rather than twice. Sorted by weight, so the
+    snapshot reads in stage order.
+    """
+    weights = get_reviewer_weights()
     admins = CourseAdministrator.objects.filter(
         course=future_course.teacher_course.course,
-        role__in=roles, status='Active',
+        role__in=list(weights.keys()), status='Active',
     ).select_related('user')
-    seen, pairs = set(), []
+
+    best = {}
     for admin in admins:
-        if admin.user_id in seen:
-            continue
-        seen.add(admin.user_id)
-        pairs.append((admin.user, admin.role))
-    return pairs
+        weight = weights.get(admin.role, 0)
+        current = best.get(admin.user_id)
+        if current is None or weight < current[2]:
+            best[admin.user_id] = (admin.user, admin.role, weight)
+    return sorted(best.values(), key=lambda triple: triple[2])
 
 
 def open_review_round(future_course):
-    """Snapshot the reviewers, lock the request, return the new round."""
-    pairs = qualifying_reviewers(future_course)
-    if not pairs:
+    """Snapshot the reviewers, lock the request, notify the first stage."""
+    triples = qualifying_reviewers(future_course)
+    if not triples:
         raise NoReviewersError(
             'No qualifying reviewer for this course.')
 
@@ -194,14 +263,59 @@ def open_review_round(future_course):
         SectionRequestReview.objects.bulk_create([
             SectionRequestReview(
                 future_course=future_course, reviewer=user,
-                round=round_number, role=role,
+                round=round_number, role=role, weight=weight,
             )
-            for user, role in pairs
+            for user, role, weight in triples
         ])
         future_course.review_round = round_number
         future_course.status = 'pending_review'
-        future_course.save(update_fields=['review_round', 'status'])
+        future_course.review_paused_on = None
+        future_course.save(update_fields=[
+            'review_round', 'status', 'review_paused_on'])
+
+    _notify_current_stage(future_course)
     return round_number
+
+
+def current_stage(future_course):
+    """Lowest weight still awaiting a decision in the live round.
+
+    None when nothing is outstanding — the round is finished, or no round
+    has been opened.
+    """
+    return future_course.reviews.filter(
+        round=future_course.review_round, decision='',
+    ).order_by('weight').values_list('weight', flat=True).first()
+
+
+def stage_rows(future_course, stage=None):
+    """Live-round rows at *stage* (default: the current stage)."""
+    if stage is None:
+        stage = current_stage(future_course)
+    if stage is None:
+        return SectionRequestReview.objects.none()
+    return future_course.reviews.filter(
+        round=future_course.review_round, weight=stage,
+    ).select_related('reviewer')
+
+
+def _notify_current_stage(future_course):
+    """Email the current stage's undecided reviewers that it is their turn.
+
+    Silent when the request is paused or nothing is outstanding. Mail
+    failures must not roll back a recorded decision, so this never raises.
+    """
+    from ..models import FutureCourse as _FutureCourse
+
+    if future_course.is_review_paused:
+        return
+    stage = current_stage(future_course)
+    if stage is None:
+        return
+    try:
+        _FutureCourse.notify_review_stage(future_course, stage)
+    except Exception:  # pragma: no cover - notification is best effort
+        logger.exception('Failed to notify review stage')
 
 
 def record_decision(future_course, reviewer, *, decision, comment='',
@@ -226,10 +340,61 @@ def record_decision(future_course, reviewer, *, decision, comment='',
     row.decided_on = timezone.now()
     row.save(update_fields=['decision', 'comment', 'mentor', 'decided_on'])
 
-    if round_is_complete(future_course):
+    if decision == 'not_approved':
+        # Pause rather than advance: no further reviewer is notified until
+        # staff act. The rest of the stage keeps its undecided rows — they
+        # are simply no longer chased.
+        future_course.review_paused_on = timezone.now()
+        future_course.save(update_fields=['review_paused_on'])
+        _escalate_denial(row)
+        return row
+
+    if _stage_is_complete(future_course, row.weight):
+        advance_or_finish(future_course)
+    return row
+
+
+def _stage_is_complete(future_course, stage):
+    """True when every row at *stage* in the live round has decided."""
+    return not future_course.reviews.filter(
+        round=future_course.review_round, weight=stage, decision='',
+    ).exists()
+
+
+def _escalate_denial(row):
+    """Tell staff a reviewer did not approve. Never raises."""
+    from ..models import FutureCourse as _FutureCourse
+
+    try:
+        _FutureCourse.notify_review_escalation(row)
+    except Exception:  # pragma: no cover - notification is best effort
+        logger.exception('Failed to send review escalation')
+
+
+def advance_or_finish(future_course):
+    """Open the next stage, or mark the request reviewed when none is left.
+
+    Returns the new stage's weight, or None when the request was finished.
+    """
+    stage = current_stage(future_course)
+    if stage is None:
         future_course.status = 'reviewed'
         future_course.save(update_fields=['status'])
-    return row
+        return None
+    _notify_current_stage(future_course)
+    return stage
+
+
+def resume_review(future_course):
+    """Staff gesture after a denial: clear the pause and carry on.
+
+    The denial stays on the record as history. Returns the newly notified
+    stage's weight, or None when nothing was outstanding (the request is
+    marked reviewed instead).
+    """
+    future_course.review_paused_on = None
+    future_course.save(update_fields=['review_paused_on'])
+    return advance_or_finish(future_course)
 
 
 def round_is_complete(future_course):
@@ -240,14 +405,15 @@ def round_is_complete(future_course):
 
 
 def reset_review(future_course):
-    """Return the request to `submitted` and unlock it.
+    """Return the request to `submitted`, unlock it, clear any pause.
 
     Rows from the finished round keep their round number and are left
     untouched — they are the history. The next `open_review_round` opens
     round N+1.
     """
     future_course.status = 'submitted'
-    future_course.save(update_fields=['status'])
+    future_course.review_paused_on = None
+    future_course.save(update_fields=['status', 'review_paused_on'])
 
 
 def is_locked(future_course):

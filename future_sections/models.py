@@ -1097,6 +1097,16 @@ class FutureCourse(models.Model):
 
         return True, f'Sent reminder to {sent_to}.'
 
+    @classmethod
+    def notify_review_stage(cls, future_course, stage):
+        """Email the current stage's undecided reviewers. See Task 4."""
+        return 0
+
+    @classmethod
+    def notify_review_escalation(cls, row):
+        """Email staff that a reviewer did not approve. See Task 4."""
+        return 0
+
 
 class FutureSection(models.Model):
     """Section info for each instructor"""

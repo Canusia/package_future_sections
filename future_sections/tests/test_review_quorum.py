@@ -58,7 +58,8 @@ class QuorumTests(TestCase):
         self._reviewer('b@x.com', role='Dean')
         self._reviewer('c@x.com', status='Inactive')
         self.assertEqual(
-            [u for u, _role in qualifying_reviewers(self.fc)], [wanted])
+            [u for u, _role, _weight in qualifying_reviewers(self.fc)],
+            [wanted])
 
     def test_opening_a_round_creates_one_row_per_reviewer(self):
         self._reviewer('a@x.com')
@@ -105,7 +106,10 @@ class QuorumTests(TestCase):
         record_decision(self.fc, d, decision='not_approved')
         self.assertTrue(round_is_complete(self.fc))
         self.fc.refresh_from_db()
-        self.assertEqual(self.fc.status, 'reviewed')
+        # A denial pauses instead of finishing: staff decide what happens
+        # next (resume to the following stage, or reset).
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertTrue(self.fc.is_review_paused)
 
     def test_a_decision_records_comment_and_timestamp(self):
         a = self._reviewer('a@x.com')
@@ -144,6 +148,7 @@ class QuorumTests(TestCase):
         self.assertEqual(self.fc.reviews.count(), 2)
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.status, 'pending_review')
+        self.assertTrue(self.fc.is_review_paused)
 
     def test_a_decision_cannot_be_posted_after_reset(self):
         a = self._reviewer('a@x.com')
@@ -162,7 +167,7 @@ class QuorumTests(TestCase):
         d = self._reviewer('d@x.com')
         open_review_round(self.fc)
         record_decision(self.fc, a, decision='approved')
-        record_decision(self.fc, d, decision='not_approved')
+        record_decision(self.fc, d, decision='approved')
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.status, 'reviewed')
         with self.assertRaises(NotAReviewerError):
