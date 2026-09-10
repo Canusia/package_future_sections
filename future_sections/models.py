@@ -166,6 +166,15 @@ class FutureCourse(models.Model):
                   'an earlier round are finished rounds kept as history.',
     )
 
+    review_paused_on = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Set when a reviewer does not approve the request. While '
+                  'set, no reviewer is notified automatically: staff drive it '
+                  'by hand (Notify next stage, or reset to submitted). Not a '
+                  'status, so the lock, badges, filters and export are '
+                  'unaffected.',
+    )
+
     # Track status field changes for signal notifications
     tracker = FieldTracker(fields=['status'])
 
@@ -175,7 +184,12 @@ class FutureCourse(models.Model):
     def __str__(self):
         return f"{self.teacher_course.teacher_highschool.teacher} - {self.teacher_course.course} ({self.academic_year})"
 
-    
+    @property
+    def is_review_paused(self):
+        """True when a denial has paused automatic review notification."""
+        return self.review_paused_on is not None
+
+
     def create_teacher_application(self):
         if importlib.util.find_spec('instructor_app.instructor_app'):
             from instructor_app.instructor_app.models.teacher_applicant import (
@@ -1237,6 +1251,11 @@ class SectionRequestReview(models.Model):
     #: The CourseAdministrator role that qualified this reviewer, recorded at
     #: snapshot time so it survives later changes to their roles.
     role = models.CharField(max_length=50)
+    #: The weight the reviewer's role carried in `reviewer_role_config` at
+    #: snapshot time. Rows sharing a weight are one stage: asked together,
+    #: completed together. Lower goes first. 0 for rows created before
+    #: sequential review, which is why an untouched round stays one stage.
+    weight = models.PositiveIntegerField(default=0)
     decision = models.CharField(
         max_length=20, blank=True, default='', choices=DECISION_CHOICES)
     comment = models.TextField(blank=True, default='')
@@ -1248,7 +1267,7 @@ class SectionRequestReview(models.Model):
 
     class Meta:
         unique_together = ('future_course', 'reviewer', 'round')
-        ordering = ['round', 'created_on']
+        ordering = ['round', 'weight', 'created_on']
 
     def __str__(self):
         return f'{self.reviewer} round {self.round}: {self.decision or "pending"}'
