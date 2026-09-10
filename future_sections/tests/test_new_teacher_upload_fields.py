@@ -6,10 +6,12 @@ tenant may collect documents in both places, and the two sets must not
 share a storage key or a configuration entry.
 """
 import json
+from unittest import mock
 
 from crispy_forms.utils import render_crispy_form
 from django import forms as djforms
 from django.contrib.auth.models import Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from cis.models.course import Campus, Cohort, Course
@@ -174,6 +176,7 @@ class _AddTeacherFixture:
     @classmethod
     def setUpTestData(cls):
         Group.objects.get_or_create(name='highschool_admin')
+        Group.objects.get_or_create(name='instructor')
         cls.user = CustomUser.objects.create(
             username='hsa-upload@x.com', email='hsa-upload@x.com',
             is_active=True)
@@ -284,3 +287,105 @@ class AddTeacherUploadRenderTests(_AddTeacherFixture, TestCase):
         for name in NEW_UPLOAD_FIELDS:
             self.assertIsInstance(
                 form.fields[name].widget, djforms.HiddenInput, name)
+
+
+class _FakeStorage:
+    def save(self, name, content):
+        return name
+
+    def url(self, name):
+        return f'https://files.test/{name}'
+
+
+class AddTeacherUploadPersistenceTests(_AddTeacherFixture, TestCase):
+    """The uploaded file must land on the saved section under its own key."""
+
+    def _saved_section(self, files=None, **overrides):
+        req = RequestFactory().post('/')
+        req.user = self.user
+        data = {
+            'action': 'add_new_teacher',
+            'academic_year_id': str(self.ay.id),
+            'highschool': str(self.highschool.id),
+            'term': str(self.term.id),
+            'course': str(self.course.id),
+            'teacher_first_name': 'Ada',
+            'teacher_last_name': 'Lovelace',
+            'teacher_email': 'ada-upload@example.com',
+        }
+        data.update(overrides)
+        form = AddNewTeacherForm(
+            req, self.ay, 'pathways', data=data, files=files or {})
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        req.FILES.update(files or {})
+        with mock.patch('cis.backends.storage_backend.PrivateMediaStorage',
+                        _FakeStorage):
+            record = form.save(req, self.ay)
+        return record.section_info['sections'][-1]
+
+    def test_uploaded_syllabus_is_stored_under_its_own_key(self):
+        self._make_setting()
+        upload = SimpleUploadedFile(
+            'syllabus.pdf', b'bytes', content_type='application/pdf')
+        section = self._saved_section(
+            files={'new_teacher_syllabus': upload})
+        self.assertTrue(
+            section['new_teacher_syllabus'].endswith('syllabus.pdf'))
+
+    def test_uploaded_assessment_is_stored_under_its_own_key(self):
+        self._make_setting()
+        upload = SimpleUploadedFile(
+            'rubric.pdf', b'bytes', content_type='application/pdf')
+        section = self._saved_section(
+            files={'new_teacher_class_assessment': upload})
+        self.assertTrue(
+            section['new_teacher_class_assessment'].endswith('rubric.pdf'))
+
+    def test_the_two_uploads_do_not_share_a_key(self):
+        self._make_setting()
+        section = self._saved_section(files={
+            'new_teacher_syllabus': SimpleUploadedFile('syl.pdf', b'a'),
+            'new_teacher_class_assessment': SimpleUploadedFile(
+                'ass.pdf', b'b'),
+        })
+        self.assertNotEqual(section['new_teacher_syllabus'],
+                            section['new_teacher_class_assessment'])
+        self.assertTrue(section['new_teacher_syllabus'].endswith('syl.pdf'))
+        self.assertTrue(
+            section['new_teacher_class_assessment'].endswith('ass.pdf'))
+
+    def test_nothing_uploaded_stores_an_empty_string(self):
+        self._make_setting()
+        section = self._saved_section()
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertEqual(section[name], '', name)
+
+    def test_the_teaching_uploads_keep_their_own_keys(self):
+        # A tenant collecting documents in both places must not see one
+        # overwrite the other.
+        self._make_setting()
+        section = self._saved_section(files={
+            'new_teacher_syllabus': SimpleUploadedFile('new.pdf', b'a'),
+            'assessment_upload': SimpleUploadedFile('teaching.pdf', b'b'),
+        })
+        self.assertTrue(section['new_teacher_syllabus'].endswith('new.pdf'))
+        self.assertTrue(
+            section['assessment_upload'].endswith('teaching.pdf'))
+
+
+class SectionDisplayLinkTests(SimpleTestCase):
+    """CE reads the uploads through the Display Template."""
+
+    def test_each_field_renders_as_an_anchor_labelled_by_its_label(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'new_teacher_syllabus': 'https://files.test/s.pdf'},
+            '{new_teacher_syllabus}')
+        self.assertIn("href='https://files.test/s.pdf'", out)
+        self.assertIn('>Syllabus<', out)
+
+    def test_a_non_http_scheme_renders_no_anchor(self):
+        out = TeachingSectionFieldSchema.format_section_display(
+            {'new_teacher_class_assessment': 'javascript:alert(1)'},
+            '{new_teacher_class_assessment}')
+        self.assertNotIn('javascript', out)
+        self.assertEqual(out, '')
