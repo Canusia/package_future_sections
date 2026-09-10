@@ -807,6 +807,29 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                     **({'choices': choices} if visible else {}),
                 ))
 
+        # Add-teacher-only uploads. Rebuilt for the same reason as the
+        # selects above: the parent builds them as HiddenInput CharFields,
+        # and assigning a widget cannot turn a CharField into a FileField.
+        # Replacing an existing key keeps its position, so the weight
+        # ordering applied above survives.
+        add_teacher_only_files = [
+            name for name in self.ADD_TEACHER_ONLY_FIELDS
+            if name in set(TeachingSectionFieldSchema.get_file_field_names())
+        ]
+        for field_name in add_teacher_only_files:
+            visible = field_name in at_visible
+            label = custom_labels.get(field_name)
+            help_text = custom_help_texts.get(field_name)
+            self.fields[field_name] = (
+                TeachingSectionFieldSchema.make_django_form_field(
+                    field_name,
+                    visible=visible,
+                    required=visible and field_name in at_required,
+                    label_override=mark_safe(label) if label else None,
+                    help_text_override=(
+                        mark_safe(help_text) if help_text else None),
+                ))
+
         # Campus dropdown. The course list is scoped to a campus: the
         # submitted value when the form is bound (so a course chosen after
         # switching campus still validates on POST), otherwise All Campuses
