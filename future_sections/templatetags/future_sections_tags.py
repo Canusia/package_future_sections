@@ -64,3 +64,32 @@ def get_existing_file_field(form, field_name):
     if companion in form.fields:
         return form[companion]
     return None
+
+
+@register.simple_tag
+def add_teacher_only_fields(form):
+    """Bound fields that are only ever *asked* on the Add Teacher form.
+
+    They are excluded from ``teaching_form_config['fields']`` by design, so
+    the teaching template's main render loop never emits them. Rendering
+    them as hidden inputs is what carries their stored value back on a
+    teaching save: without it nothing posts them, and
+    ``build_section_info_from_formset`` stores '' over whatever the Add
+    Teacher form collected — an uploaded syllabus silently disappears the
+    first time anyone edits the teaching form.
+
+    The hidden value is client-editable, but for file fields
+    ``build_section_info_from_formset`` accepts a posted URL only when it
+    already appears on the record, so a spoofed one resolves to ''.
+
+    Usage:
+        {% add_teacher_only_fields teaching_form as carried %}
+        {% for field in carried %}{{ field }}{% endfor %}
+    """
+    from ..forms import TeacherCourseSectionForm
+
+    return [
+        form[name]
+        for name in TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS
+        if name in form.fields
+    ]

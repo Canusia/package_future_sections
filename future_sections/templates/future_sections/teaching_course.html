@@ -61,6 +61,12 @@
                                         {% endif %}
                                     {% endfor %}
 
+                                    {# Answers collected on the Add Teacher
+                                       form ride along as hidden inputs so
+                                       saving here does not erase them. #}
+                                    {% add_teacher_only_fields teaching_form as carried_fields %}
+                                    {% for carried in carried_fields %}{{ carried }}{% endfor %}
+
                                     {# Syllabus upload if enabled #}
                                     {% if form_config.show_syllabus %}
                                     <div class="col-12">

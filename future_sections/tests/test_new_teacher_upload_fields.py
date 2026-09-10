@@ -389,3 +389,167 @@ class SectionDisplayLinkTests(SimpleTestCase):
             '{new_teacher_class_assessment}')
         self.assertNotIn('javascript', out)
         self.assertEqual(out, '')
+
+
+class AddTeacherOnlyFieldsTagTests(TestCase):
+
+    def _make_setting(self):
+        Setting.objects.create(
+            key='cis_future_sections',
+            value={'teaching_form_config': json.dumps({'fields': ['term']})},
+        )
+
+    def test_tag_returns_every_add_teacher_only_field_on_the_form(self):
+        from ..templatetags.future_sections_tags import (
+            add_teacher_only_fields,
+        )
+
+        self._make_setting()
+        form = TeacherCourseSectionForm()
+        names = [field.name for field in add_teacher_only_fields(form)]
+        self.assertEqual(
+            names, list(TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS))
+
+    def test_tag_skips_a_name_the_form_does_not_define(self):
+        from ..templatetags.future_sections_tags import (
+            add_teacher_only_fields,
+        )
+
+        self._make_setting()
+        form = TeacherCourseSectionForm()
+        del form.fields['new_teacher_syllabus']
+        names = [field.name for field in add_teacher_only_fields(form)]
+        self.assertNotIn('new_teacher_syllabus', names)
+        self.assertIn('new_teacher_class_assessment', names)
+
+    def test_the_rendered_field_is_a_hidden_input_carrying_the_url(self):
+        from ..templatetags.future_sections_tags import (
+            add_teacher_only_fields,
+        )
+
+        self._make_setting()
+        stored = 'https://files.test/future_section/c1/syllabus.pdf'
+        form = TeacherCourseSectionForm(
+            initial={'new_teacher_syllabus': stored})
+        rendered = ''.join(
+            str(field) for field in add_teacher_only_fields(form))
+        self.assertIn('type="hidden"', rendered)
+        self.assertIn(stored, rendered)
+
+
+class TeachingTemplateWiringTests(SimpleTestCase):
+    """The tag is useless unless the teaching template actually calls it.
+
+    Covered by reading the shipped template: the value is lost at render
+    time, so no form-level assertion can catch a missing call.
+    """
+
+    def _template_source(self):
+        import os
+
+        from .. import templatetags  # noqa: F401  (locate the package root)
+
+        here = os.path.dirname(os.path.dirname(os.path.abspath(
+            templatetags.__file__)))
+        path = os.path.join(
+            here, 'templates', 'future_sections', 'teaching_course.html')
+        with open(path, encoding='utf-8') as fh:
+            return fh.read()
+
+    def test_teaching_template_renders_the_carried_fields(self):
+        source = self._template_source()
+        self.assertIn('add_teacher_only_fields', source)
+
+
+class TeachingSavePreservesUploadsTests(TestCase):
+    """A teaching save must not erase what Add Teacher uploaded."""
+
+    def setUp(self):
+        from cis.models.term import AcademicYear, Term
+
+        self.ay = AcademicYear.objects.create(name='2099-2100')
+        self.term = Term.objects.create(
+            code='F99', label='Fall 2099', academic_year=self.ay)
+        Setting.objects.create(
+            key='cis_future_sections',
+            value={
+                'academic_year': str(self.ay.id),
+                'teaching_form_config': json.dumps({
+                    'fields': ['term'],
+                    'required': ['term'],
+                }),
+            },
+        )
+
+    def _sections(self, posted, stored=None):
+        """Run the real formset + payload builder with *posted* form data."""
+        from unittest import mock
+
+        from django.forms import formset_factory
+        from django.test import RequestFactory
+
+        from ..forms import (
+            TeacherCourseBaseLinkFormSet, TeacherCourseSectionForm,
+        )
+        from ..utils import build_section_info_from_formset
+
+        class _FakeCourse:
+            id = 'course-1'
+
+            def __init__(self, section_info):
+                self.section_info = section_info
+
+        data = {
+            'form-TOTAL_FORMS': '1',
+            'form-INITIAL_FORMS': '1',
+            'form-MIN_NUM_FORMS': '0',
+            'form-MAX_NUM_FORMS': '1000',
+            'form-0-term': str(self.term.id),
+        }
+        data.update(posted)
+
+        TeachingFormSet = formset_factory(
+            TeacherCourseSectionForm,
+            formset=TeacherCourseBaseLinkFormSet,
+            extra=0)
+        formset = TeachingFormSet(data, {})
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        request = RequestFactory().post('/')
+        course = _FakeCourse(
+            {'sections': [stored]} if stored else {'sections': []})
+        with mock.patch('cis.backends.storage_backend.PrivateMediaStorage',
+                        _FakeStorage):
+            return build_section_info_from_formset(request, formset, course)
+
+    def test_stored_url_survives_when_the_hidden_field_posts_it_back(self):
+        stored_url = 'https://files.test/future_section/c1/syllabus.pdf'
+        sections = self._sections(
+            posted={'form-0-new_teacher_syllabus': stored_url},
+            stored={'term': str(self.term.id),
+                    'new_teacher_syllabus': stored_url})
+        self.assertEqual(sections[0]['new_teacher_syllabus'], stored_url)
+
+    def test_both_uploads_survive_together(self):
+        syllabus = 'https://files.test/future_section/c1/syl.pdf'
+        assessment = 'https://files.test/future_section/c1/ass.pdf'
+        sections = self._sections(
+            posted={'form-0-new_teacher_syllabus': syllabus,
+                    'form-0-new_teacher_class_assessment': assessment},
+            stored={'term': str(self.term.id),
+                    'new_teacher_syllabus': syllabus,
+                    'new_teacher_class_assessment': assessment})
+        self.assertEqual(sections[0]['new_teacher_syllabus'], syllabus)
+        self.assertEqual(
+            sections[0]['new_teacher_class_assessment'], assessment)
+
+    def test_a_spoofed_url_is_rejected(self):
+        # The hidden input is client-editable, so a URL that was never
+        # stored on this record must not be accepted.
+        stored_url = 'https://files.test/future_section/c1/syllabus.pdf'
+        sections = self._sections(
+            posted={
+                'form-0-new_teacher_syllabus': 'https://evil.test/x.pdf'},
+            stored={'term': str(self.term.id),
+                    'new_teacher_syllabus': stored_url})
+        self.assertEqual(sections[0]['new_teacher_syllabus'], '')
