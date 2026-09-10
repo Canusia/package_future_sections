@@ -334,6 +334,15 @@ def record_decision(future_course, reviewer, *, decision, comment='',
         raise NotAReviewerError(
             'You are not a reviewer on this round.')
 
+    # Only the current stage may decide. `visible_future_courses_for` (and
+    # so the detail view) spans every round and stage, so without this a
+    # later-stage reviewer could post before their turn: that would re-fire
+    # the current stage's notification and let them pause a stage that is
+    # not theirs.
+    if row.weight != current_stage(future_course):
+        raise NotAReviewerError(
+            'This request is not at your review stage.')
+
     row.decision = decision
     row.comment = comment or ''
     row.mentor = mentor
@@ -375,7 +384,17 @@ def advance_or_finish(future_course):
     """Open the next stage, or mark the request reviewed when none is left.
 
     Returns the new stage's weight, or None when the request was finished.
+
+    A paused request never advances or completes: the single choke point
+    for every status transition is here, so the pause check lives here too
+    rather than being repeated at each caller. Without it a stage peer's
+    approval after somebody's denial would complete the round with the
+    pause still set -- deny-then-approve finishing what approve-then-deny
+    pauses. `resume_review` clears the pause *before* calling this, so the
+    staff resume path is unaffected.
     """
+    if future_course.is_review_paused:
+        return None
     stage = current_stage(future_course)
     if stage is None:
         future_course.status = 'reviewed'
@@ -388,9 +407,11 @@ def advance_or_finish(future_course):
 def resume_review(future_course):
     """Staff gesture after a denial: clear the pause and carry on.
 
-    The denial stays on the record as history. Returns the newly notified
-    stage's weight, or None when nothing was outstanding (the request is
-    marked reviewed instead).
+    The denial stays on the record as history. Returns the weight of the
+    stage that was re-notified -- the *current* stage, which is still the
+    denier's own when a stage peer has yet to decide, and the following one
+    once the stage is complete -- or None when nothing was outstanding (the
+    request is marked reviewed instead).
     """
     future_course.review_paused_on = None
     future_course.save(update_fields=['review_paused_on'])
@@ -398,7 +419,13 @@ def resume_review(future_course):
 
 
 def round_is_complete(future_course):
-    """True when every slot in the live round has a decision."""
+    """True when every slot in the live round has a decision.
+
+    Caveat: this no longer implies the request is `reviewed`. A round whose
+    every slot has decided is still paused (and still `pending_review`) if
+    any of those decisions was a denial. Retained for the tests; production
+    code should use `current_stage` / `_stage_is_complete`.
+    """
     return not future_course.reviews.filter(
         round=future_course.review_round, decision='',
     ).exists()

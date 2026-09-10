@@ -20,9 +20,9 @@ from cis.models.term import AcademicYear
 
 from ..models import FutureCourse
 from ..review.helpers import (
-    current_stage, get_reviewer_weights, open_review_round, pending_for,
-    qualifying_reviewers, record_decision, reset_review, resume_review,
-    stage_rows,
+    NotAReviewerError, current_stage, get_reviewer_weights, open_review_round,
+    pending_for, qualifying_reviewers, record_decision, reset_review,
+    resume_review, stage_rows,
 )
 
 
@@ -298,3 +298,88 @@ class PendingQueueScopingTests(_ReviewFixture, TestCase):
         record_decision(self.fc, fac, decision='not_approved')
         for user in (fac, self.fc.reviews.get(role='Dean').reviewer):
             self.assertNotIn(self.fc, pending_for(user))
+
+
+class PausedRequestCannotAdvanceTests(_ReviewFixture, TestCase):
+    """While a request is paused, no decision may change its status."""
+
+    def test_a_peer_approval_cannot_complete_a_paused_round(self):
+        # Single stage (the legacy shape: every weight 0), deny first.
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='not_approved')
+
+        record_decision(self.fc, dean, decision='approved')
+
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertTrue(self.fc.is_review_paused)
+
+    def test_the_peer_s_verdict_is_still_recorded(self):
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='not_approved')
+        record_decision(self.fc, dean, decision='approved')
+        self.assertEqual(
+            self.fc.reviews.get(reviewer=dean).decision, 'approved')
+
+    def test_approve_then_deny_also_pauses(self):
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='approved')
+        record_decision(self.fc, dean, decision='not_approved')
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertTrue(self.fc.is_review_paused)
+
+    def test_resuming_a_completed_paused_round_still_finishes_it(self):
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='not_approved')
+        record_decision(self.fc, dean, decision='approved')
+        self.assertIsNone(resume_review(self.fc))
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+
+
+class StageGuardTests(_ReviewFixture, TestCase):
+    """Only the current stage's reviewers may post a decision."""
+
+    def test_a_later_stage_reviewer_is_refused(self):
+        self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        with self.assertRaises(NotAReviewerError):
+            record_decision(self.fc, dean, decision='approved')
+        self.assertEqual(self.fc.reviews.get(reviewer=dean).decision, '')
+
+    def test_the_current_stage_reviewer_is_accepted(self):
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        row = record_decision(self.fc, fac, decision='approved')
+        self.assertEqual(row.decision, 'approved')
+
+    def test_the_later_stage_reviewer_is_accepted_once_their_turn_comes(self):
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='approved')
+        row = record_decision(self.fc, dean, decision='approved')
+        self.assertEqual(row.decision, 'approved')

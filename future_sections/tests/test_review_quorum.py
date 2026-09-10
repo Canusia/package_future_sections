@@ -98,7 +98,7 @@ class QuorumTests(TestCase):
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.status, 'pending_review')
 
-    def test_last_decision_completes_the_round_and_advances(self):
+    def test_a_denial_fills_the_round_but_pauses_instead_of_advancing(self):
         a = self._reviewer('a@x.com')
         d = self._reviewer('d@x.com')
         open_review_round(self.fc)
