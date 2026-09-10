@@ -54,9 +54,12 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             return None
         rows = list(
             obj.reviews.filter(round=obj.review_round)
-            .select_related('reviewer').order_by('created_on'))
+            .select_related('reviewer').order_by('weight', 'created_on'))
         decided = [r for r in rows if r.decision]
         labels = dict(SectionRequestReview.DECISION_CHOICES)
+
+        undecided_weights = [r.weight for r in rows if not r.decision]
+        stage = min(undecided_weights) if undecided_weights else None
 
         def _name(user):
             if not user:
@@ -70,11 +73,16 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             'approved': sum(1 for r in decided if r.decision == 'approved'),
             'not_approved': sum(
                 1 for r in decided if r.decision == 'not_approved'),
+            'stage': stage,
+            'paused': obj.is_review_paused,
             'reviewers': [
                 {
                     'reviewer_id': str(r.reviewer_id),
                     'name': _name(r.reviewer),
                     'role': r.role,
+                    'weight': r.weight,
+                    'is_current_stage': (
+                        stage is not None and r.weight == stage),
                     'decision': labels.get(r.decision, ''),
                     'decision_code': r.decision or '',
                     'decided_on': (

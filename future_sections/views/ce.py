@@ -806,6 +806,9 @@ def bulk_actions(request):
     if action == 'mark_as_pending_review':
         return mark_as_pending_review(request)
 
+    if action == 'notify_next_stage':
+        return notify_next_stage(request)
+
     # Default response for unknown actions
     return JsonResponse({
         'status': 'error',
@@ -909,6 +912,52 @@ def mark_as_reviewed(request):
         'message': message,
         'action': 'display'
     })
+
+
+def notify_next_stage(request):
+    """Clear a denial's pause and open the next review stage.
+
+    The staff gesture for "further notifications are controlled manually":
+    after a reviewer declines, nothing is sent automatically, and this is
+    how CE carries the request on without discarding the denial (which
+    stays on the record as history). A request that is not paused is
+    skipped and named rather than silently advanced -- advancing a live
+    stage would notify people out of turn. `resume_review` re-notifies
+    whichever stage is current (the same one, if a peer is still
+    undecided), so this does not always skip ahead to a new stage.
+    """
+    from ..review.helpers import resume_review
+
+    ids = request.GET.getlist('ids[]')
+    if not ids:
+        return JsonResponse({
+            'status': 'warning', 'title': 'No Selection',
+            'message': 'Please select at least one record.',
+            'action': 'display'})
+
+    advanced, finished, skipped = 0, 0, []
+    for fc in FutureCourse.objects.filter(id__in=ids):
+        label = str(fc.teacher_course.course.title
+                    if fc.teacher_course else fc.id)
+        if not fc.is_review_paused:
+            skipped.append(label)
+            continue
+        if resume_review(fc) is None:
+            finished += 1
+        else:
+            advanced += 1
+
+    message = f'Notified the reviewers now due on {advanced} request(s).'
+    if finished:
+        message += (f' {finished} had no reviewer left and are now marked '
+                    'reviewed.')
+    if skipped:
+        message += (' Skipped, not paused: ' + ', '.join(skipped) + '.')
+    return JsonResponse({
+        'status': 'warning' if skipped else 'success',
+        'title': 'Notify Reviewers',
+        'message': message,
+        'action': 'display'})
 
 
 def mark_as_submitted(request):

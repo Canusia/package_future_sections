@@ -58,8 +58,11 @@ class ReviewBadgePayloadTests(TestCase):
         record_decision(self.fc, a, decision='approved')
         review = FutureCourseSerializer(self.fc).data['section_display']['review']
         reviewers = review.pop('reviewers')
+        # No reviewer_role_config here, so both rows weigh 0 -- stage stays
+        # 0 (d@x.com's undecided row) and the request is not paused.
         self.assertEqual(review, {'round': 1, 'total': 2, 'decided': 1,
-                                  'approved': 1, 'not_approved': 0})
+                                  'approved': 1, 'not_approved': 0,
+                                  'stage': 0, 'paused': False})
         self.assertEqual(len(reviewers), 2)
 
     def test_an_earlier_round_is_not_counted(self):

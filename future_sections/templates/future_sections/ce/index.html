@@ -84,6 +84,7 @@
                                                                 <option value="approved">Approved</option>
                                                                 <option value="not_approved">Not approved</option>
                                                                 <option value="pending">Pending faculty review</option>
+                                                                <option value="paused">Paused (not approved)</option>
                                                             </select>
                                                         </div>
 
@@ -667,6 +668,11 @@
                                                     if (rv.not_approved) {
                                                         html += ' <span class="badge badge-danger">' + rv.not_approved + ' not approved</span>';
                                                     }
+                                                    if (rv.paused) {
+                                                        html += ' <span class="badge badge-dark">Paused — awaiting staff</span>';
+                                                    } else if (rv.stage !== null && rv.stage !== undefined) {
+                                                        html += ' <span class="badge badge-light">Stage ' + rv.stage + '</span>';
+                                                    }
                                                 }
                                                 return html;
                                             }
@@ -1099,6 +1105,11 @@
                 $nameRole.append($name);
                 var $role = $('<span>').addClass('text-muted');
                 $role.text(reviewer.role);
+                if (reviewer.is_current_stage && !reviewer.decision_code) {
+                    $role.append($('<span>')
+                        .addClass('badge badge-primary ml-2')
+                        .text('Current stage'));
+                }
                 $nameRole.append($role);
                 $item.append($nameRole);
 
@@ -1143,6 +1154,14 @@
                 $list.append($item);
             });
             $body.append($list);
+
+            if (rv.paused) {
+                $body.append($('<button>')
+                    .attr('type', 'button')
+                    .addClass('btn btn-sm btn-warning notify-next-stage mt-3')
+                    .attr('data-future-course-id', rowData.id)
+                    .text('Notify reviewers'));
+            }
         });
 
         $(document).on('click', '.send-review-reminder', function (e) {
@@ -1173,6 +1192,33 @@
                     $.unblockUI();
                     var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
                     swal('Error', msg, 'error');
+                }
+            });
+        });
+
+        $(document).on('click', '.notify-next-stage', function (e) {
+            e.preventDefault();
+            var $btn = $(this).prop('disabled', true);
+
+            $.blockUI();
+            $.ajax({
+                type: 'GET',
+                url: "{% url 'future_sections_ce:bulk_actions' %}",
+                data: {
+                    action: 'notify_next_stage',
+                    'ids[]': [$btn.data('future-course-id')]
+                },
+                success: function (resp) {
+                    $.unblockUI();
+                    swal(resp.title || 'Success', resp.message, resp.status);
+                    $('#reviewersModal').modal('hide');
+                    table.ajax.reload(null, false);
+                },
+                error: function (xhr) {
+                    $.unblockUI();
+                    var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
+                    swal('Error', msg, 'error');
+                    $btn.prop('disabled', false);
                 }
             });
         });

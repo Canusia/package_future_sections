@@ -239,5 +239,9 @@ class FutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
             )
             records = records.filter(
                 status='pending_review').filter(Exists(undecided))
+        elif faculty_review == 'paused':
+            # Denied and waiting on staff: still pending_review, pause set.
+            records = records.filter(
+                status='pending_review', review_paused_on__isnull=False)
 
         return records

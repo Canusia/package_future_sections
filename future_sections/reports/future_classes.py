@@ -33,17 +33,20 @@ def _show_syllabus_enabled():
 
 
 def _faculty_review_cells(record):
-    """Six cells describing the live review round, multi-value fields joined.
+    """Eight cells describing the live review round, multi-value fields
+    joined.
 
     Aggregated rather than one column per reviewer so the CSV stays
     rectangular however many reviewers a course has.
     """
     if not record.review_round:
-        return ['', '', '', '', '', '']
+        return ['', '', '', '', '', '', '', '']
 
     rows = list(record.reviews.filter(round=record.review_round)
-                .select_related('reviewer', 'mentor').order_by('created_on'))
+                .select_related('reviewer', 'mentor')
+                .order_by('weight', 'created_on'))
     labels = dict(SectionRequestReview.DECISION_CHOICES)
+    undecided = [r.weight for r in rows if not r.decision]
 
     def _name(user):
         if not user:
@@ -57,6 +60,8 @@ def _faculty_review_cells(record):
 
     return [
         str(record.review_round),
+        str(min(undecided)) if undecided else '',
+        'Yes' if record.is_review_paused else '',
         '; '.join(_name(r.reviewer) for r in rows),
         '; '.join(labels.get(r.decision, '') for r in rows),
         '; '.join(_name(r.mentor) for r in rows),
@@ -128,6 +133,8 @@ class future_classes(forms.Form):
         # Faculty review fields appended after the per-section dynamic fields.
         faculty_review_labels = [
             'Review Round',
+            'Current Stage',
+            'Review Paused',
             'Reviewers',
             'Review Decisions',
             'Review Mentors',
