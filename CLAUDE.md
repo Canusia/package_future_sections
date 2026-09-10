@@ -114,6 +114,19 @@ spell out `future_sections.future_sections.*`. Use relative imports, or `PKG` fr
 `future_sections/tests/__init__.py` where a string is required (e.g. `mock.patch`).
 `test_no_hardcoded_package_prefix.py` enforces this.
 
+Two guard tests scan files on disk rather than exercising behaviour, so they cover what no
+other test renders or imports:
+
+- `test_no_hardcoded_package_prefix.py` — no test module may spell out the nested path.
+- `test_template_comments.py` — no shipped template may open a `{#` it does not close on the
+  same line. Django's `{# #}` is **single-line only**: a multi-line one is not a comment at
+  all, and the engine renders the text into the page (it shipped once in
+  `teaching_course.html`, leaking three lines of notes into the teaching form). Use
+  `{% comment %}` / `{% endcomment %}` for anything longer than one line.
+
+Keep both when adding files: a new template or test module is covered automatically, which is
+the point of scanning the tree instead of listing cases.
+
 ## Settings Form (`settings/future_sections.py`)
 
 Large Django form with sections: General, Portal Messages, School Personnel, Course & Instructor Configuration, Form Configuration (visual UI), Section Request Review, Review Escalation, Reviewed Email, Pending Notifications, Confirmation Email. JS in `staticfiles/future_sections/js/settings.js` handles conditional toggles and form config UIs.

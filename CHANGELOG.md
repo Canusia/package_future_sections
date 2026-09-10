@@ -64,6 +64,16 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 * A reviewer's Pending queue shows a request only once their stage opens; a
   paused request is in nobody's queue.
 
+### Fixed
+
+* **A multi-line `{# #}` comment in `teaching_course.html` rendered into the
+  page.** Django's `{# #}` is single-line only: a `{#` whose `#}` sits on a
+  later line is not a comment, so the template engine emitted all three lines
+  verbatim and the implementation note was visible inside the teaching form to
+  every instructor and school administrator. Now `{% comment %}`. A new
+  `tests/test_template_comments.py` statically scans every shipped template and
+  fails on any `{#` left unclosed on its line, so the mistake cannot ship again.
+
 ### Upgrading
 
 * **Set Review Escalation Recipients before taking this release.** The
