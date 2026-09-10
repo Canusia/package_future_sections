@@ -5,10 +5,17 @@ separate from the teaching form's `syllabus` and `assessment_upload`: a
 tenant may collect documents in both places, and the two sets must not
 share a storage key or a configuration entry.
 """
-from django import forms as djforms
-from django.test import SimpleTestCase
+import json
 
+from crispy_forms.utils import render_crispy_form
+from django import forms as djforms
+from django.test import RequestFactory, SimpleTestCase, TestCase
+
+from cis.models.customuser import CustomUser
+from cis.models.settings import Setting
+from ..forms import TeacherCourseSectionForm
 from ..schemas import TeachingSectionFieldSchema
+from ..settings.future_sections import future_sections
 
 
 NEW_UPLOAD_FIELDS = ('new_teacher_syllabus', 'new_teacher_class_assessment')
@@ -70,3 +77,85 @@ class NewTeacherUploadSchemaTests(SimpleTestCase):
             self.assertIsInstance(field, djforms.CharField, name)
             self.assertNotIsInstance(field, djforms.FileField, name)
             self.assertIsInstance(field.widget, djforms.HiddenInput, name)
+
+
+class AddTeacherOnlyMembershipTests(SimpleTestCase):
+
+    def test_both_fields_are_declared_add_teacher_only(self):
+        self.assertEqual(
+            set(TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS),
+            {'course_type', 'course_request_type',
+             'new_teacher_syllabus', 'new_teacher_class_assessment'})
+
+
+class TeachingFormExclusionTests(TestCase):
+    """The ordinary teaching form never asks for them, whatever it is told."""
+
+    def _make_setting(self):
+        # Listed visible AND required in the teaching config — the
+        # configuration that would render them there if the exclusion broke.
+        Setting.objects.create(
+            key='cis_future_sections',
+            value={
+                'teaching_form_config': json.dumps({
+                    'fields': ['term', 'new_teacher_syllabus',
+                               'new_teacher_class_assessment'],
+                    'required': ['term', 'new_teacher_syllabus',
+                                 'new_teacher_class_assessment'],
+                }),
+            },
+        )
+
+    def test_fields_are_hidden_even_when_the_teaching_config_lists_them(self):
+        self._make_setting()
+        form = TeacherCourseSectionForm()
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertIsInstance(
+                form.fields[name].widget, djforms.HiddenInput, name)
+
+    def test_fields_are_not_required_on_the_teaching_form(self):
+        self._make_setting()
+        form = TeacherCourseSectionForm()
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertFalse(form.fields[name].required, name)
+
+    def test_fields_are_not_file_fields_on_the_teaching_form(self):
+        # A FileField here would demand a multipart upload to re-save a row
+        # whose document was collected on the Add Teacher form.
+        self._make_setting()
+        form = TeacherCourseSectionForm()
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertNotIsInstance(
+                form.fields[name], djforms.FileField, name)
+
+
+class SettingsCardRowTests(TestCase):
+    """Each add-teacher-only field gets a configuration row on the card."""
+
+    def test_add_teacher_card_has_a_row_for_each_new_field(self):
+        user = CustomUser.objects.create(
+            username='ce-upload@x.com', email='ce-upload@x.com',
+            is_active=True)
+        request = RequestFactory().get(
+            '/?report_id=0f4e3b1a-1111-2222-3333-444455556666')
+        request.user = user
+
+        html = render_crispy_form(future_sections(request))
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertIn(
+                f'class="atfc-visible" data-field="{name}"', html, name)
+            self.assertIn(
+                f'class="atfc-required" data-field="{name}"', html, name)
+
+    def test_new_fields_are_absent_from_the_teaching_card(self):
+        user = CustomUser.objects.create(
+            username='ce-upload2@x.com', email='ce-upload2@x.com',
+            is_active=True)
+        request = RequestFactory().get(
+            '/?report_id=0f4e3b1a-1111-2222-3333-444455556666')
+        request.user = user
+
+        html = render_crispy_form(future_sections(request))
+        for name in NEW_UPLOAD_FIELDS:
+            self.assertNotIn(
+                f'class="tfc-visible" data-field="{name}"', html, name)

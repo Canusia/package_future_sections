@@ -244,8 +244,14 @@ class TeacherCourseSectionForm(forms.Form):
 
     # Asked only when a new teacher is being added, so they are driven by
     # `add_teacher_form_config` in AddNewTeacherForm and never rendered by the
-    # ordinary teaching form, whatever `teaching_form_config` says.
-    ADD_TEACHER_ONLY_FIELDS = ('course_type', 'course_request_type')
+    # ordinary teaching form, whatever `teaching_form_config` says. The two
+    # uploads are deliberately separate from the teaching form's `syllabus`
+    # and `assessment_upload`: a tenant may collect documents in both places,
+    # so they must not share a storage key or a config entry.
+    ADD_TEACHER_ONLY_FIELDS = (
+        'course_type', 'course_request_type',
+        'new_teacher_syllabus', 'new_teacher_class_assessment',
+    )
 
     term = forms.ModelChoiceField(
         queryset=None,

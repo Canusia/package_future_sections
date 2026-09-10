@@ -60,9 +60,11 @@ class CourseTypeSchemaTests(SimpleTestCase):
                 'choices', TeachingSectionFieldSchema.get_field_meta(name))
 
     def test_they_are_declared_add_teacher_only(self):
-        self.assertEqual(
-            set(TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS),
-            {'course_type', 'course_request_type'})
+        # Other fields share the tuple (the add-teacher uploads); this test
+        # owns only the two selects.
+        self.assertLessEqual(
+            {'course_type', 'course_request_type'},
+            set(TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS))
 
 
 class TeachingFormExclusionTests(TestCase):
