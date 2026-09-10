@@ -687,6 +687,30 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
         (``pathways`` / ``cccl`` / ``facilitator``) passed through to
         ``addable_courses_for_user`` — not the ``course_type`` form field,
         which is a tenant-configured select answered by the user."""
+        # A required FileField that is bound without `files` can never
+        # validate — `cleaned_data` for it is always empty regardless of
+        # what the user attached, so ticking Required on either new-teacher
+        # upload made this form permanently unsubmittable. All three
+        # production callers (this package's api view, the host app's
+        # instructor view, and the highschool_admin submodule) construct
+        # this form with `data=request.POST` and no `files=`; two of them
+        # live outside this package and cannot be relied on to pass files
+        # correctly, so default `files` from `request.FILES` here — but
+        # only when the form is actually being bound (a `data` argument was
+        # given) and only when the caller did not already supply `files`
+        # (an explicitly empty mapping counts as supplied and is respected).
+        # Django's Form.__init__ signature is `(data=None, files=None,
+        # ...)`, and both may arrive positionally or as keywords, so check
+        # both `args` (which line up with Form.__init__'s own positional
+        # parameters once our own three leading params are consumed) and
+        # `kwargs`.
+        data_supplied = 'data' in kwargs or len(args) >= 1
+        files_supplied = 'files' in kwargs or len(args) >= 2
+        if data_supplied and not files_supplied:
+            request_files = getattr(request, 'FILES', None)
+            if request_files is not None:
+                kwargs['files'] = request_files
+
         # Call parent __init__ which applies teaching form visibility rules from settings
         super().__init__(*args, **kwargs)
 

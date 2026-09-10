@@ -354,6 +354,47 @@ class AddTeacherUploadPersistenceTests(_AddTeacherFixture, TestCase):
         self.assertTrue(
             section['new_teacher_class_assessment'].endswith('ass.pdf'))
 
+    def test_required_upload_validates_the_way_views_actually_call_it(self):
+        # Production callers bind this form with `data=request.POST` and put
+        # the upload on `request.FILES` — none of the three call sites pass
+        # `files=` as a separate argument. `_saved_section` above binds
+        # `files=files or {}` directly, which no caller does; this test
+        # exercises the real calling convention so a required FileField
+        # bound this way is proven submittable rather than assumed so.
+        self._make_setting(required=('new_teacher_syllabus',))
+        req = RequestFactory().post('/')
+        req.user = self.user
+        upload = SimpleUploadedFile(
+            'syllabus.pdf', b'bytes', content_type='application/pdf')
+        req.FILES['new_teacher_syllabus'] = upload
+        data = {
+            'action': 'add_new_teacher',
+            'academic_year_id': str(self.ay.id),
+            'highschool': str(self.highschool.id),
+            'term': str(self.term.id),
+            'course': str(self.course.id),
+            'teacher_first_name': 'Ada',
+            'teacher_last_name': 'Lovelace',
+            'teacher_email': 'ada-upload@example.com',
+        }
+        form = AddNewTeacherForm(req, self.ay, 'pathways', data=data)
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        with mock.patch('cis.backends.storage_backend.PrivateMediaStorage',
+                        _FakeStorage):
+            record = form.save(req, self.ay)
+        section = record.section_info['sections'][-1]
+        self.assertTrue(
+            section['new_teacher_syllabus'].endswith('syllabus.pdf'))
+
+    def test_unbound_construction_stays_unbound(self):
+        # The GET path at all three call sites constructs the form with no
+        # `data` at all — the files-defaulting fix must not turn that into
+        # a bound form.
+        req = RequestFactory().get('/')
+        req.user = self.user
+        form = AddNewTeacherForm(req, self.ay, 'pathways')
+        self.assertFalse(form.is_bound)
+
     def test_nothing_uploaded_stores_an_empty_string(self):
         self._make_setting()
         section = self._saved_section()
