@@ -226,6 +226,22 @@ class TeachingSectionFieldSchema(BaseModel):
             "depends_on": "teacher_changed",
         },
     )
+    new_teacher_syllabus: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Syllabus",
+            "widget_type": "file",
+            "field_type": "string",
+        },
+    )
+    new_teacher_class_assessment: Optional[str] = Field(
+        default=None,
+        json_schema_extra={
+            "default_label": "Class Assessment",
+            "widget_type": "file",
+            "field_type": "string",
+        },
+    )
 
     # ------------------------------------------------------------------
     # Utility class methods

@@ -57,8 +57,11 @@ class IntrospectionHelperTests(SimpleTestCase):
             TeachingSectionFieldSchema.get_dependents_of('notes'), [])
 
     def test_get_file_field_names(self):
+        # The two add-teacher-only uploads are file fields too; see
+        # test_new_teacher_upload_fields.py.
         self.assertEqual(TeachingSectionFieldSchema.get_file_field_names(),
-                         ['assessment_upload'])
+                         ['assessment_upload', 'new_teacher_syllabus',
+                          'new_teacher_class_assessment'])
 
     def test_get_date_field_names(self):
         self.assertEqual(TeachingSectionFieldSchema.get_date_field_names(),
