@@ -1,4 +1,5 @@
 import datetime
+import json
 
 from django import forms
 from django.core.exceptions import ValidationError
@@ -375,6 +376,51 @@ class future_sections(forms.Form):
                   'to review section requests.',
     )
 
+    reviewer_role_config = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
+        label='Reviewer Roles & Order',
+        help_text='JSON {role: weight}; written by the Reviewer Roles & '
+                  'Order card. Lower weight reviews first; roles sharing a '
+                  'weight are asked together.',
+    )
+
+    review_escalation_header = FFields.ReadOnlyField(
+        required=False,
+        label=mark_safe('<h3 class="mt-4">Review Escalation (Denied '
+                        'Decisions)</h3>'),
+        initial='',
+        widget=FFields.LongLabelWidget(
+            attrs={'class': 'border-0 bg-light h-100'})
+    )
+
+    review_escalation_recipients = forms.CharField(
+        required=False,
+        label='Escalation Recipients',
+        help_text='Comma-separated staff email addresses notified when a '
+                  'reviewer does not approve a request. The request is then '
+                  'paused: no further reviewer is notified until staff act.',
+    )
+
+    review_escalation_subject = forms.CharField(
+        max_length=200,
+        required=False,
+        label='Escalation Email Subject',
+        help_text='Subject line for the denied-decision email.',
+    )
+
+    review_escalation_message = forms.CharField(
+        max_length=None,
+        required=False,
+        widget=forms.Textarea,
+        validators=[validate_html_short_code],
+        label='Escalation Email Message',
+        help_text='Shortcodes: {{reviewer_first_name}}, '
+                  '{{reviewer_last_name}}, {{reviewer_role}}, {{comment}}, '
+                  '{{course}}, {{highschool}}, {{instructor_first_name}}, '
+                  '{{instructor_last_name}}, {{academic_year}}, {{link}}.',
+    )
+
     assign_mentor = forms.ChoiceField(
         choices=YES_NO_SELECT_OPTIONS,
         required=False,
@@ -741,6 +787,28 @@ class future_sections(forms.Form):
             self.add_error('reviewer_roles',
                            forms.ValidationError(
                                'Select at least one reviewer role when review is required.'))
+
+        # The card writes this, but a hand-edited or stale value must not
+        # reach the stage logic: a bad weight would silently collapse the
+        # order, and an unknown role would never match a CourseAdministrator.
+        raw_config = cleaned.get('reviewer_role_config') or ''
+        if raw_config.strip():
+            valid_roles = {value for value, _ in CourseAdministrator.ROLE_OPTIONS}
+            try:
+                parsed = json.loads(raw_config)
+                if not isinstance(parsed, dict):
+                    raise ValueError('not an object')
+                for role, weight in parsed.items():
+                    if role not in valid_roles:
+                        raise ValueError(f'unknown role {role}')
+                    if isinstance(weight, bool) or not isinstance(weight, int):
+                        raise ValueError(f'weight for {role} is not an integer')
+            except (ValueError, TypeError) as exc:
+                self.add_error(
+                    'reviewer_role_config',
+                    forms.ValidationError(
+                        f'Reviewer role order is invalid: {exc}'))
+
         # assign_mentor / mentor_default_role only matter when review is on.
         if review_on and cleaned.get('assign_mentor') == '1' \
                 and not cleaned.get('mentor_default_role'):
@@ -1033,6 +1101,107 @@ class future_sections(forms.Form):
             '</div></div>'
         )
 
+        # Reviewer Roles & Order card. Ported from instructor_app's
+        # `reviewer_role_config` UI: one row per CourseAdministrator role,
+        # an Include checkbox and a weight. Lower weight is asked first;
+        # roles sharing a weight are asked together as one stage.
+        rrc_rows_html = ""
+        for role_value, role_label in CourseAdministrator.ROLE_OPTIONS:
+            rrc_rows_html += (
+                '<tr>'
+                f'<td>{role_label}</td>'
+                '<td class="text-center">'
+                f'<input type="checkbox" class="rrc-include" '
+                f'data-role="{role_value}">'
+                '</td>'
+                '<td>'
+                f'<input type="number" class="form-control form-control-sm '
+                f'rrc-weight" data-role="{role_value}" min="1" '
+                f'placeholder="—" style="width:80px;">'
+                '</td>'
+                '</tr>'
+            )
+
+        reviewer_role_config_html = (
+            '<div id="reviewer-role-config-ui" class="card mb-3">'
+            '<div class="card-header"><h5 class="mb-0">Reviewer Roles &amp; '
+            'Order</h5></div>'
+            '<div class="card-body">'
+            '<p class="text-muted small">Select which course administrator '
+            'roles review section requests, and in what order. Lower weight '
+            'is asked first; roles sharing a weight are asked together and '
+            'the request moves on once all of them have approved. Give every '
+            'role the same weight to ask everyone at once.</p>'
+            '<table class="table table-sm table-bordered">'
+            '<thead><tr>'
+            '<th>Role</th>'
+            '<th class="text-center" style="width:80px">Include</th>'
+            '<th style="width:120px">Weight</th>'
+            '</tr></thead>'
+            '<tbody>'
+            + rrc_rows_html +
+            '</tbody></table>'
+            '</div></div>'
+        )
+
+        reviewer_role_config_js = (
+            '<script>'
+            'function initReviewerRoleConfig(){'
+            '  var $hidden=$("input[name=\'reviewer_role_config\']");'
+            '  if(!$hidden.length)return;'
+            '  var $ui=$("#reviewer-role-config-ui");'
+            '  if(!$ui.length)return;'
+            '  if($ui.data("rrc-init"))return;'
+            '  $ui.data("rrc-init",true);'
+            '  var config={};'
+            '  try{config=JSON.parse($hidden.val()||"{}");}catch(e){config={};}'
+            # First load on a tenant upgrading from parallel review: seed the
+            # card from the existing reviewer_roles checkboxes at one weight,
+            # so saving changes nothing until someone sets an order.
+            '  if(!Object.keys(config).length){'
+            '    $("input[name=\'reviewer_roles\']:checked").each(function(){'
+            '      config[$(this).val()]=1;'
+            '    });'
+            '  }'
+            '  $ui.find(".rrc-include").each(function(){'
+            '    $(this).prop("checked",config.hasOwnProperty($(this).data("role")));'
+            '  });'
+            '  $ui.find(".rrc-weight").each(function(){'
+            '    var role=$(this).data("role");'
+            '    if(config.hasOwnProperty(role))$(this).val(config[role]);'
+            '    $(this).prop("disabled",!config.hasOwnProperty(role));'
+            '  });'
+            '  function sync(){'
+            '    var result={};'
+            '    $ui.find(".rrc-include:checked").each(function(){'
+            '      var role=$(this).data("role");'
+            '      var w=parseInt($ui.find(".rrc-weight[data-role=\'"+role+"\']").val())||1;'
+            '      result[role]=w;'
+            '    });'
+            '    $hidden.val(JSON.stringify(result));'
+            # reviewer_roles stays the "which roles" list every other reader
+            # already uses, so keep the checkboxes in step with the card.
+            '    $("input[name=\'reviewer_roles\']").each(function(){'
+            '      $(this).prop("checked",result.hasOwnProperty($(this).val()));'
+            '    });'
+            '  }'
+            '  $ui.on("change",".rrc-include",function(){'
+            '    var role=$(this).data("role");'
+            '    var $w=$ui.find(".rrc-weight[data-role=\'"+role+"\']");'
+            '    $w.prop("disabled",!$(this).is(":checked"));'
+            '    if(!$(this).is(":checked"))$w.val("");'
+            '    else if(!$w.val())$w.val(1);'
+            '    sync();'
+            '  });'
+            '  $ui.on("input",".rrc-weight",sync);'
+            '  $hidden.closest("form").on("submit",sync);'
+            '  sync();'
+            '}'
+            '$(document).ready(function(){initReviewerRoleConfig();});'
+            '$(document).ajaxComplete(function(){initReviewerRoleConfig();});'
+            '</script>'
+        )
+
         # Build layout with config UIs inserted before their hidden fields
         field_keys = list(self.fields.keys())
         layout_fields = []
@@ -1043,10 +1212,13 @@ class future_sections(forms.Form):
                 layout_fields.append(HTML(add_teacher_config_html))
             elif key == 'term_mapping':
                 layout_fields.append(HTML(term_mapping_html))
+            elif key == 'reviewer_role_config':
+                layout_fields.append(HTML(reviewer_role_config_html))
             layout_fields.append(key)
 
         self.helper.layout = Layout(
-            *layout_fields
+            *layout_fields,
+            HTML(reviewer_role_config_js),
         )
 
     def preview(self, request, field_name):
@@ -1247,7 +1419,7 @@ class future_sections(forms.Form):
             )
 
     def install(self):
-        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'review_notification_dates': '', 'review_notification_cron': '0 8 * * *', 'review_notification_subject': 'Reminder: Section Request Review Needed', 'review_notification_message': '<p>Dear {{reviewer_first_name}},</p><p>You have {{pending_count}} section request(s) awaiting your review.</p>{{requests}}<p>Please visit the review queue to submit your decisions: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}', 'require_review': 'Yes', 'reviewer_roles': ['Faculty', 'Dept. Chair', 'Dean'], 'assign_mentor': 'Yes', 'mentor_default_role': 'Faculty', 'cycle_terms': [], 'lookback_terms': []}
+        defaults = {'mode': 'test', 'testers': 'kadaji@gmail.com', 'ending_date': '12/31/2025', 'academic_year': '91f575e7-c8e2-47a3-a2f0-3cb6ca700f9c', 'course_status': ['Active'], 'email_message': '1', 'email_subject': '1', 'starting_date': '12/23/2021', 'message_replyto': 'akadajis@syr.edu', 'welcome_message': '<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<div class="alert alert-info"><h3>Future Class / Forecasting module</h3>\r\n<p class="">As we get ready to for {{academic_year}} please use the form below to let us know what sections you plan on offering.<br><br>Below is the list of instructors and what College course(s) they are approved to teach. Click on the buttons to indicate status</p>\r\n</div>', 'teaching_message': '<div class="m-3">\r\n<div class="col-12">\r\n<p class="alert alert-danger mb-5">Change me in Settings -> Classes -> Section Requests</p>\r\n<p class="alert alert-info">Use the form below to select term and number of sections you plan on offering. Click on \'Save button\' when done.</p>\r\n</div>\r\n</div>', 'confirmation_message': '<p>Dear {{admin_first_name}},</p><p>Thank you for submitting your section information for {{academic_year}} at {{highschool}}.</p><p>Here is a summary of what was submitted:</p>{{future_sections}}', 'confirmation_subject': 'Section Request Confirmation - {{academic_year}}', 'not_teaching_message': '1', 'teacher_course_status': ['Teaching'], 'window_closed_message': 'window closed', 'previous_academic_year': 'f397c20b-c174-47e1-9d36-6e6895d5aea4', 'send_reviewed_notification': 'No', 'reviewed_email_subject': 'Your Section Request Has Been Reviewed', 'reviewed_email_message': '<p>Dear {{instructor_first_name}},</p><p>Your section request for {{course}} at {{highschool}} has been reviewed.</p>', 'pending_notification_dates': '', 'pending_notification_cron': '0 8 * * *', 'pending_notification_roles': [], 'pending_notification_subject': 'Reminder: Section Request Response Needed', 'pending_notification_message': '<p>Dear {{admin_first_name}},</p><p>This is a reminder that {{highschool}} has {{pending_count}} course(s) awaiting a response for {{academic_year}}.</p><p>Please visit the section requests page to submit your responses: {{link}}</p>', 'review_notification_dates': '', 'review_notification_cron': '0 8 * * *', 'review_notification_subject': 'Reminder: Section Request Review Needed', 'review_notification_message': '<p>Dear {{reviewer_first_name}},</p><p>You have {{pending_count}} section request(s) awaiting your review.</p>{{requests}}<p>Please visit the review queue to submit your decisions: {{link}}</p>', 'page_name': 'Future Section Requests', 'tab_course_requests': 'Course Requests', 'tab_school_personnel': 'School Personnel', 'course_display_template': '{course_title}', 'require_review': 'Yes', 'reviewer_roles': ['Faculty', 'Dept. Chair', 'Dean'], 'reviewer_role_config': '{"Faculty": 1, "Dept. Chair": 1, "Dean": 1}', 'review_escalation_recipients': '', 'review_escalation_subject': 'Section Request Not Approved', 'review_escalation_message': '<p>{{reviewer_first_name}} {{reviewer_last_name}} ({{reviewer_role}}) did not approve the section request for {{course}} at {{highschool}} ({{academic_year}}).</p><p>Comment: {{comment}}</p><p>The request is paused — no further reviewer will be notified until staff act: {{link}}</p>', 'assign_mentor': 'Yes', 'mentor_default_role': 'Faculty', 'cycle_terms': [], 'lookback_terms': []}
 
         try:
             setting = Setting.objects.get(key=self.key)
