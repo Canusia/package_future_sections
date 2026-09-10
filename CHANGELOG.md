@@ -15,9 +15,14 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
   **stage**. Only the current stage is notified; an approval that completes a
   stage notifies the next one; approving the last stage marks the request
   `reviewed`. **Roles sharing one weight behave exactly like the previous
-  parallel quorum**, which is also how existing rows are backfilled (`weight`
-  defaults to 0), so a tenant that never opens the new card sees no change to
-  the review flow itself, beyond the stage-open email below.
+  parallel quorum** for who may decide and in what order, which is also how
+  existing rows are backfilled (`weight` defaults to 0). A tenant that never
+  opens the new card still sees two changes to the review flow: reviewers get
+  a stage-open email the moment the round opens (see below), and a denial now
+  pauses the request instead of completing the round outright (see "A denial
+  pauses the request" below). The CE index badge is unaffected either way —
+  it suppresses "Stage 0" as meaningless for a tenant with one undifferentiated
+  stage, showing "Paused — awaiting staff" only if the request is paused.
 * **A denial pauses the request.** `FutureCourse.review_paused_on` is set, the
   addresses in the new **Escalation Recipients** setting are emailed (with their
   own subject/message templates), and all automatic notification stops — no
@@ -30,7 +35,8 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
   the next one once the stage is complete — leaving the denial on the record as
   history. Resetting to `submitted` also clears the pause.
 * The reviewers modal marks whose turn it is ("Current stage"); the CE index
-  badge shows the current stage ("Stage N") or "Paused — awaiting staff"; a new
+  badge shows the current stage ("Stage N", suppressed when N is 0 — a
+  no-order tenant's only stage) or "Paused — awaiting staff"; a new
   **Paused (not approved)** option joins the review filter; the Future Classes
   export gains Current Stage and Review Paused columns.
 
@@ -57,6 +63,26 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
   chase a current-stage reviewer while paused — that is the manual path.
 * A reviewer's Pending queue shows a request only once their stage opens; a
   paused request is in nobody's queue.
+
+### Upgrading
+
+* **Set Review Escalation Recipients before taking this release.** The
+  `review_escalation_recipients` setting (Settings → Section Requests →
+  Review Escalation) is seeded only by the settings form's `install()`,
+  which runs on first registration — an already-installed tenant's stored
+  setting has no value for this key. Under this release a denial pauses the
+  request rather than completing the round, and the pause email goes to
+  whatever `review_escalation_recipients` resolves to. With it unset, a
+  denial on any tenant (including one that never opens the new **Reviewer
+  Roles & Order** card, where every row is weight 0) pauses the request and
+  sends nobody anything — `notify_review_escalation` logs a warning, but no
+  reviewer or staff member is chased. The pause itself is still recorded and
+  visible: the request stays `pending_review` and shows the "Paused —
+  awaiting staff" badge on the CE index, and it is recoverable at any time
+  via the reviewers modal's "Notify reviewers" action or bulk **Mark as
+  Submitted** — but until a CE happens to notice the badge, it sits idle.
+  Configure the recipients list before upgrading so the escalation email
+  fires on the first denial after the upgrade.
 
 ## 2026.9.0
 

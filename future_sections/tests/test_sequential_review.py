@@ -8,6 +8,7 @@ parallel quorum it replaces.
 """
 from django.contrib.auth.models import Group
 from django.test import TestCase
+from django.utils import timezone
 
 from cis.models.course import Campus, Cohort, Course, CourseAdministrator
 from cis.models.customuser import CustomUser
@@ -20,9 +21,10 @@ from cis.models.term import AcademicYear
 
 from ..models import FutureCourse
 from ..review.helpers import (
-    NotAReviewerError, current_stage, get_reviewer_weights, open_review_round,
-    pending_for, qualifying_reviewers, record_decision, reset_review,
-    resume_review, stage_rows,
+    NotAReviewerError, advance_or_finish, current_stage,
+    get_reviewer_weights, open_review_round, pending_for,
+    qualifying_reviewers, record_decision, reset_review, resume_review,
+    stage_rows,
 )
 
 
@@ -356,6 +358,75 @@ class PausedRequestCannotAdvanceTests(_ReviewFixture, TestCase):
         self.assertIsNone(resume_review(self.fc))
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.status, 'reviewed')
+
+
+class ConcurrentPauseGuardTests(_ReviewFixture, TestCase):
+    """advance_or_finish must not act on a stale in-memory pause flag.
+
+    Two same-stage reviewers posting in the same window load their own
+    `FutureCourse` instance before either decision is saved. If the
+    denier's pause commits to the database after the approver's instance
+    was loaded, the approver's in-memory copy still reads unpaused --
+    without a fresh read inside `advance_or_finish`, that stale copy would
+    complete the round out from under a pause that is, at that moment,
+    already committed.
+    """
+
+    def test_a_pause_committed_after_load_still_blocks_a_stale_advance(self):
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+
+        # The approver's process loads its own copy before anyone decides.
+        stale = FutureCourse.objects.get(pk=self.fc.pk)
+
+        # Both rows resolve their decisions directly (bypassing
+        # record_decision, which would call advance_or_finish itself) --
+        # this stands in for the two reviewers' HTTP requests each posting
+        # its own verdict.
+        self.fc.reviews.get(reviewer=fac).__class__.objects.filter(
+            reviewer=fac).update(decision='not_approved')
+        self.fc.reviews.get(reviewer=dean).__class__.objects.filter(
+            reviewer=dean).update(decision='approved')
+
+        # The denier's request commits the pause through a second,
+        # independent instance -- after `stale` was loaded above.
+        committer = FutureCourse.objects.get(pk=self.fc.pk)
+        committer.review_paused_on = timezone.now()
+        committer.save(update_fields=['review_paused_on'])
+
+        # The approver's request now reaches the choke point with a stale
+        # in-memory `future_course` that still reads unpaused.
+        self.assertFalse(stale.is_review_paused)
+        result = advance_or_finish(stale)
+
+        self.assertIsNone(result)
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertTrue(self.fc.is_review_paused)
+
+    def test_resume_review_is_unaffected_by_the_refresh(self):
+        """resume_review saves its own clear first, so the refresh inside
+        advance_or_finish must pick up that cleared value, not resurrect a
+        stale pause read before the clear."""
+        setting = Setting.objects.get(key='cis_future_sections')
+        setting.value['reviewer_role_config'] = '{"Faculty": 0, "Dean": 0}'
+        setting.save()
+        fac = self._reviewer('fac@x.com', role='Faculty')
+        dean = self._reviewer('dean@x.com', role='Dean')
+        open_review_round(self.fc)
+        record_decision(self.fc, fac, decision='not_approved')
+        record_decision(self.fc, dean, decision='approved')
+        self.fc.refresh_from_db()
+        self.assertTrue(self.fc.is_review_paused)
+
+        self.assertIsNone(resume_review(self.fc))
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+        self.assertFalse(self.fc.is_review_paused)
 
 
 class StageGuardTests(_ReviewFixture, TestCase):

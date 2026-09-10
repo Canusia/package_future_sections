@@ -1199,6 +1199,10 @@ class FutureCourse(models.Model):
             if addr.strip()
         ]
         if not recipients:
+            logger.warning(
+                'No review_escalation_recipients configured; review of '
+                'FutureCourse %s is paused with nobody notified.',
+                row.future_course_id)
             return 0
 
         subject = fs_config.get(

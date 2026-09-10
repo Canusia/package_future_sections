@@ -392,7 +392,16 @@ def advance_or_finish(future_course):
     pause still set -- deny-then-approve finishing what approve-then-deny
     pauses. `resume_review` clears the pause *before* calling this, so the
     staff resume path is unaffected.
+
+    The guard reads `future_course.review_paused_on` fresh from the
+    database first: two same-stage reviewers posting in the same window
+    can otherwise see a stale in-memory `future_course` that predates a
+    concurrent denial's commit, letting the guard see False and complete
+    the round with the pause still set underneath it. `resume_review`
+    saves its own clear before calling here, so this refresh only ever
+    picks up that same cleared value, not a stale pause.
     """
+    future_course.refresh_from_db(fields=['review_paused_on'])
     if future_course.is_review_paused:
         return None
     stage = current_stage(future_course)

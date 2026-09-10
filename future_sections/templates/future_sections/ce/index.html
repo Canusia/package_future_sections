@@ -670,7 +670,7 @@
                                                     }
                                                     if (rv.paused) {
                                                         html += ' <span class="badge badge-dark">Paused — awaiting staff</span>';
-                                                    } else if (rv.stage !== null && rv.stage !== undefined) {
+                                                    } else if (rv.stage !== null && rv.stage !== undefined && rv.stage > 0) {
                                                         html += ' <span class="badge badge-light">Stage ' + rv.stage + '</span>';
                                                     }
                                                 }
