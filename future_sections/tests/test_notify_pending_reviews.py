@@ -157,6 +157,12 @@ class NotifyPendingReviewsTests(TestCase):
         self._set_settings(testers='tester1@x.com, tester2@x.com')
         reviewer = self._reviewer('r@x.com')
         open_review_round(self.fc)
+        # Opening the round now sends its own "your turn" email to this
+        # same reviewer (notify_review_stage, implemented in a later task)
+        # -- flush and clear it so the count below isolates the cron
+        # reminder under test.
+        _flush()
+        mail.outbox = []
 
         summary, log = FutureCourse.notify_pending_reviews()
         _flush()
@@ -188,6 +194,12 @@ class NotifyPendingReviewsTests(TestCase):
     def test_debug_false_uses_the_real_recipient(self):
         reviewer = self._reviewer('r@x.com')
         open_review_round(self.fc)
+        # Opening the round now sends its own "your turn" email to this
+        # same reviewer (notify_review_stage, implemented in a later task)
+        # -- flush and clear it so the count below isolates the cron
+        # reminder under test.
+        _flush()
+        mail.outbox = []
 
         summary, log = FutureCourse.notify_pending_reviews()
         _flush()

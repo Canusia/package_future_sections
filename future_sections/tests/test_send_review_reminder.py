@@ -158,6 +158,12 @@ class SendReviewReminderModelTests(TestCase):
         setting.save()
         reviewer = self._reviewer('r@x.com')
         open_review_round(self.fc)
+        # Opening the round now sends its own "your turn" email to this
+        # same reviewer (notify_review_stage, implemented in a later task)
+        # -- flush and clear it so the count below isolates the manual
+        # reminder under test.
+        _flush()
+        mail.outbox = []
 
         success, message = FutureCourse.send_review_reminder(
             self.fc.id, reviewer.id)
@@ -189,6 +195,12 @@ class SendReviewReminderModelTests(TestCase):
     def test_debug_false_uses_the_real_recipient(self):
         reviewer = self._reviewer('r@x.com')
         open_review_round(self.fc)
+        # Opening the round now sends its own "your turn" email to this
+        # same reviewer (notify_review_stage, implemented in a later task)
+        # -- flush and clear it so the count below isolates the manual
+        # reminder under test.
+        _flush()
+        mail.outbox = []
 
         success, message = FutureCourse.send_review_reminder(
             self.fc.id, reviewer.id)

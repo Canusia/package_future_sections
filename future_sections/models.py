@@ -7,6 +7,7 @@ These models track instructor section projections for upcoming academic years.
 import uuid
 import csv
 import datetime
+import logging
 
 from django.conf import settings
 from django.db import models
@@ -22,6 +23,8 @@ from model_utils import FieldTracker
 
 from cis.models.settings import Setting
 import importlib.util
+
+logger = logging.getLogger(__name__)
 
 
 class NoTestRecipientsConfigured(Exception):
@@ -859,7 +862,7 @@ class FutureCourse(models.Model):
             tuple: (summary, detailed_log)
         """
         from django.conf import settings as django_settings
-        from django.db.models import F
+        from django.db.models import F, OuterRef, Subquery
         from django.template.loader import get_template
         from django.urls import reverse
         from mailer import send_html_mail
@@ -901,11 +904,24 @@ class FutureCourse(models.Model):
             detailed_log['errors'].append(summary)
             return summary, detailed_log
 
-        # Outstanding slots: pending_review requests, live round, undecided.
+        # Outstanding slots: pending_review requests that are not paused,
+        # live round, undecided -- and only the *current* stage. Chasing a
+        # later stage would contradict the whole point of the order.
         outstanding = SectionRequestReview.objects.filter(
             decision='',
             future_course__status='pending_review',
+            future_course__review_paused_on__isnull=True,
             round=F('future_course__review_round'),
+        ).annotate(
+            current_stage=Subquery(
+                SectionRequestReview.objects.filter(
+                    future_course=OuterRef('future_course'),
+                    round=OuterRef('round'),
+                    decision='',
+                ).order_by('weight').values('weight')[:1]
+            ),
+        ).filter(
+            weight=F('current_stage'),
         ).select_related(
             'reviewer',
             'future_course__academic_year',
@@ -1068,6 +1084,17 @@ class FutureCourse(models.Model):
                 'This reviewer has no outstanding decision on this '
                 'request.')
 
+        # CE selects among reviewers; it must not be able to jump the
+        # order. A row above the request's current stage has not been asked
+        # yet, so it cannot be chased. A paused request can still be
+        # chased -- that is precisely the "controlled manually" path.
+        from .review.helpers import current_stage
+
+        if row.weight != current_stage(row.future_course):
+            return False, (
+                'This reviewer is not in the stage currently under '
+                'review.')
+
         reviewer = row.reviewer
         if not reviewer.email:
             return False, 'This reviewer has no email address on file.'
@@ -1099,13 +1126,130 @@ class FutureCourse(models.Model):
 
     @classmethod
     def notify_review_stage(cls, future_course, stage):
-        """Email the current stage's undecided reviewers. See Task 4."""
-        return 0
+        """Tell the current stage's undecided reviewers it is their turn.
+
+        Reuses the `review_notification_*` template -- the same one CE's
+        per-reviewer chase renders for a single row -- so a stage-open mail
+        needs no separate template to configure. Each reviewer gets their
+        own email about this one request.
+
+        Returns the number of emails sent. A reviewer with no address, and
+        a send that cannot be routed in DEBUG (no testers configured), are
+        skipped rather than raising: one unreachable reviewer must not stop
+        the rest of the stage being told.
+        """
+        from django.conf import settings as django_settings
+        from django.urls import reverse
+
+        from .review.helpers import stage_rows
+        from .settings.future_sections import future_sections as fs_settings
+
+        fs_config = fs_settings.from_db()
+        subject = fs_config.get(
+            'review_notification_subject',
+            'Reminder: Section Request Review Needed')
+        message_template = fs_config.get('review_notification_message', '')
+        if not message_template:
+            return 0
+
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+
+        sent = 0
+        for row in stage_rows(future_course, stage).filter(decision=''):
+            if not row.reviewer.email:
+                continue
+            try:
+                cls._send_review_reminder_email(
+                    row.reviewer, [row], subject, message_template, link,
+                    fs_config)
+                sent += 1
+            except NoTestRecipientsConfigured:
+                continue
+            except Exception:
+                logger.exception('Failed to notify reviewer %s',
+                                 row.reviewer_id)
+        return sent
 
     @classmethod
     def notify_review_escalation(cls, row):
-        """Email staff that a reviewer did not approve. See Task 4."""
-        return 0
+        """Tell staff that *row*'s reviewer did not approve the request.
+
+        Recipients come from the `review_escalation_recipients` setting, a
+        comma-separated staff list -- there is no role-derived audience
+        here by design. With none configured nothing is sent; the pause
+        still stands, because pausing is the state change and the email is
+        only the announcement.
+
+        Returns the number of emails sent.
+        """
+        from django.conf import settings as django_settings
+        from django.template import Context, Template
+        from django.template.loader import get_template
+        from django.urls import NoReverseMatch, reverse
+        from mailer import send_html_mail
+
+        from .settings.future_sections import future_sections as fs_settings
+
+        fs_config = fs_settings.from_db()
+        recipients = [
+            addr.strip()
+            for addr in (fs_config.get('review_escalation_recipients') or '')
+            .split(',')
+            if addr.strip()
+        ]
+        if not recipients:
+            return 0
+
+        subject = fs_config.get(
+            'review_escalation_subject', 'Section Request Not Approved')
+        message_template = fs_config.get('review_escalation_message', '')
+        if not message_template:
+            return 0
+
+        fc = row.future_course
+        tc = fc.teacher_course
+        instructor = tc.teacher_highschool.teacher.user if tc else None
+        site_url = getattr(django_settings, 'SITE_URL', '')
+        try:
+            link = f"{site_url}{reverse('future_sections_ce:future_sections')}"
+        except NoReverseMatch:
+            link = site_url
+
+        text_body = Template(message_template).render(Context({
+            'reviewer_first_name': row.reviewer.first_name,
+            'reviewer_last_name': row.reviewer.last_name,
+            'reviewer_role': row.role,
+            'comment': row.comment or '',
+            'course': str(tc.course) if tc else '',
+            'highschool': (
+                tc.teacher_highschool.highschool.name if tc else ''),
+            'instructor_first_name': (
+                instructor.first_name if instructor else ''),
+            'instructor_last_name': (
+                instructor.last_name if instructor else ''),
+            'academic_year': str(fc.academic_year) if fc.academic_year else '',
+            'link': link,
+        }))
+        html_body = get_template('cis/email.html').render(
+            {'message': text_body})
+
+        sent = 0
+        for address in recipients:
+            try:
+                to = route_notification_recipients(fs_config, address)
+            except NoTestRecipientsConfigured:
+                continue
+            try:
+                send_html_mail(
+                    subject, text_body, html_body,
+                    django_settings.DEFAULT_FROM_EMAIL, to)
+                sent += 1
+            except NoTestRecipientsConfigured:
+                continue
+            except Exception:
+                logger.exception('Failed to escalate denial to %s', address)
+        return sent
 
 
 class FutureSection(models.Model):
