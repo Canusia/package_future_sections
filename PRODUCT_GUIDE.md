@@ -87,7 +87,7 @@ These settings control whether and how HS administrators are asked to review the
 | Setting | What It Controls |
 |---------|-----------------|
 | **Teaching Form Configuration** | Visual UI for controlling which fields appear on the section request form, which are required, custom labels, display order (by weight), and whether to show syllabus upload. Fields: term, estimated enrollment, class period, instruction mode, high school course name, number of sections, full year, trimester, fall only, spring only, notes, teacher changed. |
-| **Add Teacher Form Configuration** | Visual UI for controlling the add-teacher form fields: teacher first name, last name, and email. The school, course, term, and teacher fields are always included. |
+| **Add Teacher Form Configuration** | Visual UI for controlling the add-teacher form fields: teacher first name, last name, and email. The school, course, term, and teacher fields are always included. The same **Add Teacher Form Fields** card also includes two document upload rows, "Syllabus" and "Class Assessment", with the usual Visible / Required / Custom Label / drag-order controls. These are independent of the teaching form's own Syllabus and Assessment Upload fields — a school can be asked for documents on both forms without them overwriting each other. CE staff see the uploaded files through the `{new_teacher_syllabus}` and `{new_teacher_class_assessment}` Display Template placeholders. |
 
 ### Reviewed Notification
 

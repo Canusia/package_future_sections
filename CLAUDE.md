@@ -56,12 +56,36 @@ All FKs to cis models use explicit `related_name` with `fs_` prefix (e.g., `fs_f
 - `get_export_labels()` - Labels for CSV exports
 - `format_section_display()` - Renders section display from template
 
-Available fields: `estimated_enrollment`, `class_period`, `location`, `instruction_mode`, `section_number`, `highschool_course_name`, `number_of_sections`, `full_year`, `trimester`, `fall_only`, `spring_only`, `notes`, `teacher_changed`, `new_teacher_name`, `highschool_title_changed`, `new_highschool_title`, `start_date`, `end_date`, `assessment_upload`, `new_teacher_email`.
+Available fields: `estimated_enrollment`, `class_period`, `location`, `instruction_mode`, `section_number`, `highschool_course_name`, `number_of_sections`, `full_year`, `trimester`, `fall_only`, `spring_only`, `notes`, `teacher_changed`, `new_teacher_name`, `highschool_title_changed`, `new_highschool_title`, `start_date`, `end_date`, `assessment_upload`, `new_teacher_email`, `new_teacher_syllabus`, `new_teacher_class_assessment`.
 
-`course_type` and `course_request_type` are declared on the same schema (so their values
-ride in the same `section_info` JSON) but are configured under **Add Teacher Form Fields**
-and rendered only by `AddNewTeacherForm` — `TeacherCourseSectionForm` always hides them.
-See `TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS`.
+`course_type`, `course_request_type`, `new_teacher_syllabus`, and
+`new_teacher_class_assessment` are declared on the same schema (so their values ride in the
+same `section_info` JSON) but are configured under **Add Teacher Form Fields** and rendered
+only by `AddNewTeacherForm` — `TeacherCourseSectionForm` always hides them. See
+`TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS` (now four names: the two course-type
+selects plus the two new-teacher uploads).
+
+`new_teacher_syllabus` and `new_teacher_class_assessment` are file fields
+(`widget_type: file`), deliberately separate from the teaching form's own `syllabus` and
+`assessment_upload` — a tenant can collect documents on both forms without the two sharing a
+storage key. `AddNewTeacherForm` cannot simply un-hide the parent's fields for these: the
+parent (`TeacherCourseSectionForm.__init__`) always builds every `ADD_TEACHER_ONLY_FIELDS`
+entry as a hidden, non-required `CharField` regardless of type, and assigning a widget to an
+existing field cannot turn a `CharField` into a `FileField`. `AddNewTeacherForm` instead
+rebuilds each add-teacher-only file field from scratch via
+`TeachingSectionFieldSchema.make_django_form_field()`, keyed off `add_teacher_form_config`
+(same pattern it already used for the `course_type` / `course_request_type` selects).
+Replacing an existing dict key preserves its position, so drag-configured field order
+survives the rebuild.
+
+Because `TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS` are excluded from
+`teaching_form_config['fields']`, the teaching template's main render loop never emits them —
+so nothing posts their value back on an ordinary teaching-form save, and
+`build_section_info_from_formset` used to overwrite them with `''`. They must be rendered as
+hidden inputs on the teaching form via the `add_teacher_only_fields` template tag
+(`templatetags/future_sections_tags.py`) so their stored value rides along on every save;
+skipping this silently erases add-teacher-only answers (including `course_type` and
+`course_request_type`) the first time anyone edits the teaching form for that course.
 
 ## Releasing
 

@@ -3,6 +3,32 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.9.0
+
+### Added
+
+* **Two configurable uploads on the Add Teacher form.** `new_teacher_syllabus`
+  ("Syllabus") and `new_teacher_class_assessment` ("Class Assessment") join the
+  **Add Teacher Form Fields** settings card with the usual Visible / Required /
+  Custom Label / drag-order controls. They are deliberately separate from the
+  teaching form's `syllabus` and `assessment_upload` — a tenant can collect
+  documents in both places without the two sharing a storage key or a
+  configuration entry. Each upload is stored under its own key on the section
+  and renders as a link through the `{new_teacher_syllabus}` /
+  `{new_teacher_class_assessment}` Display Template placeholders. They are not
+  added to the Future Classes export, whose columns follow the teaching config.
+
+### Fixed
+
+* **Answers collected only on the Add Teacher form are no longer erased by a
+  teaching save.** The teaching template renders only the fields listed in
+  `teaching_form_config`, so an add-teacher-only answer was never posted back
+  and `build_section_info_from_formset` wrote `''` over it: an upload or a
+  course-type selection disappeared the first time anyone edited the teaching
+  form for that course. Those fields now ride along as hidden inputs (new
+  `add_teacher_only_fields` template tag). Affected `course_type` and
+  `course_request_type` in every release since they were introduced.
+
 ## 2026.8.0
 
 ### Added
