@@ -89,6 +89,26 @@ These settings control whether and how HS administrators are asked to review the
 | **Teaching Form Configuration** | Visual UI for controlling which fields appear on the section request form, which are required, custom labels, display order (by weight), and whether to show syllabus upload. Fields: term, estimated enrollment, class period, instruction mode, high school course name, number of sections, full year, trimester, fall only, spring only, notes, teacher changed. |
 | **Add Teacher Form Configuration** | Visual UI for controlling the add-teacher form fields: teacher first name, last name, and email. The school, course, term, and teacher fields are always included. The same **Add Teacher Form Fields** card also includes two document upload rows, "Syllabus" and "Class Assessment", with the usual Visible / Required / Custom Label / drag-order controls. These are independent of the teaching form's own Syllabus and Assessment Upload fields — a school can be asked for documents on both forms without them overwriting each other. CE staff see the uploaded files through the `{new_teacher_syllabus}` and `{new_teacher_class_assessment}` Display Template placeholders. |
 
+### Section Request Review
+
+These settings control whether submitted requests must go through reviewer approval, and in what order.
+
+| Setting | What It Controls |
+|---------|-----------------|
+| **Do course proposals need to be reviewed?** | If "Yes", CE can send a submitted request into review instead of straight to Reviewed. |
+| **Reviewer Roles** | Which CourseAdministrator role(s) on the course (e.g. Faculty, Dept. Chair, Dean) are allowed to review section requests. |
+| **Reviewer Roles & Order** | A card, below the Reviewer Roles checkboxes, that gives each reviewer role a number ("weight"). Roles that share a number are asked together, at the same time — exactly like before this card existed. Roles with different numbers are asked in order, lowest first: one role's approval is what opens the next number up. The first time you open this card on a tenant that has never used it, it comes pre-filled from your existing Reviewer Roles at weight 1 (everyone in one group, asked together); saving it also keeps the Reviewer Roles checkboxes in sync with whichever roles the card includes. |
+| **Assign a mentor during review?** | If "Yes", an approval must include a mentor (an existing CourseAdministrator on the course, or a newly created one). |
+
+### Review Escalation (Denied Decisions)
+
+These settings control what happens — and who is told — when a reviewer does not approve a request.
+
+| Setting | What It Controls |
+|---------|-----------------|
+| **Escalation Recipients** | Comma-separated staff email addresses. When any reviewer denies a request, this list is emailed and the request pauses: no further reviewer is notified until a staff member acts (see "Notify next stage" below). This is a plain staff list, not derived from a role. |
+| **Escalation Email Subject / Message** | Subject and body of the denial email. Shortcodes: `{{reviewer_first_name}}`, `{{reviewer_last_name}}`, `{{reviewer_role}}`, `{{comment}}`, `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}`, `{{academic_year}}`, `{{link}}`. |
+
 ### Reviewed Notification
 
 These settings control the email sent when CE staff marks a section request as "Reviewed".
@@ -146,7 +166,7 @@ These settings control the email sent to HS administrators after they confirm an
 **Course Requests Dashboard** (`/ce/future_sections/`)
 
 - Three DataTable tabs:
-  1. **Section Requests** - All submitted FutureCourse records with status, school, instructor, course, and section details.
+  1. **Section Requests** - All submitted FutureCourse records with status, school, instructor, course, and section details. When review is enabled, each row in review shows a stage badge ("Stage N") or a "Paused — awaiting staff" badge, and a Review filter (Approved / Not Approved / Pending / **Paused (not approved)**) narrows the list. Clicking a row's review progress opens the **reviewers modal** — every snapshotted reviewer, their decision, and whose turn it currently is ("Current stage"); a **Notify reviewers** button appears there whenever the request is paused.
   2. **School Progress** - FutureProjection records showing which schools have confirmed personnel and sections.
   3. **Pending Requests** - Instructor-course combinations that have not yet been responded to.
   4. **Notification Logs** - History of pending notification emails sent by the system.
@@ -167,7 +187,7 @@ Reports are accessed from **CE Portal > Reports**. Each generates a downloadable
 
 | Report | Description | Parameters |
 |--------|-------------|------------|
-| **Section Requests Export** | All submitted section requests for a given academic year. Includes school, instructor, course, offering status, and all dynamic fields from Teaching Form Configuration (term, enrollment, etc.). One row per section. | Academic Year |
+| **Section Requests Export** | All submitted section requests for a given academic year. Includes school, instructor, course, offering status, and all dynamic fields from Teaching Form Configuration (term, enrollment, etc.). One row per section. When review is enabled, also includes review round, **Current Stage**, **Review Paused**, and the reviewer/decision/mentor/decided-on/comment columns for the live round (multiple reviewers are joined with `; ` in one cell). | Academic Year |
 | **Pending Section Requests - Course(s) Export** | Instructor-course combinations that have NOT submitted a response. Useful for identifying who still needs to respond. Includes school, instructor name, course, and status. | Academic Year |
 | **Pending Section Requests - HS Admin Export** | HS administrators at schools that have pending requests. Includes school details (name, address, phone, CEEB), admin contact info, position, and status. Useful for targeted outreach. | Academic Year, Position(s) |
 
@@ -179,12 +199,24 @@ On the **Course Requests Dashboard**, CE staff can select one or more section re
 
 | Action | What It Does |
 |--------|-------------|
-| **Mark as Reviewed** | Sets the status of selected records to "Reviewed". **Note:** The bulk action does not trigger the review notification email (see Known Limitation below). |
-| **Mark as Submitted** | Resets the status of selected records back to "Submitted". This can be used if a record was marked as reviewed prematurely. No email is sent. |
+| **Mark as Pending Review** | Only when review is enabled. Opens a review round on each selected `submitted` request: snapshots every qualifying reviewer (per the Reviewer Roles and Reviewer Roles & Order settings) and emails the first stage. Records already pending review or reviewed are skipped and named in the response, as are records with no qualifying reviewer on the course. |
+| **Notify next stage** | Only meaningful on a paused request. Clears the pause and re-notifies whoever is due — the same reviewer(s) again if a stage peer never decided, otherwise the next stage — leaving the earlier denial on the record. Requests that are not paused are skipped and named. Also available as a "Notify reviewers" button in a single request's reviewers modal. |
+| **Mark as Reviewed** | Sets the status of selected records to "Reviewed". Refuses (and names) any record that is still live in `pending_review` — see Known Limitation below and "Review Flow" for why a live round is not force-closed here. |
+| **Mark as Submitted** | Resets the status of selected records back to "Submitted", clearing any pause. This can be used if a record was marked as reviewed prematurely, or to abandon a stuck round and start a new one. No email is sent. |
 
 ### Known Limitation
 
-The "Mark as Reviewed" bulk action updates records directly in the database without triggering Django's save signals. This means the **review notification email is not sent** when using the bulk action, even if the "Send Email When Status Changes to Reviewed" setting is enabled. The notification signal only fires when individual `FutureCourse` records are saved via `.save()`.
+The "Mark as Reviewed" bulk action updates records directly in the database without triggering Django's save signals. This means the **review notification email is not sent** when using the bulk action, even if the "Send Email When Status Changes to Reviewed" setting is enabled. The notification signal only fires when individual `FutureCourse` records are saved via `.save()`. It also refuses any record still in a live review round (see Review Flow) rather than silently force-closing it — reset to Submitted first if you need to abandon that round.
+
+### Review Flow
+
+When "Do course proposals need to be reviewed?" is Yes, a submitted request does not go straight to Reviewed:
+
+1. CE selects one or more `submitted` requests and runs **Mark as Pending Review**. This snapshots every reviewer who currently qualifies (by CourseAdministrator role on the course) and, if the **Reviewer Roles & Order** card gives roles different numbers, groups them into stages — the lowest-numbered group is asked first.
+2. Only the current stage's reviewers are emailed. As each one approves, once every reviewer in that stage has decided, the next stage (if any) is opened and emailed automatically. Approving the last stage marks the request "Reviewed" and sends the usual Reviewed notification (if enabled).
+3. If any reviewer in the current stage **does not approve**, the request pauses instead of moving on: the Escalation Recipients are emailed, nobody else is automatically notified, and the dashboard shows a "Paused — awaiting staff" badge. The request stays locked to the school the whole time.
+4. Staff resolve a paused request with **Notify next stage** (bulk, or the "Notify reviewers" button in the reviewers modal) — this does not discard the denial, it just gets the round moving again — or by resetting the request to Submitted to abandon the round entirely.
+5. A tenant that leaves every role at the same number in the Reviewer Roles & Order card (or never opens the card at all) sees the pre-existing behavior: everyone is asked at once, and the request is Reviewed once they've all decided (with a denial still pausing it rather than closing it, since that rule applies regardless of stage count).
 
 ### Processing Workflow
 
@@ -215,6 +247,9 @@ The CE portal also provides these actions beyond bulk operations:
 
 ### Reviewed Notification
 `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}`
+
+### Review Escalation (Denied Decisions)
+`{{reviewer_first_name}}`, `{{reviewer_last_name}}`, `{{reviewer_role}}`, `{{comment}}`, `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}`, `{{academic_year}}`, `{{link}}`
 
 ### Pending Request Notification
 `{{admin_first_name}}`, `{{admin_last_name}}`, `{{highschool}}`, `{{academic_year}}`, `{{pending_count}}`, `{{link}}`, `{{start_date}}`, `{{end_date}}`

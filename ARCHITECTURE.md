@@ -10,7 +10,7 @@ The `future_sections` app manages instructor section projections for upcoming ac
 
 1. **Configuration Phase**: CE staff configures the survey window, academic year, and form fields via Settings
 2. **Collection Phase**: HS Admins or Instructors submit section requests during the open window
-3. **Review Phase**: CE staff reviews submissions and marks them as "reviewed"
+3. **Review Phase**: When enabled, CE sends submissions through one or more reviewer stages (`pending_review`) before they reach "reviewed"; otherwise CE marks them "reviewed" directly
 4. **Export Phase**: Reports generate exports of submitted and pending requests
 
 ### User Roles
@@ -104,6 +104,63 @@ sequenceDiagram
 
 ### Review Flow
 
+When `require_review` is enabled, a `submitted` request does not go directly to `reviewed`; it passes through `pending_review`, driven by `future_sections/review/helpers.py` rather than the `future_course_status_changed` signal.
+
+**Round vs. stage.** Marking a batch pending review calls `open_review_round(future_course)`, which snapshots every qualifying `CourseAdministrator` as one `SectionRequestReview` row per reviewer for a new `review_round` (`qualifying_reviewers()` — one row per user, at their lowest-weight role if they hold several). That snapshot, not the live `CourseAdministrator` table, is the fixed authority on who may decide for the rest of the round. Within the round, rows sharing a `weight` (from the `reviewer_role_config` setting, `{role: weight}`) form a **stage**; `current_stage()` is the lowest weight with an undecided row. A `reviewer_role_config` that omits a role, or is absent/unparsable, weighs everything 0 — one stage, i.e. the pre-sequential parallel-quorum behaviour.
+
+```mermaid
+sequenceDiagram
+    participant CE as CE Staff
+    participant View as mark_as_pending_review()
+    participant Helper as review/helpers.py
+    participant Model as FutureCourse / SectionRequestReview
+    participant Email as notify_review_stage()
+
+    CE->>View: GET bulk_actions?action=mark_as_pending_review&ids[]=...
+    View->>Helper: open_review_round(fc)
+    Helper->>Model: bulk_create SectionRequestReview rows (role, weight)
+    Helper->>Model: review_round += 1, status='pending_review'
+    Helper->>Email: notify current stage's undecided rows
+    Email-->>CE: JSON success/skip response (no reviewer / already open)
+```
+
+**A decision advances or pauses.** A reviewer's decision goes through `record_decision()`, called from the review detail view:
+
+```mermaid
+sequenceDiagram
+    participant Reviewer
+    participant View as review views
+    participant Helper as record_decision()
+    participant Row as SectionRequestReview
+    participant Stage as advance_or_finish()
+    participant Escalate as notify_review_escalation()
+
+    Reviewer->>View: POST decision (approved / not_approved)
+    View->>Helper: record_decision(fc, reviewer, decision=...)
+    Helper->>Helper: raise NotAReviewerError if row.weight != current_stage(fc)
+    Helper->>Row: save decision, comment, mentor, decided_on
+    alt decision == not_approved
+        Helper->>Model: fc.review_paused_on = now()
+        Helper->>Escalate: email review_escalation_recipients
+        Note over Model: status stays pending_review — locked,<br/>badges/filters/export unaffected
+    else decision == approved and stage complete
+        Helper->>Stage: advance_or_finish(fc)
+        alt another stage remains
+            Stage->>Email: notify_review_stage(fc, next_stage)
+        else no stage remains
+            Stage->>Model: status = 'reviewed'
+        end
+    end
+```
+
+`advance_or_finish()` is the single choke point for every status transition out of `pending_review` and refuses to act while `fc.is_review_paused` — so a stage peer's approval after somebody else's denial cannot complete the round out from under the pause. `NotAReviewerError` (also raised for a decision from outside the live round) is rendered by the view as a 404: under sequential review a reviewer cannot revise a verdict once their stage has closed, whereas the pre-sequential parallel quorum allowed any open slot to decide in any order.
+
+**Notification is stage-scoped, not round-scoped.** Both `notify_review_stage()` (stage-open) and the pre-existing per-reviewer chase (cron `notify_pending_reviews` and CE's "Send reminder") only ever address the current stage's undecided rows (`stage_rows()`); the cron additionally skips any request that `is_review_paused`. `pending_for(user)` — a reviewer's queue — uses a correlated `Exists` for the same reason: a later-stage reviewer is on the request's reviewer list (`visible_future_courses_for`) but not in their own queue until their stage opens.
+
+**Resuming a paused request.** CE's **Notify next stage** action / "Notify reviewers" button calls `resume_review(fc)`, which clears `review_paused_on` and then calls `advance_or_finish()` — so it re-notifies whichever stage is *actually* current: the same stage again if a peer there is still undecided, or the next stage once that stage is complete. It does not always skip ahead, which is why the UI copy says "Notify reviewers" rather than "Notify next stage". `reset_review()` (bulk **Mark as Submitted**) returns the request to `submitted` and also clears the pause; the finished round's rows are left as history under their original round number.
+
+**Legacy bulk `mark_as_reviewed` is unaffected by the above** but is refused for any record still `pending_review` (a live round is not force-closed — reset to `submitted` first), and still bypasses `future_course_status_changed` via `QuerySet.update()`:
+
 ```mermaid
 sequenceDiagram
     participant CE as CE Staff
@@ -111,12 +168,12 @@ sequenceDiagram
     participant Model as FutureCourse
 
     CE->>View: GET bulk_actions?action=mark_as_reviewed&ids[]=...
-    View->>Model: filter(id__in=ids).update(status='reviewed')
-    Note over Model: Uses QuerySet.update() — does NOT<br/>trigger pre_save signal or FieldTracker
-    View-->>CE: JSON success response
+    View->>Model: filter(id__in=eligible_ids).update(status='reviewed')
+    Note over Model: Uses QuerySet.update() — does NOT<br/>trigger pre_save signal or FieldTracker.<br/>Records still pending_review are skipped, not updated.
+    View-->>CE: JSON success response, naming any skipped records
 ```
 
-> **Note:** The `mark_as_reviewed` bulk action uses `QuerySet.update()`, which bypasses Django's `pre_save` signal. This means the `future_course_status_changed` signal handler (which sends review notification emails) is **not triggered** by the bulk review action. The signal only fires when individual `FutureCourse` instances are saved via `.save()`.
+> **Note:** The `mark_as_reviewed` bulk action uses `QuerySet.update()`, which bypasses Django's `pre_save` signal. This means the `future_course_status_changed` signal handler (which sends review notification emails) is **not triggered** by the bulk review action. The signal only fires when individual `FutureCourse` instances are saved via `.save()` — which is how the last stage's approval reaches `reviewed` under sequential review, so that path *does* fire the signal.
 
 ### Confirmation Flow
 
@@ -211,6 +268,8 @@ erDiagram
 
     FutureCourse ||--o{ FutureSection : "sections"
     FutureCourse ||--o| TeacherApplication : "creates app"
+    FutureCourse ||--o{ SectionRequestReview : "review rounds"
+    CustomUser ||--o{ SectionRequestReview : "reviewer / mentor"
 
     FutureCourse {
         uuid id PK
@@ -219,6 +278,20 @@ erDiagram
         json section_info
         json meta
         string status
+        int review_round
+        datetime review_paused_on
+    }
+
+    SectionRequestReview {
+        uuid id PK
+        uuid future_course_id FK
+        uuid reviewer_id FK
+        uuid mentor_id FK
+        int round
+        string role
+        int weight
+        string decision
+        datetime decided_on
     }
 
     FutureProjection {
@@ -303,11 +376,44 @@ FutureCourse
 ├── section_info (JSONField)
 │   ├── teaching: 'yes'/'no'
 │   └── sections: [{term, term_name, estimated_enrollment, ...}]
-├── status (CharField: 'submitted'/'reviewed')
+├── status (CharField: 'submitted'/'pending_review'/'reviewed')
+├── review_round (PositiveIntegerField)  # live review round number
+├── review_paused_on (DateTimeField, null)  # set on a not_approved decision
 ├── started_on, last_viewed_on, submitted_on (DateFields)
 └── tracker (FieldTracker: ['status'])  # For signal notifications
 
 Unique: (teacher_course, academic_year)
+
+`pending_review` and `reviewed` are `LOCKED_STATUSES` — the school may not edit while
+either applies. `is_review_paused` (property) is `review_paused_on is not None`; pause is
+deliberately not encoded as a status, so the lock, badges, filters and export all keep
+working unchanged while paused. See "Review Flow" below for how `review_round` and
+`review_paused_on` are driven by `future_sections/review/helpers.py`.
+```
+
+### SectionRequestReview
+
+One reviewer's slot on one round of review for one section request. The set of rows for
+`future_course.review_round` is the snapshot CE took when the round opened: it fixes both
+who must decide and who is allowed to, so later changes to a reviewer's `CourseAdministrator`
+role neither strand the request nor pull a newcomer into a running round.
+
+```
+SectionRequestReview
+├── id (UUID, PK)
+├── future_course (FK → FutureCourse, related_name='reviews')
+├── reviewer (FK → CustomUser, PROTECT)
+├── round (PositiveIntegerField)
+├── role (CharField)       # CourseAdministrator role at snapshot time
+├── weight (PositiveIntegerField, default=0)  # stage; rows sharing a weight are one stage
+├── decision (CharField: ''/'approved'/'not_approved')
+├── comment (TextField)
+├── mentor (FK → CustomUser, SET_NULL, null)
+├── decided_on (DateTimeField, null)
+└── created_on (DateTimeField, auto_now_add)
+
+Unique: (future_course, reviewer, round)
+Ordering: (round, weight, created_on)
 ```
 
 **Key Methods:**
@@ -329,6 +435,12 @@ Unique: (teacher_course, academic_year)
 - `get_active_course_certificate_status()` - Static method returning teacher course status filters
 - `teaching_or_not` (property) - Returns 'Yes'/'No'
 - `section_display` (property) - Formatted display from template
+- `is_review_paused` (property) - `review_paused_on is not None`
+- `notify_review_stage(future_course, stage)` (classmethod) - Emails the current stage's undecided reviewers using the `review_notification_*` template; returns count sent
+- `notify_review_escalation(row)` (classmethod) - Emails `review_escalation_recipients` about a `not_approved` decision; returns count sent
+- `send_review_reminder(future_course_id, reviewer_id)` (classmethod) - CE's manual per-reviewer chase for one request
+
+**Review helper module (`review/helpers.py`)** — the review state machine lives here, not on the model. Key functions: `open_review_round()`, `qualifying_reviewers()`, `current_stage()`, `stage_rows()`, `record_decision()`, `advance_or_finish()`, `resume_review()`, `reset_review()`, `pending_for()`, `reviewed_for()`, `visible_future_courses_for()`, `get_reviewer_weights()`. See "Review Flow" above for how they fit together.
 
 ### FutureSection
 
@@ -387,8 +499,10 @@ Page Views (ce.py):
 ├── settings()                      # Settings page
 ├── delete_section()                # Delete a FutureSection record
 ├── bulk_actions()                  # Dispatcher for bulk operations
-│   ├── mark_as_reviewed()          # Mark selected as reviewed
-│   └── mark_as_submitted()         # Reset to submitted
+│   ├── mark_as_pending_review()    # Open a review round (snapshot + notify stage 1)
+│   ├── notify_next_stage()         # Clear a pause and re-notify the current stage
+│   ├── mark_as_reviewed()          # Mark selected as reviewed (refuses live pending_review)
+│   └── mark_as_submitted()         # Reset to submitted, clearing any pause
 ├── future_sections_actions()       # AJAX dispatcher for teaching actions
 │   ├── mark_as_teaching()          # CE-specific: mark course as teaching
 │   ├── mark_as_not_teaching()      # CE-specific: mark course as not teaching
@@ -544,6 +658,24 @@ Settings are rendered as a Django form with conditional field visibility control
 | `teaching_form_config` | JSON (hidden) | Dynamic form configuration with visual UI |
 | `add_teacher_form_config` | JSON (hidden) | Add teacher form configuration with visual UI |
 
+#### Section Request Review
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `require_review` | Yes/No | Gates whether `submitted` requests may be sent to `pending_review` at all |
+| `reviewer_roles` | MultiSelect (checkboxes) | CourseAdministrator role(s) allowed to review; kept in sync with `reviewer_role_config`'s inclusions on save |
+| `reviewer_role_config` | JSON (hidden) | `{role: weight}`, written by the inline **Reviewer Roles & Order** card; drives `get_reviewer_weights()` / stage grouping |
+| `assign_mentor` | Yes/No | Whether an approval must collect a mentor |
+| `mentor_default_role` | Select | CourseAdministrator role assigned to a mentor created via `create_or_attach_mentor()` |
+
+#### Review Escalation
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `review_escalation_recipients` | Text (comma-separated) | Staff emails notified on a `not_approved` decision; empty means no escalation email is sent (the pause still applies) |
+| `review_escalation_subject` | Text | Escalation email subject |
+| `review_escalation_message` | HTML | Escalation email template (shortcodes: `{{reviewer_first_name}}`, `{{reviewer_last_name}}`, `{{reviewer_role}}`, `{{comment}}`, `{{course}}`, `{{highschool}}`, `{{instructor_first_name}}`, `{{instructor_last_name}}`, `{{academic_year}}`, `{{link}}`) |
+
 #### Reviewed Status Email
 
 | Field | Type | Visibility | Purpose |
@@ -698,6 +830,7 @@ Exports FutureCourse records with dynamic fields from `teaching_form_config`.
 **Fields:**
 - Base: ID, Added On, Academic Year, High School, CEEB, Teacher Name, Course, Offering Status
 - Dynamic: Fields from `teaching_form_config.fields` with labels from `teaching_form_config.labels`
+- Review (via `_faculty_review_cells()`): Review Round, **Current Stage** (lowest undecided weight in the live round, blank if none), **Review Paused** ("Yes"/blank), then Reviewer(s), Decision(s), Mentor(s), Decided On date(s), Comment(s) — each of the last five joined with `; ` across every row in the live round so the export stays one row per `FutureCourse`
 
 ### pending_future_classes_courses
 

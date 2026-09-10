@@ -15,10 +15,20 @@ Settings key: `cis_future_sections` in the `Setting` model.
 ## Models (`models.py`)
 
 - **FutureProjection** - Tracks a high school's overall survey progress. Unique on `(academic_year, highschool)`. Meta JSON stores confirmation status and history.
-- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`pending_review`/`reviewed`) with `FieldTracker` for signal-based email notifications. `pending_review` and `reviewed` are the locked statuses (`LOCKED_STATUSES`): while in either, the high school administrator and instructor may no longer edit the request — see `utils.assert_editable`. `review_round` tracks the live review round; reviewer decisions live in `SectionRequestReview` rows, not in `section_info`. Can create `TeacherApplication` via `create_teacher_application()`.
+- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`pending_review`/`reviewed`) with `FieldTracker` for signal-based email notifications. `pending_review` and `reviewed` are the locked statuses (`LOCKED_STATUSES`): while in either, the high school administrator and instructor may no longer edit the request — see `utils.assert_editable`. `review_round` tracks the live review round; reviewer decisions live in `SectionRequestReview` rows, not in `section_info`. `review_paused_on` (and the `is_review_paused` property) is set when a reviewer denies a request — see "Review flow: rounds, stages and pause" below. Can create `TeacherApplication` via `create_teacher_application()`.
 - **FutureSection** - Legacy per-section model. `FutureCourse.section_info` now stores primary data, but this model is still used in CE portal deletion and exports.
+- **SectionRequestReview** (`review/helpers.py` operates on it) - One reviewer's slot on one round of review for one section request. Unique on `(future_course, reviewer, round)`. `role` and `weight` are copied from the qualifying `CourseAdministrator` at snapshot time (`qualifying_reviewers()`), so later role/weight changes never strand or reshuffle a live round. `decision` (`''`/`approved`/`not_approved`), `comment`, `mentor`, `decided_on` are filled in by `record_decision()`. Ordered `('round', 'weight', 'created_on')`.
 
 All FKs to cis models use explicit `related_name` with `fs_` prefix (e.g., `fs_futurecourse_set`).
+
+## Review flow: rounds, stages and pause (`review/helpers.py`)
+
+- **Round vs. stage.** `open_review_round()` snapshots every qualifying reviewer as `SectionRequestReview` rows for one `review_round`, in one shot — that snapshot is the fixed authority on who may decide. Within a round, rows sharing a `weight` are one **stage**: `current_stage()` is the lowest weight with an undecided row. `weight` comes from the `reviewer_role_config` setting (`{role: weight}`, edited via the **Reviewer Roles & Order** settings card, ported from instructor_app); a role the config omits, or an absent/unparsable config, weighs 0 — every row lands in one stage, i.e. exactly the pre-sequential parallel-quorum behaviour. A user holding two qualifying roles is snapshotted once, under the lower-weight role (`qualifying_reviewers()`).
+- **Notification is stage-scoped, not round-scoped.** Opening a round, and every stage-completing approval (`advance_or_finish()`), notifies only the current stage's undecided rows (`_notify_current_stage()` → `FutureCourse.notify_review_stage()`, reusing the `review_notification_*` email template). `pending_for(user)` (a reviewer's queue) and both reminder paths — the date-gated cron and CE's manual per-reviewer "Send reminder" — are likewise scoped to the current stage via `stage_rows()`/a correlated `Exists`, not the whole round: a later-stage reviewer sees the request in `visible_future_courses_for()` but not in their queue until their stage opens.
+- **`record_decision()` only accepts a decision from the current stage.** A row whose `weight != current_stage(future_course)` raises `NotAReviewerError` (rendered by the view as a 404) — a reviewer cannot revise a verdict after their stage has closed, which the pre-sequential parallel quorum allowed (any open slot, any order).
+- **Pause is not a fourth status.** A `not_approved` decision sets `FutureCourse.review_paused_on` (via `record_decision`) instead of letting the round complete, and emails `review_escalation_recipients` (`_escalate_denial()` → `FutureCourse.notify_review_escalation()`). The request stays `pending_review`, so the school-lock, badges, filters (a `paused` option) and export are unaffected — only automatic notification stops. `advance_or_finish()` is the single choke point for every status transition and refuses to act while `is_review_paused` is true, so a stage peer's approval after somebody's denial cannot complete the round out from under the pause.
+- **`resume_review()`** clears the pause and calls `advance_or_finish()`, so it re-notifies whichever stage is *actually* current: the denier's own stage again if a peer there is still undecided, or the following stage once that stage is complete. It does not always advance to a new stage — the CE "Notify next stage" action and its button are deliberately labelled "Notify reviewers" for this reason. `reset_review()` (back to `submitted`) also clears the pause; history rows from the finished round are left untouched.
+- **Backward compatibility:** every pre-existing `SectionRequestReview` row defaults `weight` to 0, so an unmigrated tenant (or one that never opens the new settings card) has exactly one stage — the parallel quorum behaves identically, except that opening a round now also emails that one stage immediately rather than only via the cron/manual reminder.
 
 ## Key Dependencies
 
@@ -106,7 +116,9 @@ spell out `future_sections.future_sections.*`. Use relative imports, or `PKG` fr
 
 ## Settings Form (`settings/future_sections.py`)
 
-Large Django form with sections: General, Portal Messages, School Personnel, Course & Instructor Configuration, Form Configuration (visual UI), Reviewed Email, Pending Notifications, Confirmation Email. JS in `staticfiles/future_sections/js/settings.js` handles conditional toggles and form config UIs.
+Large Django form with sections: General, Portal Messages, School Personnel, Course & Instructor Configuration, Form Configuration (visual UI), Section Request Review, Review Escalation, Reviewed Email, Pending Notifications, Confirmation Email. JS in `staticfiles/future_sections/js/settings.js` handles conditional toggles and form config UIs.
+
+The **Section Request Review** section's `reviewer_role_config` is a hidden `CharField` (JSON `{role: weight}`) driven by the **Reviewer Roles & Order** card, built inline in `future_sections.py` (not `settings.js`). On first load, when no config is saved, the card seeds itself from the existing `reviewer_roles` checkboxes at weight 1 (one stage); saving keeps `reviewer_roles` (still "which roles may review" everywhere else) in sync with the card's inclusions. The **Review Escalation** section's `review_escalation_recipients` (comma-separated staff emails, no role-derived audience) plus `review_escalation_subject`/`review_escalation_message` control the denial email — see "Review flow" above.
 
 ## Signals (`signals.py`)
 
@@ -119,7 +131,7 @@ Large Django form with sections: General, Portal Messages, School Personnel, Cou
 
 ## Reports (`reports/`)
 
-- `future_classes` - Section Requests Export (dynamic fields from teaching_form_config)
+- `future_classes` - Section Requests Export (dynamic fields from teaching_form_config). Includes eight review columns per `_faculty_review_cells()` (round, current stage weight, "Yes"/"" for paused, then reviewer/decision/mentor/decided-on/comment joined with `; `), headed **Current Stage** and **Review Paused** among others.
 - `pending_future_classes_courses` - Pending requests by course
 - `pending_future_classes` - Pending requests by HS admin
 

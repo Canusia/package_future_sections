@@ -3,6 +3,61 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.10.0
+
+### Added
+
+* **Weighted sequential review.** A new **Reviewer Roles & Order** settings card
+  (ported from instructor_app's `reviewer_role_config`) gives each reviewer role
+  a weight. Opening a review round still snapshots every qualifying reviewer —
+  the snapshot remains the authority on who may decide — but each row now
+  records the weight its role carried, and rows sharing a weight form a
+  **stage**. Only the current stage is notified; an approval that completes a
+  stage notifies the next one; approving the last stage marks the request
+  `reviewed`. **Roles sharing one weight behave exactly like the previous
+  parallel quorum**, which is also how existing rows are backfilled (`weight`
+  defaults to 0), so a tenant that never opens the new card sees no change to
+  the review flow itself, beyond the stage-open email below.
+* **A denial pauses the request.** `FutureCourse.review_paused_on` is set, the
+  addresses in the new **Escalation Recipients** setting are emailed (with their
+  own subject/message templates), and all automatic notification stops — no
+  later reviewer is told. Pause is deliberately not a fourth status: the request
+  stays `pending_review`, so it stays locked to the school and every badge,
+  filter and export keeps working.
+* **Notify next stage.** A CE action (bulk, and a "Notify reviewers" button in
+  the reviewers modal on a paused request) that clears the pause and re-notifies
+  whoever is currently due — the same stage, if a peer is still undecided, or
+  the next one once the stage is complete — leaving the denial on the record as
+  history. Resetting to `submitted` also clears the pause.
+* The reviewers modal marks whose turn it is ("Current stage"); the CE index
+  badge shows the current stage ("Stage N") or "Paused — awaiting staff"; a new
+  **Paused (not approved)** option joins the review filter; the Future Classes
+  export gains Current Stage and Review Paused columns.
+
+### Changed
+
+* **A `not_approved` decision no longer completes the round.** It previously
+  advanced the request to `reviewed` once every slot was filled, regardless of
+  verdict. It now pauses the request instead, and the escalation recipients are
+  emailed; no later-stage reviewer is notified until staff resume it.
+* **A reviewer can no longer revise their verdict after their stage closes.**
+  `record_decision` now refuses a decision from anyone outside the current
+  stage, raising the existing `NotAReviewerError` (the view renders this as a
+  404). This is correct for a sequential model but narrows what a reviewer
+  could previously do — under the old parallel quorum every open slot could be
+  decided in any order.
+* **Reviewers now receive an email the moment their stage opens** (opening a
+  round, or an approval that advances to the next stage), reusing the
+  `review_notification_*` template. Previously they learned only via the
+  date-gated cron reminder or CE's manual per-reviewer chase. This applies even
+  to a tenant that sets no order, because one undifferentiated stage still
+  opens at round-open.
+* The reviewer reminder cron and CE's per-reviewer "Send reminder" are both
+  scoped to the current stage, and the cron skips paused requests. CE can still
+  chase a current-stage reviewer while paused — that is the manual path.
+* A reviewer's Pending queue shows a request only once their stage opens; a
+  paused request is in nobody's queue.
+
 ## 2026.9.0
 
 ### Added
