@@ -20,25 +20,20 @@ from cis.models.term import AcademicYear, Term
 from cis.validators import validate_html_short_code
 from .models import FutureCourse, FutureProjection
 from .schemas import TeachingSectionFieldSchema
-from .utils import CHOICE_LABEL_SOURCES, sanitize_plain_text
+from .utils import ADD_TEACHER_CHOICE_SOURCES, sanitize_plain_text
 
 
 def parse_choice_list(raw, pairs=False):
     """Parse a pipe-delimited option list into Django choice pairs.
 
-    By default (``pairs=False``) every token becomes ``(token, token)`` —
-    this is the historical behavior of `instruction_modes` and
-    `location_options`, and it is preserved *exactly*, byte for byte,
-    because a plain label may legitimately contain a colon (e.g.
-    ``"Hybrid: F2F and Online"``). Splitting on that colon would silently
-    change both the stored value and the displayed label for existing
-    settings, so no colon splitting happens unless explicitly requested.
+    By default (``pairs=False``) every token becomes ``(token, token)``,
+    so a label may contain a colon (e.g. ``"Hybrid: F2F and Online"``).
 
     With ``pairs=True``, each token is either ``value:Label`` or a bare
     ``Label`` used as both, and only the FIRST colon splits (so a label may
-    still contain colons; a value may not). Use this for option lists that
-    are designed around distinct stored values from the start — it is not
-    a safe default for settings that already exist.
+    still contain colons; a value may not). Every option-list setting
+    (`instruction_modes`, `location_options`, `course_types`,
+    `course_request_types`) is parsed this way.
 
     Blank tokens are dropped in both modes; in ``pairs=True`` mode, tokens
     with an empty value are also dropped.
@@ -70,7 +65,7 @@ def build_course_type_choices(fs_config, initial=None):
     """
     initial = initial or {}
     built = {}
-    for field_name, setting_key in CHOICE_LABEL_SOURCES.items():
+    for field_name, setting_key in ADD_TEACHER_CHOICE_SOURCES.items():
         parsed = parse_choice_list(fs_config.get(setting_key, ''), pairs=True)
         if not parsed:
             built[field_name] = None
@@ -294,7 +289,7 @@ class TeacherCourseSectionForm(forms.Form):
 
         # Build instruction mode choices from settings
         instruction_mode_choices = parse_choice_list(
-            fs_config.get('instruction_modes', '')) or None
+            fs_config.get('instruction_modes', ''), pairs=True) or None
 
         # If editing existing data, ensure stored instruction_mode value is in choices
         initial = kwargs.get('initial') or {}
@@ -306,7 +301,7 @@ class TeacherCourseSectionForm(forms.Form):
 
         # Build location choices from settings (mirrors instruction_modes)
         location_choices = parse_choice_list(
-            fs_config.get('location_options', '')) or None
+            fs_config.get('location_options', ''), pairs=True) or None
 
         # If editing existing data, ensure the stored location value is selectable
         stored_location = initial.get('location', '')

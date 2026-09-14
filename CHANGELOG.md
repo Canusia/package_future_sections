@@ -3,6 +3,24 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.11.0
+
+### Changed
+
+* **Reviewer Roles & Order is the only reviewer-role control.** The separate
+  **Reviewer Roles** checkbox list is gone; `reviewer_roles` is now hidden and
+  derived on save from the roles the card includes, in weight order. Rows are
+  drag-reorderable like **Teaching Form Fields** (weights renumber on drop; type
+  the same weight on two roles to keep them in one stage), and render in saved
+  order. **Assign a mentor during review?** and the mentor role now sit directly
+  below the card.
+* **Instruction Modes and Locations take `value:Label` pairs**, like Course
+  Request Types, and stored values render as their labels in the section display
+  and export. A plain token is still its own value and label. **Upgrade note:** an
+  existing option whose label contains a colon (e.g. `Hybrid: F2F and Online`)
+  now splits at the first colon — reword it or prefix a value
+  (`hybrid:Hybrid: F2F and Online`) before upgrading.
+
 ## 2026.10.0
 
 ### Added

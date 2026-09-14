@@ -147,10 +147,20 @@ def addable_courses_for_user(request, academic_year, course_type=None, campus=No
 
 
 # Section fields whose options are tenant-configured `value:Label` pairs, and
-# the setting each one's vocabulary comes from. Only these two are parsed with
-# `pairs=True`; `instruction_modes` / `location_options` store the label as the
-# value, so they need no mapping.
+# the setting each one's vocabulary comes from. A stored value renders as its
+# configured label everywhere a section is displayed or exported. A plain
+# token (no colon) is its own value and label, so pre-pair settings keep
+# working unchanged.
 CHOICE_LABEL_SOURCES = {
+    'instruction_mode': 'instruction_modes',
+    'location': 'location_options',
+    'course_type': 'course_types',
+    'course_request_type': 'course_request_types',
+}
+
+# The subset asked only on the Add Teacher form, whose selects
+# `AddNewTeacherForm` rebuilds from settings.
+ADD_TEACHER_CHOICE_SOURCES = {
     'course_type': 'course_types',
     'course_request_type': 'course_request_types',
 }

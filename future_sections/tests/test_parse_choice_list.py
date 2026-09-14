@@ -1,10 +1,8 @@
 """Option lists accept `value:Label` pairs and plain labels alike.
 
-`instruction_modes` and `location_options` have always been plain
-pipe-delimited labels, used as both value and label. The course-type fields
-need distinct stored values so an option can be reworded without orphaning
-saved records, so the parser accepts both forms and the old one keeps its
-exact previous meaning.
+Every option-list setting is parsed with `pairs=True`, so an option can be
+reworded without orphaning saved records, while a plain label keeps meaning
+itself as both value and label.
 """
 from django.test import TestCase
 
@@ -59,10 +57,8 @@ class ParseChoiceListTests(TestCase):
         self.assertEqual(parse_choice_list('dual:', pairs=True), [('dual', 'dual')])
 
     def test_regression_bare_mode_does_not_split_a_label_containing_a_colon(self):
-        # A plain instruction_modes/location_options label may legitimately
-        # contain a colon (e.g. "Hybrid: F2F and Online"). Without pairs=True,
-        # it must remain one whole choice with the colon intact, not split
-        # into a separate value/label pair.
+        # Without pairs=True a label containing a colon (e.g. "Hybrid: F2F
+        # and Online") stays one whole choice, not a value/label pair.
         self.assertEqual(
             parse_choice_list('Hybrid: F2F and Online'),
             [('Hybrid: F2F and Online', 'Hybrid: F2F and Online')],

@@ -501,9 +501,7 @@ function initReviewToggles() {
     if (!$require.length && !$assign.length) return;
 
     var $form = $require.length ? $require.closest('form') : $assign.closest('form');
-    var $reviewerRoles = $form.find('input[name="reviewer_roles"]')
-        .first()
-        .closest('.form-group');
+    var $reviewerRoles = $('#reviewer-role-config-ui');
     var $assignMentor = $assign.closest('.form-group');
     var $mentorRole = $form.find('select[name="mentor_default_role"]')
         .closest('.form-group');

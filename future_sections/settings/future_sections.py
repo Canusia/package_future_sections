@@ -367,13 +367,14 @@ class future_sections(forms.Form):
                   'approve (or reject) submitted section requests.',
     )
 
+    # Still the "which roles may review" list every reader uses, but no longer
+    # edited directly: clean() derives it from the Reviewer Roles & Order
+    # card's config, which used to duplicate it as a checkbox list.
     reviewer_roles = forms.MultipleChoiceField(
-        widget=forms.CheckboxSelectMultiple,
+        widget=forms.MultipleHiddenInput,
         choices=CourseAdministrator.ROLE_OPTIONS,
         required=False,
         label='Reviewer Roles',
-        help_text='Which CourseAdministrator role(s) on the course are allowed '
-                  'to review section requests.',
     )
 
     reviewer_role_config = forms.CharField(
@@ -383,6 +384,23 @@ class future_sections(forms.Form):
         help_text='JSON {role: weight}; written by the Reviewer Roles & '
                   'Order card. Lower weight reviews first; roles sharing a '
                   'weight are asked together.',
+    )
+
+    assign_mentor = forms.ChoiceField(
+        choices=YES_NO_SELECT_OPTIONS,
+        required=False,
+        label='Assign a mentor during review?',
+        help_text='If enabled, an approval must include a mentor (selected from '
+                  'existing CourseAdministrators on the course, or created new). '
+                  'Only applies when review is required.',
+    )
+
+    mentor_default_role = forms.ChoiceField(
+        choices=[('', '---------')] + list(CourseAdministrator.ROLE_OPTIONS),
+        required=False,
+        label='Mentor CourseAdministrator Role',
+        help_text='When a mentor is assigned, this is the role used on their '
+                  'CourseAdministrator row for the course.',
     )
 
     review_escalation_header = FFields.ReadOnlyField(
@@ -419,23 +437,6 @@ class future_sections(forms.Form):
                   '{{reviewer_last_name}}, {{reviewer_role}}, {{comment}}, '
                   '{{course}}, {{highschool}}, {{instructor_first_name}}, '
                   '{{instructor_last_name}}, {{academic_year}}, {{link}}.',
-    )
-
-    assign_mentor = forms.ChoiceField(
-        choices=YES_NO_SELECT_OPTIONS,
-        required=False,
-        label='Assign a mentor during review?',
-        help_text='If enabled, an approval must include a mentor (selected from '
-                  'existing CourseAdministrators on the course, or created new). '
-                  'Only applies when review is required.',
-    )
-
-    mentor_default_role = forms.ChoiceField(
-        choices=[('', '---------')] + list(CourseAdministrator.ROLE_OPTIONS),
-        required=False,
-        label='Mentor CourseAdministrator Role',
-        help_text='When a mentor is assigned, this is the role used on their '
-                  'CourseAdministrator row for the course.',
     )
 
     # ── Form Configuration ───────────────────────────────────────────────
@@ -480,16 +481,16 @@ class future_sections(forms.Form):
     )
 
     instruction_modes = forms.CharField(
-        max_length=500,
+        max_length=1000,
         required=False,
         label="Available Instruction Modes",
-        help_text='Enter a pipe-delimited list of instruction modes. '
-                  'Example: Traditional (face-to-face)|Hybrid (F2F &amp; Online)|Online. '
+        help_text='Pipe-delimited list for the Instruction Mode field, in the '
+                  'same <code>value:Label</code> form as Course Types. '
                   'These will appear as dropdown options when the Instruction Mode field is enabled.',
         initial='',
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'Traditional (face-to-face)|Hybrid (F2F & Online)|Online'
+            'placeholder': 'f2f:Traditional (face-to-face)|hybrid:Hybrid (F2F & Online)|online:Online'
         })
     )
 
@@ -502,16 +503,16 @@ class future_sections(forms.Form):
     )
 
     location_options = forms.CharField(
-        max_length=500,
+        max_length=1000,
         required=False,
         label="Available Locations",
-        help_text='Enter a pipe-delimited list of locations. '
-                  'Example: Main Campus|North High|Online. '
+        help_text='Pipe-delimited list for the Location field, in the same '
+                  '<code>value:Label</code> form as Course Types. '
                   'These will appear as dropdown options when the Location field is enabled.',
         initial='',
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'Main Campus|North High|Online'
+            'placeholder': 'main:Main Campus|north:North High|online:Online'
         })
     )
 
@@ -782,12 +783,6 @@ class future_sections(forms.Form):
                                'administrators when personnel confirmation is '
                                'required.'))
 
-        review_on = cleaned.get('require_review') == '1'
-        if review_on and not cleaned.get('reviewer_roles'):
-            self.add_error('reviewer_roles',
-                           forms.ValidationError(
-                               'Select at least one reviewer role when review is required.'))
-
         # The card writes this, but a hand-edited or stale value must not
         # reach the stage logic: a bad weight would silently collapse the
         # order, and an unknown role would never match a CourseAdministrator.
@@ -808,6 +803,20 @@ class future_sections(forms.Form):
                     'reviewer_role_config',
                     forms.ValidationError(
                         f'Reviewer role order is invalid: {exc}'))
+            else:
+                # The card is the only control for reviewer roles, so the
+                # participating-roles list is whatever it includes. A config
+                # that was never saved (blank) leaves the posted list alone.
+                cleaned['reviewer_roles'] = sorted(parsed, key=parsed.get)
+
+        review_on = cleaned.get('require_review') == '1'
+        if review_on and not cleaned.get('reviewer_roles'):
+            message = ('Include at least one role in Reviewer Roles & Order '
+                       'when review is required.')
+            self.add_error('reviewer_roles', forms.ValidationError(message))
+            # reviewer_roles is hidden, so the settings page has no input to
+            # hang its error on; a non-field error reaches the save dialog.
+            self.add_error(None, forms.ValidationError(message))
 
         # assign_mentor / mentor_default_role only matter when review is on.
         if review_on and cleaned.get('assign_mentor') == '1' \
@@ -1104,11 +1113,35 @@ class future_sections(forms.Form):
         # Reviewer Roles & Order card. Ported from instructor_app's
         # `reviewer_role_config` UI: one row per CourseAdministrator role,
         # an Include checkbox and a weight. Lower weight is asked first;
-        # roles sharing a weight are asked together as one stage.
+        # roles sharing a weight are asked together as one stage. Rows are
+        # drag-reorderable through field_weights.js (loaded with the Add
+        # Teacher card), which renumbers the weights on drop; the weight
+        # stays editable so two roles can still share a stage.
+        try:
+            saved_rrc = json.loads(
+                (self.initial or {}).get('reviewer_role_config') or '{}')
+            if not isinstance(saved_rrc, dict):
+                saved_rrc = {}
+        except (TypeError, ValueError):
+            saved_rrc = {}
+        role_options = list(CourseAdministrator.ROLE_OPTIONS)
+        # Included roles in saved weight order, then the rest in their
+        # declared order; sorted() is stable, so ties keep declared order.
+        role_options = sorted(
+            role_options,
+            key=lambda option: (
+                option[0] not in saved_rrc,
+                saved_rrc.get(option[0], 0)
+                if isinstance(saved_rrc.get(option[0]), int) else 0,
+            ))
+
         rrc_rows_html = ""
-        for role_value, role_label in CourseAdministrator.ROLE_OPTIONS:
+        for role_value, role_label in role_options:
             rrc_rows_html += (
-                '<tr>'
+                f'<tr draggable="true" data-field="{role_value}">'
+                '<td class="fw-grip text-center text-muted" '
+                'style="cursor:move;width:32px;">'
+                '<i class="fas fa-grip-vertical"></i></td>'
                 f'<td>{role_label}</td>'
                 '<td class="text-center">'
                 f'<input type="checkbox" class="rrc-include" '
@@ -1116,8 +1149,8 @@ class future_sections(forms.Form):
                 '</td>'
                 '<td>'
                 f'<input type="number" class="form-control form-control-sm '
-                f'rrc-weight" data-role="{role_value}" min="1" '
-                f'placeholder="—" style="width:80px;">'
+                f'rrc-weight" data-role="{role_value}" min="1" step="1" '
+                f'placeholder="—">'
                 '</td>'
                 '</tr>'
             )
@@ -1132,8 +1165,9 @@ class future_sections(forms.Form):
             'is asked first; roles sharing a weight are asked together and '
             'the request moves on once all of them have approved. Give every '
             'role the same weight to ask everyone at once.</p>'
-            '<table class="table table-sm table-bordered">'
+            '<table class="table table-sm table-bordered field-weights-table">'
             '<thead><tr>'
+            '<th style="width:32px"></th>'
             '<th>Role</th>'
             '<th class="text-center" style="width:80px">Include</th>'
             '<th style="width:120px">Weight</th>'
@@ -1141,6 +1175,10 @@ class future_sections(forms.Form):
             '<tbody>'
             + rrc_rows_html +
             '</tbody></table>'
+            '<small class="form-text text-muted d-block">'
+            'Drag a row by its handle to change the review order; the weights '
+            'renumber automatically. Type the same weight on two roles to have '
+            'them review together.</small>'
             '</div></div>'
         )
 
@@ -1156,10 +1194,10 @@ class future_sections(forms.Form):
             '  var config={};'
             '  try{config=JSON.parse($hidden.val()||"{}");}catch(e){config={};}'
             # First load on a tenant upgrading from parallel review: seed the
-            # card from the existing reviewer_roles checkboxes at one weight,
-            # so saving changes nothing until someone sets an order.
+            # card from the saved reviewer_roles (hidden inputs) at one
+            # weight, so saving changes nothing until someone sets an order.
             '  if(!Object.keys(config).length){'
-            '    $("input[name=\'reviewer_roles\']:checked").each(function(){'
+            '    $("input[name=\'reviewer_roles\']").each(function(){'
             '      config[$(this).val()]=1;'
             '    });'
             '  }'
@@ -1179,11 +1217,7 @@ class future_sections(forms.Form):
             '      result[role]=w;'
             '    });'
             '    $hidden.val(JSON.stringify(result));'
-            # reviewer_roles stays the "which roles" list every other reader
-            # already uses, so keep the checkboxes in step with the card.
-            '    $("input[name=\'reviewer_roles\']").each(function(){'
-            '      $(this).prop("checked",result.hasOwnProperty($(this).val()));'
-            '    });'
+            # reviewer_roles is derived from this config server-side.
             '  }'
             '  $ui.on("change",".rrc-include",function(){'
             '    var role=$(this).data("role");'
@@ -1194,6 +1228,9 @@ class future_sections(forms.Form):
             '    sync();'
             '  });'
             '  $ui.on("input",".rrc-weight",sync);'
+            # field_weights.js renumbers the weight inputs on drop by
+            # assigning .value, which fires no input event.
+            '  $ui.on("dragend drop",function(){setTimeout(sync,0);});'
             '  $hidden.closest("form").on("submit",sync);'
             '  sync();'
             '}'
