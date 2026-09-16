@@ -56,7 +56,11 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             obj.reviews.filter(round=obj.review_round)
             .select_related('reviewer', 'skipped_by')
             .order_by('weight', 'created_on'))
-        decided = [r for r in rows if r.decision]
+        # A skipped row is taken out of the round, not decided: it is counted
+        # on its own so the badge never reads a skip as a verdict.
+        decided = [
+            r for r in rows
+            if r.decision and r.decision != SectionRequestReview.SKIPPED]
         labels = dict(SectionRequestReview.DECISION_CHOICES)
 
         undecided_weights = [r.weight for r in rows if not r.decision]
@@ -74,7 +78,8 @@ class FutureCourseSerializer(serializers.ModelSerializer):
             'approved': sum(1 for r in decided if r.decision == 'approved'),
             'not_approved': sum(
                 1 for r in decided if r.decision == 'not_approved'),
-            'skipped': sum(1 for r in decided if r.decision == 'skipped'),
+            'skipped': sum(
+                1 for r in rows if r.decision == SectionRequestReview.SKIPPED),
             'can_change_reviewers': obj.status == 'pending_review',
             'stage': stage,
             'paused': obj.is_review_paused,

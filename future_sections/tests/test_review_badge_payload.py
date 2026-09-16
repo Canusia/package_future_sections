@@ -66,6 +66,20 @@ class ReviewBadgePayloadTests(TestCase):
                                   'stage': 0, 'paused': False})
         self.assertEqual(len(reviewers), 2)
 
+    def test_skipped_rows_are_counted_apart_from_decisions(self):
+        from ..review.helpers import skip_reviewer
+        a = self._reviewer('a@x.com')
+        b = self._reviewer('b@x.com')
+        self._reviewer('d@x.com')
+        open_review_round(self.fc)
+        record_decision(self.fc, a, decision='approved')
+        skip_reviewer(self.fc, b.pk, by=a)
+        review = FutureCourseSerializer(self.fc).data['section_display']['review']
+        self.assertEqual(
+            (review['total'], review['decided'], review['approved'],
+             review['not_approved'], review['skipped']),
+            (3, 1, 1, 0, 1))
+
     def test_an_earlier_round_is_not_counted(self):
         a = self._reviewer('a@x.com')
         open_review_round(self.fc)

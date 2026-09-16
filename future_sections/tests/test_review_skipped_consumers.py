@@ -55,6 +55,10 @@ class SkippedConsumersTests(ChangeReviewersBase):
     def test_ce_payload_reports_skip_and_who_did_it(self):
         review = FutureCourseSerializer(self.fc).data['section_display']['review']
         self.assertEqual(review['skipped'], 1)
+        # One skipped, one outstanding: a skip is not a decision.
+        self.assertEqual(review['decided'], 0)
+        self.assertEqual(review['total'], 2)
+        self.assertEqual((review['approved'], review['not_approved']), (0, 0))
         self.assertTrue(review['can_change_reviewers'])
         by_id = {r['reviewer_id']: r for r in review['reviewers']}
         skipped = by_id[str(self.faculty.pk)]

@@ -668,6 +668,9 @@
                                                     if (rv.not_approved) {
                                                         html += ' <span class="badge badge-danger">' + rv.not_approved + ' not approved</span>';
                                                     }
+                                                    if (rv.skipped) {
+                                                        html += ' <span class="badge badge-light">' + rv.skipped + ' skipped</span>';
+                                                    }
                                                     if (rv.paused) {
                                                         html += ' <span class="badge badge-dark">Paused — awaiting staff</span>';
                                                     } else if (rv.stage !== null && rv.stage !== undefined && rv.stage > 0) {
@@ -1092,7 +1095,8 @@
             }
 
             var $heading = $('<p>').addClass('font-weight-bold');
-            $heading.text('Round ' + rv.round + ' — ' + rv.decided + ' of ' + rv.total + ' decided');
+            $heading.text('Round ' + rv.round + ' — ' + rv.decided + ' of ' + rv.total + ' decided' +
+                          (rv.skipped > 0 ? ' — ' + rv.skipped + ' skipped' : ''));
             $body.append($heading);
 
             var $list = $('<div>').addClass('list-group');
@@ -1258,10 +1262,10 @@
             var name = $btn.data('reviewer-name');
             var text = (mode === 'skip')
                 ? name + ' will be marked as skipped and kept in the review history. ' +
-                  'If nobody else in their stage is still to decide, the next stage is emailed ' +
-                  '(or the request is marked reviewed when no one is left).'
+                  'If this completes the current stage, the request moves on to the next stage ' +
+                  '(or is marked reviewed when no one is left).'
                 : name + ' will be deleted from this round with no record kept. ' +
-                  'If they had not decided, the request moves on as it would for a skip.';
+                  'If this completes the current stage, the request moves on the same way.';
 
             swal({
                 title: (mode === 'skip' ? 'Skip ' : 'Delete ') + name + '?',
@@ -1271,6 +1275,7 @@
                 dangerMode: mode === 'delete',
             }).then(function (confirmed) {
                 if (!confirmed) return;
+                $btn.prop('disabled', true);
                 $.blockUI();
                 $.ajax({
                     type: 'POST',
@@ -1282,7 +1287,10 @@
                     },
                     headers: {'X-CSRFToken': window.CSRF_TOKEN},
                     success: function (resp) { $.unblockUI(); reloadAfterReviewerChange(resp); },
-                    error: reviewerChangeFailed
+                    error: function (xhr) {
+                        reviewerChangeFailed(xhr);
+                        $btn.prop('disabled', false);
+                    }
                 });
             });
         });
@@ -1337,19 +1345,23 @@
 
         $(document).on('click', '.submit-add-reviewer', function (e) {
             e.preventDefault();
-            var $form = $(this).closest('.add-reviewer-form');
+            var $btn = $(this).prop('disabled', true);
+            var $form = $btn.closest('.add-reviewer-form');
             $.blockUI();
             $.ajax({
                 type: 'POST',
                 url: "{% url 'future_sections_ce:add_reviewer' %}",
                 data: {
-                    future_course_id: $(this).data('future-course-id'),
+                    future_course_id: $btn.data('future-course-id'),
                     reviewer_id: $form.find('.add-reviewer-select').val(),
                     weight: $form.find('.add-reviewer-weight').val()
                 },
                 headers: {'X-CSRFToken': window.CSRF_TOKEN},
                 success: function (resp) { $.unblockUI(); reloadAfterReviewerChange(resp); },
-                error: reviewerChangeFailed
+                error: function (xhr) {
+                    reviewerChangeFailed(xhr);
+                    $btn.prop('disabled', false);
+                }
             });
         });
 
