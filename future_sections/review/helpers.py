@@ -153,7 +153,7 @@ def reviewed_for(user):
 
     decided = SectionRequestReview.objects.filter(
         future_course=OuterRef('pk'), reviewer=user,
-    ).exclude(decision='')
+    ).exclude(decision__in=['', SectionRequestReview.SKIPPED])
     return visible_future_courses_for(user).filter(Exists(decided))
 
 

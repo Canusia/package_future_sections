@@ -99,6 +99,8 @@ class SectionRequestSerializer(serializers.Serializer):
         row = rows.exclude(decision='').order_by('-round').first()
         if not row:
             return 'Pending'
+        if row.decision == 'skipped':
+            return 'Skipped'
         if row.decision == 'approved':
             mentor = row.mentor
             mentor_name = (

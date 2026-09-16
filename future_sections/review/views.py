@@ -64,7 +64,7 @@ def _get_visible_or_404(request, future_course_id):
 
 
 def _initial_from_row(row, course=None, mentor_role='Faculty'):
-    if not row or not row.decision:
+    if not row or not row.decision or row.decision == SectionRequestReview.SKIPPED:
         return {}
     initial = {
         'decision': row.decision,

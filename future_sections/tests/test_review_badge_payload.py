@@ -62,6 +62,7 @@ class ReviewBadgePayloadTests(TestCase):
         # 0 (d@x.com's undecided row) and the request is not paused.
         self.assertEqual(review, {'round': 1, 'total': 2, 'decided': 1,
                                   'approved': 1, 'not_approved': 0,
+                                  'skipped': 0, 'can_change_reviewers': True,
                                   'stage': 0, 'paused': False})
         self.assertEqual(len(reviewers), 2)
 
