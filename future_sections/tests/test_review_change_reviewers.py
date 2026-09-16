@@ -22,8 +22,9 @@ from cis.models.term import AcademicYear
 
 from ..models import FutureCourse, SectionRequestReview
 from ..review.helpers import (
-    NotAReviewerError, ReviewerChangeError, current_stage, delete_reviewer,
-    open_review_round, record_decision, skip_reviewer,
+    NotAReviewerError, ReviewerChangeError, add_reviewer, addable_reviewers,
+    current_stage, delete_reviewer, lowest_addable_weight, open_review_round,
+    record_decision, skip_reviewer,
 )
 
 LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
@@ -265,3 +266,98 @@ class DeleteReviewerTests(ChangeReviewersBase):
         delete_reviewer(self.fc, faculty.pk, by=self.staff)
 
         self.assertTrue(self.fc.reviews.filter(reviewer=faculty, round=1).exists())
+
+
+class AddReviewerTests(ChangeReviewersBase):
+
+    def test_addable_excludes_everyone_already_on_the_round(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        newcomer = self._reviewer('n@x.com', 'Dept. Chair')
+
+        self.assertEqual(
+            [(u, r, w) for u, r, w in addable_reviewers(self.fc)],
+            [(newcomer, 'Dept. Chair', 20)])
+
+    def test_a_skipped_reviewer_is_not_addable_until_deleted(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+        skip_reviewer(self.fc, faculty.pk, by=self.staff)
+        self.assertEqual(addable_reviewers(self.fc), [])
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+        self.assertEqual([t[0] for t in addable_reviewers(self.fc)], [faculty])
+
+    @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_adding_at_the_current_stage_notifies_only_the_newcomer(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        self._flush_outbox()
+        newcomer = self._reviewer('n@x.com', 'Faculty')
+
+        row = add_reviewer(self.fc, newcomer.pk, by=self.staff)
+
+        self.assertEqual((row.round, row.role, row.weight, row.decision),
+                         (1, 'Faculty', 10, ''))
+        self.assertEqual(self._flush_outbox(), [[newcomer.email]])
+
+    @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_adding_at_a_later_stage_notifies_nobody(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        self._flush_outbox()
+        dean = self._reviewer('d@x.com', 'Dean')
+
+        add_reviewer(self.fc, dean.pk, by=self.staff)
+
+        self.assertEqual(current_stage(self.fc), 10)
+        self.assertEqual(self._flush_outbox(), [])
+
+    def test_staff_may_place_the_newcomer_at_a_chosen_later_stage(self):
+        self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        dean = self._reviewer('d@x.com', 'Dean')
+
+        row = add_reviewer(self.fc, dean.pk, weight=20, by=self.staff)
+
+        self.assertEqual(row.weight, 20)
+
+    def test_a_closed_stage_is_refused(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='approved')
+        newcomer = self._reviewer('n@x.com', 'Faculty')
+
+        self.assertEqual(lowest_addable_weight(self.fc), 20)
+        with self.assertRaises(ReviewerChangeError):
+            add_reviewer(self.fc, newcomer.pk, by=self.staff)  # weight 10
+
+    def test_someone_who_is_not_a_course_reviewer_is_refused(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        stranger = _user('s@x.com')
+
+        with self.assertRaises(ReviewerChangeError):
+            add_reviewer(self.fc, stranger.pk, by=self.staff)
+
+    @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_adding_to_a_paused_request_is_allowed_and_silent(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='not_approved')
+        self._flush_outbox()
+        chair2 = self._reviewer('c2@x.com', 'Dept. Chair')
+
+        add_reviewer(self.fc, chair2.pk, by=self.staff)
+
+        self.assertEqual(self._row(chair2).weight, 20)
+        self.assertEqual(self._flush_outbox(), [])
+
+    def test_a_request_not_under_review_is_refused(self):
+        newcomer = self._reviewer('n@x.com', 'Faculty')
+        with self.assertRaises(ReviewerChangeError):
+            add_reviewer(self.fc, newcomer.pk, by=self.staff)

@@ -518,6 +518,81 @@ def delete_reviewer(future_course, reviewer_id, *, by):
         _advance_if_stage_emptied(future_course, stage_before, weight)
 
 
+def addable_reviewers(future_course):
+    """Qualifying reviewers with no row in the live round, as
+    `(user, role, weight)` triples in stage order.
+
+    A skipped reviewer still has a row, so they are not addable again until
+    CE deletes that row: the round keeps one row per reviewer.
+    """
+    on_round = set(future_course.reviews.filter(
+        round=future_course.review_round,
+    ).values_list('reviewer_id', flat=True))
+    return [
+        triple for triple in qualifying_reviewers(future_course)
+        if triple[0].pk not in on_round
+    ]
+
+
+def lowest_addable_weight(future_course):
+    """The earliest stage a reviewer may still be added to.
+
+    The current stage while anyone is outstanding. Otherwise (a paused
+    round whose every row has decided) the last stage that ran, so an added
+    reviewer can never land before a stage that already closed.
+    """
+    stage = current_stage(future_course)
+    if stage is not None:
+        return stage
+    weights = future_course.reviews.filter(
+        round=future_course.review_round,
+    ).values_list('weight', flat=True)
+    return max(weights, default=0)
+
+
+def add_reviewer(future_course, reviewer_id, *, weight=None, by):
+    """CE adds a qualifying reviewer to the live round.
+
+    *weight* defaults to the reviewer's configured weight and may not be
+    below `lowest_addable_weight`. A reviewer landing in the current stage
+    of an unpaused request is emailed right away, alone, so the rest of the
+    stage is not re-notified. A later stage is emailed when its turn comes.
+    """
+    if future_course.status != 'pending_review':
+        raise ReviewerChangeError('This request is not under review.')
+    triple = next(
+        (t for t in addable_reviewers(future_course)
+         if str(t[0].pk) == str(reviewer_id)),
+        None)
+    if triple is None:
+        raise ReviewerChangeError(
+            'This person is not an active reviewer for the course, or is '
+            'already on this round.')
+    user, role, default_weight = triple
+    weight = default_weight if weight is None else weight
+    if weight < lowest_addable_weight(future_course):
+        raise ReviewerChangeError(
+            'A reviewer cannot be added to a stage that has already closed.')
+
+    try:
+        with transaction.atomic():
+            row = SectionRequestReview.objects.create(
+                future_course=future_course, reviewer=user,
+                round=future_course.review_round, role=role, weight=weight,
+            )
+    except IntegrityError:
+        raise ReviewerChangeError('This person is already on this round.')
+    logger.info(
+        'User %s added reviewer %s at weight %s to round %s of FutureCourse %s',
+        getattr(by, 'pk', None), user.pk, weight, future_course.review_round,
+        future_course.pk)
+
+    if (not future_course.is_review_paused
+            and weight == current_stage(future_course)):
+        FutureCourse.send_review_reminder(future_course.pk, user.pk)
+    return row
+
+
 def round_is_complete(future_course):
     """True when every slot in the live round has a decision.
 
