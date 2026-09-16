@@ -217,6 +217,16 @@ When "Do course proposals need to be reviewed?" is Yes, a submitted request does
 4. Staff resolve a paused request with **Notify next stage** (bulk, or the "Notify reviewers" button in the reviewers modal) — this does not discard the denial, it just gets the round moving again — or by resetting the request to Submitted to abandon the round entirely.
 5. A tenant that leaves every role at the same number in the Reviewer Roles & Order card (or never opens the card at all) sees the pre-existing behavior: everyone is asked at once, and the request is Reviewed once they've all decided (with a denial still pausing it rather than closing it, since that rule applies regardless of stage count).
 
+### Changing Reviewers During Review
+
+From the **reviewers modal**, CE staff can change who is reviewing a request without waiting for a decision:
+
+- **Skip** — offered on any reviewer who has not yet decided. Confirming reads: "<name> will be marked as skipped and kept in the review history. If nobody else in their stage is still to decide, the next stage is emailed (or the request is marked reviewed when no one is left)." The skipped reviewer shows a "Skipped" badge ("by <name> on <date>") in the modal and keeps a **Delete** button. If they open the request, they instead see "You were removed from this review on <date>. No decision is needed from you." with no decision form.
+- **Delete** — offered on any reviewer who has not yet decided, or who has already been skipped. Confirming reads: "<name> will be deleted from this round with no record kept. If they had not decided, the request moves on as it would for a skip." Delete leaves no trace of the reviewer in the round's history, unlike Skip.
+- **Add reviewer** — lists active course administrators in a reviewer role on the course who are not already on the round, with a stage-weight input (minimum: the current stage — a closed stage cannot be reopened). Only someone already assigned to the course as a course administrator in a reviewer role can be added; assign them there first if they are not yet an option. Adding a reviewer at the current stage emails them immediately, unless the request is paused. A skipped reviewer must be deleted before they can be added back to the round.
+
+Neither Skip nor Delete can be used on a reviewer who has already approved or not approved — those decisions are permanent for the round.
+
 ### Processing Workflow
 
 1. Open the **Course Requests Dashboard**.

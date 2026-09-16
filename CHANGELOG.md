@@ -3,6 +3,14 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## Unreleased
+
+### Added
+- CE can **Skip** (kept in history), **Delete**, or **Add** a reviewer on a request's live review round from the Reviewers modal. Taking out the last undecided reviewer at the current stage moves the request to the next stage (emailing it), or marks it reviewed when nobody is left. Paused requests can be changed but are not advanced. (#5)
+
+### Migrations
+- `0008_sectionrequestreview_skipped`: `skipped` decision choice, `skipped_by` FK.
+
 ## 2026.11.0
 
 ### Changed
