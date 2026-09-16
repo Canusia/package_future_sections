@@ -10,6 +10,7 @@ import json
 import logging
 
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -228,6 +229,13 @@ class NotAReviewerError(Exception):
     """The user has no slot in the request's live review round."""
 
 
+class ReviewerChangeError(Exception):
+    """CE's change to a live round's reviewers was refused.
+
+    The message is written for staff and is shown as-is.
+    """
+
+
 def qualifying_reviewers(future_course):
     """(user, role, weight) triples eligible to review *future_course* now.
 
@@ -429,6 +437,58 @@ def resume_review(future_course):
     future_course.review_paused_on = None
     future_course.save(update_fields=['review_paused_on'])
     return advance_or_finish(future_course)
+
+
+def _live_rows_for(future_course, reviewer_id, decisions):
+    """Live-round rows for *reviewer_id* whose decision is in *decisions*,
+    locked for update. Empty for a malformed id rather than raising."""
+    if future_course.status != 'pending_review':
+        raise ReviewerChangeError('This request is not under review.')
+    try:
+        return list(
+            SectionRequestReview.objects.select_for_update().filter(
+                future_course=future_course,
+                round=future_course.review_round,
+                reviewer_id=reviewer_id,
+                decision__in=decisions,
+            ))
+    except (ValidationError, ValueError, TypeError):
+        return []
+
+
+def _advance_if_stage_emptied(future_course, stage_before, weight):
+    """Advance when taking out a row at the current stage completed it.
+
+    A row from a later stage needs nothing here: `advance_or_finish` always
+    moves to the lowest weight still outstanding, so an emptied later stage
+    is passed over when its turn comes. A paused request is left alone by
+    `advance_or_finish` itself.
+    """
+    if weight == stage_before and _stage_is_complete(future_course, weight):
+        advance_or_finish(future_course)
+
+
+def skip_reviewer(future_course, reviewer_id, *, by):
+    """CE takes an outstanding reviewer out of the live round, keeping history.
+
+    The row is marked `skipped` with who (`skipped_by`) and when
+    (`decided_on`). If that completes the current stage, the request advances
+    and the next stage is emailed, or it is marked reviewed when nobody is
+    left. Allowed on a paused request, which stays paused.
+    """
+    stage_before = current_stage(future_course)
+    with transaction.atomic():
+        rows = _live_rows_for(future_course, reviewer_id, [''])
+        if not rows:
+            raise ReviewerChangeError(
+                'This reviewer has no outstanding decision on this request.')
+        row = rows[0]
+        row.decision = SectionRequestReview.SKIPPED
+        row.skipped_by = by
+        row.decided_on = timezone.now()
+        row.save(update_fields=['decision', 'skipped_by', 'decided_on'])
+    _advance_if_stage_emptied(future_course, stage_before, row.weight)
+    return row
 
 
 def round_is_complete(future_course):

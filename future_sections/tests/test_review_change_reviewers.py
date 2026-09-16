@@ -22,7 +22,8 @@ from cis.models.term import AcademicYear
 
 from ..models import FutureCourse, SectionRequestReview
 from ..review.helpers import (
-    NotAReviewerError, current_stage, open_review_round, record_decision,
+    NotAReviewerError, ReviewerChangeError, current_stage, open_review_round,
+    record_decision, skip_reviewer,
 )
 
 LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
@@ -101,3 +102,103 @@ class SkippedDecisionTests(ChangeReviewersBase):
         with self.assertRaises(NotAReviewerError):
             record_decision(self.fc, faculty, decision='approved')
         self.assertEqual(self._row(faculty).decision, 'skipped')
+
+
+class SkipReviewerTests(ChangeReviewersBase):
+
+    @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_skipping_the_only_reviewer_in_a_stage_advances_and_notifies_next(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        chair = self._reviewer('c@x.com', 'Dept. Chair')
+        self._reviewer('d@x.com', 'Dean')
+        open_review_round(self.fc)
+        self._flush_outbox()
+
+        skip_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        row = self._row(faculty)
+        self.assertEqual(row.decision, 'skipped')
+        self.assertEqual(row.skipped_by, self.staff)
+        self.assertIsNotNone(row.decided_on)
+        self.assertEqual(current_stage(self.fc), 20)
+        self.assertEqual(self._flush_outbox(), [[chair.email]])
+
+    @override_settings(EMAIL_BACKEND=LOCMEM, MAILER_EMAIL_BACKEND=LOCMEM)
+    def test_skipping_one_of_several_in_a_stage_does_not_advance(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        self._flush_outbox()
+
+        skip_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.assertEqual(current_stage(self.fc), 10)
+        self.assertEqual(self._flush_outbox(), [])
+
+    def test_skipping_the_last_outstanding_reviewer_marks_reviewed(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        chair = self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='approved')
+
+        skip_reviewer(self.fc, chair.pk, by=self.staff)
+
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+
+    def test_skipping_a_later_stage_reviewer_does_not_advance(self):
+        self._reviewer('f@x.com', 'Faculty')
+        chair = self._reviewer('c@x.com', 'Dept. Chair')
+        self._reviewer('d@x.com', 'Dean')
+        open_review_round(self.fc)
+
+        skip_reviewer(self.fc, chair.pk, by=self.staff)
+
+        self.assertEqual(current_stage(self.fc), 10)
+
+    def test_a_skipped_stage_is_passed_over_when_the_earlier_stage_completes(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        chair = self._reviewer('c@x.com', 'Dept. Chair')
+        self._reviewer('d@x.com', 'Dean')
+        open_review_round(self.fc)
+        skip_reviewer(self.fc, chair.pk, by=self.staff)
+
+        record_decision(self.fc, faculty, decision='approved')
+
+        self.assertEqual(current_stage(self.fc), 30)
+
+    def test_skipping_on_a_paused_request_is_allowed_but_does_not_advance(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        other = self._reviewer('g@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='not_approved')
+
+        skip_reviewer(self.fc, other.pk, by=self.staff)
+
+        self.fc.refresh_from_db()
+        self.assertEqual(self._row(other).decision, 'skipped')
+        self.assertTrue(self.fc.is_review_paused)
+        self.assertEqual(self.fc.status, 'pending_review')
+
+    def test_a_decided_reviewer_cannot_be_skipped(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='approved')
+
+        with self.assertRaises(ReviewerChangeError):
+            skip_reviewer(self.fc, faculty.pk, by=self.staff)
+        self.assertEqual(self._row(faculty).decision, 'approved')
+
+    def test_a_request_not_under_review_is_refused(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        with self.assertRaises(ReviewerChangeError):
+            skip_reviewer(self.fc, faculty.pk, by=self.staff)
+
+    def test_a_malformed_reviewer_id_is_refused_not_raised(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        with self.assertRaises(ReviewerChangeError):
+            skip_reviewer(self.fc, 'not-an-id', by=self.staff)
