@@ -22,8 +22,8 @@ from cis.models.term import AcademicYear
 
 from ..models import FutureCourse, SectionRequestReview
 from ..review.helpers import (
-    NotAReviewerError, ReviewerChangeError, current_stage, open_review_round,
-    record_decision, skip_reviewer,
+    NotAReviewerError, ReviewerChangeError, current_stage, delete_reviewer,
+    open_review_round, record_decision, skip_reviewer,
 )
 
 LOCMEM = 'django.core.mail.backends.locmem.EmailBackend'
@@ -202,3 +202,66 @@ class SkipReviewerTests(ChangeReviewersBase):
         open_review_round(self.fc)
         with self.assertRaises(ReviewerChangeError):
             skip_reviewer(self.fc, 'not-an-id', by=self.staff)
+
+
+class DeleteReviewerTests(ChangeReviewersBase):
+
+    def test_deleting_the_only_reviewer_in_a_stage_removes_the_row_and_advances(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.assertFalse(self.fc.reviews.filter(reviewer=faculty).exists())
+        self.assertEqual(current_stage(self.fc), 20)
+
+    def test_deleting_one_of_several_in_a_stage_does_not_advance(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.assertEqual(current_stage(self.fc), 10)
+
+    def test_deleting_the_last_outstanding_reviewer_marks_reviewed(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.fc.refresh_from_db()
+        self.assertEqual(self.fc.status, 'reviewed')
+
+    def test_a_skipped_row_can_be_deleted_without_advancing_again(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+        skip_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.assertFalse(self.fc.reviews.filter(reviewer=faculty).exists())
+        self.assertEqual(current_stage(self.fc), 10)
+
+    def test_a_decided_row_cannot_be_deleted(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='approved')
+
+        with self.assertRaises(ReviewerChangeError):
+            delete_reviewer(self.fc, faculty.pk, by=self.staff)
+        self.assertEqual(self._row(faculty).decision, 'approved')
+
+    def test_a_prior_round_row_is_not_deleted(self):
+        from ..review.helpers import reset_review
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        reset_review(self.fc)
+        open_review_round(self.fc)
+
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        self.assertTrue(self.fc.reviews.filter(reviewer=faculty, round=1).exists())

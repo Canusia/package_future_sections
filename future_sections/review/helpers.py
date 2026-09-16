@@ -491,6 +491,33 @@ def skip_reviewer(future_course, reviewer_id, *, by):
     return row
 
 
+def delete_reviewer(future_course, reviewer_id, *, by):
+    """CE removes an outstanding or skipped reviewer's row outright.
+
+    Unlike `skip_reviewer` this leaves no history in the round, only a log
+    line. A recorded approval or denial is never deleted. Deleting an
+    outstanding row advances the request exactly as a skip would, and
+    deleting an already-skipped row changes nothing about the stage.
+    """
+    stage_before = current_stage(future_course)
+    with transaction.atomic():
+        rows = _live_rows_for(
+            future_course, reviewer_id, ['', SectionRequestReview.SKIPPED])
+        if not rows:
+            raise ReviewerChangeError(
+                'Only a reviewer who has not decided, or who was skipped, '
+                'can be deleted.')
+        row = rows[0]
+        weight, was_outstanding = row.weight, row.decision == ''
+        row.delete()
+    logger.info(
+        'User %s deleted reviewer %s from round %s of FutureCourse %s',
+        getattr(by, 'pk', None), reviewer_id, future_course.review_round,
+        future_course.pk)
+    if was_outstanding:
+        _advance_if_stage_emptied(future_course, stage_before, weight)
+
+
 def round_is_complete(future_course):
     """True when every slot in the live round has a decision.
 
