@@ -14,7 +14,7 @@ from django.forms.formsets import formset_factory
 from django.template.loader import get_template
 from django.utils.safestring import mark_safe
 from django.views.decorators.clickjacking import xframe_options_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from mailer import send_html_mail
 
@@ -790,6 +790,110 @@ def send_review_reminder(request):
         'action': 'display',
         'title': 'Email Sent' if success else 'Error',
         'message': message
+    })
+
+
+def _reviewer_change_response(message, *, status=200, ok=True):
+    return JsonResponse({
+        'status': 'success' if ok else 'error',
+        'action': 'display',
+        'title': 'Reviewers updated' if ok else 'Not changed',
+        'message': message,
+    }, status=status)
+
+
+def _live_future_course(future_course_id):
+    """The FutureCourse for a client-supplied id, or None (malformed ids too)."""
+    from django.core.exceptions import ValidationError
+    try:
+        return FutureCourse.objects.filter(pk=future_course_id).first()
+    except (ValidationError, ValueError, TypeError):
+        return None
+
+
+def _outcome_suffix(fc):
+    fc.refresh_from_db(fields=['status', 'review_paused_on'])
+    if fc.status == 'reviewed':
+        return ' No reviewer was left, so the request is now marked reviewed.'
+    if fc.is_review_paused:
+        return (' Review is paused: use "Notify reviewers" when you are '
+                'ready to continue.')
+    return ''
+
+
+@require_POST
+def remove_reviewer(request):
+    """CE takes a reviewer out of a request's live review round.
+
+    `mode=skip` keeps the row as history (who and when); `mode=delete`
+    removes it. The helpers re-derive everything from the database, so the
+    client only names a (future_course_id, reviewer_id) pair.
+    """
+    from ..review.helpers import (
+        ReviewerChangeError, delete_reviewer, skip_reviewer)
+
+    mode = request.POST.get('mode')
+    fc = _live_future_course(request.POST.get('future_course_id'))
+    reviewer_id = request.POST.get('reviewer_id')
+    if mode not in ('skip', 'delete') or fc is None or not reviewer_id:
+        return _reviewer_change_response(
+            'Missing or invalid parameters.', status=400, ok=False)
+
+    action = skip_reviewer if mode == 'skip' else delete_reviewer
+    try:
+        action(fc, reviewer_id, by=request.user)
+    except ReviewerChangeError as exc:
+        return _reviewer_change_response(str(exc), status=400, ok=False)
+
+    done = 'Reviewer skipped.' if mode == 'skip' else 'Reviewer deleted.'
+    return _reviewer_change_response(done + _outcome_suffix(fc))
+
+
+@require_POST
+def add_reviewer(request):
+    """CE adds a qualifying reviewer to a request's live review round."""
+    from ..review.helpers import ReviewerChangeError, add_reviewer as _add
+
+    fc = _live_future_course(request.POST.get('future_course_id'))
+    reviewer_id = request.POST.get('reviewer_id')
+    raw_weight = (request.POST.get('weight') or '').strip()
+    try:
+        weight = int(raw_weight) if raw_weight else None
+    except ValueError:
+        weight = -1
+    if fc is None or not reviewer_id or (weight is not None and weight < 0):
+        return _reviewer_change_response(
+            'Missing or invalid parameters.', status=400, ok=False)
+
+    try:
+        _add(fc, reviewer_id, weight=weight, by=request.user)
+    except ReviewerChangeError as exc:
+        return _reviewer_change_response(str(exc), status=400, ok=False)
+    return _reviewer_change_response('Reviewer added.')
+
+
+@require_GET
+def addable_reviewers(request):
+    """Candidates CE may add to a request's live round, and the lowest
+    weight (stage) they may be placed at."""
+    from ..review.helpers import addable_reviewers as _addable, lowest_addable_weight
+
+    fc = _live_future_course(request.GET.get('future_course_id'))
+    if fc is None or fc.status != 'pending_review':
+        return _reviewer_change_response(
+            'This request is not under review.', status=400, ok=False)
+
+    def _name(user):
+        return f'{user.first_name} {user.last_name}'.strip() or user.username
+
+    return JsonResponse({
+        'status': 'success',
+        'min_weight': lowest_addable_weight(fc),
+        'reviewers': [
+            {'reviewer_id': str(user.pk), 'name': _name(user),
+             'role': role, 'weight': weight}
+            for user, role, weight in _addable(fc)
+        ],
     })
 
 
