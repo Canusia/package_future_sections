@@ -334,6 +334,10 @@ def record_decision(future_course, reviewer, *, decision, comment='',
         raise NotAReviewerError(
             'You are not a reviewer on this round.')
 
+    if row.decision == SectionRequestReview.SKIPPED:
+        raise NotAReviewerError(
+            'You were removed from the review of this request.')
+
     # Only the current stage may decide. `visible_future_courses_for` (and
     # so the detail view) spans every round and stage, so without this a
     # later-stage reviewer could post before their turn: that would re-fire

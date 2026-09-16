@@ -51,4 +51,4 @@ class SectionRequestReviewModelTests(TestCase):
     def test_decision_choices(self):
         self.assertEqual(
             SectionRequestReview.DECISION_CHOICES,
-            [('approved', 'Approved'), ('not_approved', 'Not approved')])
+            [('approved', 'Approved'), ('not_approved', 'Not approved'), ('skipped', 'Skipped')])

@@ -1392,11 +1392,20 @@ class SectionRequestReview(models.Model):
     the request pending review: it fixes both who must decide and who is
     allowed to, so later changes to a reviewer's CourseAdministrator rows
     neither strand the request nor pull a newcomer into a running round.
+
+    CE may change that snapshot by hand: ``skipped`` marks a reviewer taken
+    out of the round (``skipped_by`` / ``decided_on`` record who and when),
+    and ``review.helpers.add_reviewer`` inserts a row. A skip is not a
+    verdict. Every "is this outstanding" query tests ``decision=''``, so a
+    skipped row drops out of the stage without further changes.
     """
+
+    SKIPPED = 'skipped'
 
     DECISION_CHOICES = [
         ('approved', 'Approved'),
         ('not_approved', 'Not approved'),
+        (SKIPPED, 'Skipped'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1421,6 +1430,11 @@ class SectionRequestReview(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='mentor_for_section_requests')
     decided_on = models.DateTimeField(null=True, blank=True)
+    #: The CE user who took this reviewer out of the round. Set only on a
+    #: ``skipped`` row, and ``decided_on`` holds when.
+    skipped_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='skipped_section_request_reviews')
     created_on = models.DateTimeField(auto_now_add=True)
 
     class Meta:
