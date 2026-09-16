@@ -104,6 +104,26 @@ class SkippedDecisionTests(ChangeReviewersBase):
             record_decision(self.fc, faculty, decision='approved')
         self.assertEqual(self._row(faculty).decision, 'skipped')
 
+    def test_a_deleted_reviewer_cannot_record_a_decision(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        self._reviewer('g@x.com', 'Faculty')
+        open_review_round(self.fc)
+        delete_reviewer(self.fc, faculty.pk, by=self.staff)
+
+        with self.assertRaises(NotAReviewerError):
+            record_decision(self.fc, faculty, decision='approved')
+        self.assertFalse(self.fc.reviews.filter(reviewer=faculty).exists())
+
+    def test_record_decision_rechecks_status_from_the_database(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        FutureCourse.objects.filter(pk=self.fc.pk).update(status='submitted')
+
+        with self.assertRaises(NotAReviewerError):
+            record_decision(self.fc, faculty, decision='approved')
+        self.assertEqual(self._row(faculty).decision, '')
+        self.assertEqual(self.fc.status, 'submitted')
+
 
 class SkipReviewerTests(ChangeReviewersBase):
 
@@ -267,6 +287,21 @@ class DeleteReviewerTests(ChangeReviewersBase):
 
         self.assertTrue(self.fc.reviews.filter(reviewer=faculty, round=1).exists())
 
+    def test_deleting_on_a_paused_request_is_allowed_and_stays_paused(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        other = self._reviewer('g@x.com', 'Faculty')
+        self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='not_approved')
+
+        delete_reviewer(self.fc, other.pk, by=self.staff)
+
+        self.fc.refresh_from_db()
+        self.assertFalse(self.fc.reviews.filter(reviewer=other).exists())
+        self.assertTrue(self.fc.is_review_paused)
+        self.assertEqual(self.fc.status, 'pending_review')
+        self.assertEqual(current_stage(self.fc), 20)
+
 
 class AddReviewerTests(ChangeReviewersBase):
 
@@ -361,3 +396,26 @@ class AddReviewerTests(ChangeReviewersBase):
         newcomer = self._reviewer('n@x.com', 'Faculty')
         with self.assertRaises(ReviewerChangeError):
             add_reviewer(self.fc, newcomer.pk, by=self.staff)
+
+    def test_a_request_reviewed_behind_a_stale_instance_is_refused(self):
+        self._reviewer('f@x.com', 'Faculty')
+        open_review_round(self.fc)
+        newcomer = self._reviewer('n@x.com', 'Faculty')
+        # Another writer finished the round; self.fc still says pending_review.
+        FutureCourse.objects.filter(pk=self.fc.pk).update(status='reviewed')
+
+        with self.assertRaises(ReviewerChangeError):
+            add_reviewer(self.fc, newcomer.pk, by=self.staff)
+        self.assertFalse(self.fc.reviews.filter(reviewer=newcomer).exists())
+
+    def test_lowest_addable_weight_with_nothing_outstanding_is_the_last_stage(self):
+        faculty = self._reviewer('f@x.com', 'Faculty')
+        chair = self._reviewer('c@x.com', 'Dept. Chair')
+        open_review_round(self.fc)
+        record_decision(self.fc, faculty, decision='approved')
+        record_decision(self.fc, chair, decision='not_approved')
+
+        self.fc.refresh_from_db()
+        self.assertTrue(self.fc.is_review_paused)
+        self.assertIsNone(current_stage(self.fc))
+        self.assertEqual(lowest_addable_weight(self.fc), 20)

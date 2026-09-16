@@ -326,9 +326,33 @@ def _notify_current_stage(future_course):
         logger.exception('Failed to notify review stage')
 
 
+def _lock_request(future_course):
+    """Lock *future_course*'s row for the rest of the open transaction.
+
+    Every writer to a live round -- a reviewer's decision and CE's skip,
+    delete and add -- takes this lock first, so they run one at a time per
+    request and each reads the round, its current stage and the request's
+    status as the previous writer left them. The fields those writers read
+    are copied onto the caller's in-memory instance so it is not stale.
+    """
+    locked = FutureCourse.objects.select_for_update().get(pk=future_course.pk)
+    for field in ('status', 'review_round', 'review_paused_on'):
+        setattr(future_course, field, getattr(locked, field))
+    return future_course
+
+
 def record_decision(future_course, reviewer, *, decision, comment='',
                     mentor=None):
     """Fill in *reviewer*'s slot, advancing the request when it is the last."""
+    with transaction.atomic():
+        _lock_request(future_course)
+        return _record_decision_locked(
+            future_course, reviewer, decision=decision, comment=comment,
+            mentor=mentor)
+
+
+def _record_decision_locked(future_course, reviewer, *, decision, comment,
+                            mentor):
     if future_course.status != 'pending_review':
         raise NotAReviewerError(
             'This request is not open for review.')
@@ -440,13 +464,16 @@ def resume_review(future_course):
 
 
 def _live_rows_for(future_course, reviewer_id, decisions):
-    """Live-round rows for *reviewer_id* whose decision is in *decisions*,
-    locked for update. Empty for a malformed id rather than raising."""
+    """Live-round rows for *reviewer_id* whose decision is in *decisions*.
+
+    Call inside a transaction after `_lock_request`, which is what makes the
+    status check and the read safe. Empty for a malformed id rather than
+    raising."""
     if future_course.status != 'pending_review':
         raise ReviewerChangeError('This request is not under review.')
     try:
         return list(
-            SectionRequestReview.objects.select_for_update().filter(
+            SectionRequestReview.objects.filter(
                 future_course=future_course,
                 round=future_course.review_round,
                 reviewer_id=reviewer_id,
@@ -476,18 +503,19 @@ def skip_reviewer(future_course, reviewer_id, *, by):
     and the next stage is emailed, or it is marked reviewed when nobody is
     left. Allowed on a paused request, which stays paused.
     """
-    stage_before = current_stage(future_course)
     with transaction.atomic():
+        _lock_request(future_course)
         rows = _live_rows_for(future_course, reviewer_id, [''])
         if not rows:
             raise ReviewerChangeError(
                 'This reviewer has no outstanding decision on this request.')
+        stage_before = current_stage(future_course)
         row = rows[0]
         row.decision = SectionRequestReview.SKIPPED
         row.skipped_by = by
         row.decided_on = timezone.now()
         row.save(update_fields=['decision', 'skipped_by', 'decided_on'])
-    _advance_if_stage_emptied(future_course, stage_before, row.weight)
+        _advance_if_stage_emptied(future_course, stage_before, row.weight)
     return row
 
 
@@ -499,23 +527,24 @@ def delete_reviewer(future_course, reviewer_id, *, by):
     outstanding row advances the request exactly as a skip would, and
     deleting an already-skipped row changes nothing about the stage.
     """
-    stage_before = current_stage(future_course)
     with transaction.atomic():
+        _lock_request(future_course)
         rows = _live_rows_for(
             future_course, reviewer_id, ['', SectionRequestReview.SKIPPED])
         if not rows:
             raise ReviewerChangeError(
                 'Only a reviewer who has not decided, or who was skipped, '
                 'can be deleted.')
+        stage_before = current_stage(future_course)
         row = rows[0]
         weight, was_outstanding = row.weight, row.decision == ''
         row.delete()
-    logger.info(
-        'User %s deleted reviewer %s from round %s of FutureCourse %s',
-        getattr(by, 'pk', None), reviewer_id, future_course.review_round,
-        future_course.pk)
-    if was_outstanding:
-        _advance_if_stage_emptied(future_course, stage_before, weight)
+        logger.info(
+            'User %s deleted reviewer %s from round %s of FutureCourse %s',
+            getattr(by, 'pk', None), reviewer_id, future_course.review_round,
+            future_course.pk)
+        if was_outstanding:
+            _advance_if_stage_emptied(future_course, stage_before, weight)
 
 
 def addable_reviewers(future_course):
@@ -558,6 +587,13 @@ def add_reviewer(future_course, reviewer_id, *, weight=None, by):
     of an unpaused request is emailed right away, alone, so the rest of the
     stage is not re-notified. A later stage is emailed when its turn comes.
     """
+    with transaction.atomic():
+        _lock_request(future_course)
+        return _add_reviewer_locked(
+            future_course, reviewer_id, weight=weight, by=by)
+
+
+def _add_reviewer_locked(future_course, reviewer_id, *, weight, by):
     if future_course.status != 'pending_review':
         raise ReviewerChangeError('This request is not under review.')
     triple = next(
