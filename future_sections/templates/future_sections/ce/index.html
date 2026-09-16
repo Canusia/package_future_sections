@@ -1130,6 +1130,16 @@
                         $decisionLine.append(
                             $('<span>').addClass('text-muted ml-2').text(reviewer.decided_on));
                     }
+                } else if (reviewer.decision_code === 'skipped') {
+                    var $decision = $('<span>').addClass('badge badge-secondary');
+                    $decision.text('Skipped');
+                    $decisionLine.append($decision);
+                    var skippedNote = [reviewer.skipped_by ? 'by ' + reviewer.skipped_by : '',
+                                       reviewer.decided_on].filter(Boolean).join(' on ');
+                    if (skippedNote) {
+                        $decisionLine.append(
+                            $('<span>').addClass('text-muted ml-2').text(skippedNote));
+                    }
                 } else {
                     $decisionLine.append($('<span>').addClass('badge badge-light text-muted').text('Awaiting'));
                 }
@@ -1141,19 +1151,52 @@
                     $item.append($comment);
                 }
 
+                var $actions = $('<div>').addClass('mt-2');
                 if (!reviewer.decision_code) {
-                    var $reminderBtn = $('<button>')
+                    $actions.append($('<button>')
                         .attr('type', 'button')
-                        .addClass('btn btn-sm btn-outline-primary send-review-reminder mt-2')
+                        .addClass('btn btn-sm btn-outline-primary send-review-reminder mr-1')
                         .attr('data-future-course-id', rowData.id)
                         .attr('data-reviewer-id', reviewer.reviewer_id)
-                        .text('Send reminder');
-                    $item.append($('<div>').append($reminderBtn));
+                        .text('Send reminder'));
+                }
+                if (rv.can_change_reviewers && !reviewer.decision_code) {
+                    $actions.append($('<button>')
+                        .attr('type', 'button')
+                        .addClass('btn btn-sm btn-outline-warning remove-reviewer mr-1')
+                        .attr('data-future-course-id', rowData.id)
+                        .attr('data-reviewer-id', reviewer.reviewer_id)
+                        .attr('data-reviewer-name', reviewer.name)
+                        .attr('data-mode', 'skip')
+                        .text('Skip'));
+                }
+                if (rv.can_change_reviewers &&
+                        (!reviewer.decision_code || reviewer.decision_code === 'skipped')) {
+                    $actions.append($('<button>')
+                        .attr('type', 'button')
+                        .addClass('btn btn-sm btn-outline-danger remove-reviewer')
+                        .attr('data-future-course-id', rowData.id)
+                        .attr('data-reviewer-id', reviewer.reviewer_id)
+                        .attr('data-reviewer-name', reviewer.name)
+                        .attr('data-mode', 'delete')
+                        .text('Delete'));
+                }
+                if ($actions.children().length) {
+                    $item.append($actions);
                 }
 
                 $list.append($item);
             });
             $body.append($list);
+
+            if (rv.can_change_reviewers) {
+                $body.append($('<button>')
+                    .attr('type', 'button')
+                    .addClass('btn btn-sm btn-outline-secondary open-add-reviewer mt-3 mr-2')
+                    .attr('data-future-course-id', rowData.id)
+                    .text('Add reviewer'));
+                $body.append($('<div>').addClass('add-reviewer-form mt-2'));
+            }
 
             if (rv.paused) {
                 $body.append($('<button>')
@@ -1193,6 +1236,120 @@
                     var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
                     swal('Error', msg, 'error');
                 }
+            });
+        });
+
+        function reloadAfterReviewerChange(resp) {
+            swal(resp.title || 'Success', resp.message, resp.status);
+            $('#reviewersModal').modal('hide');
+            table.ajax.reload(null, false);
+        }
+
+        function reviewerChangeFailed(xhr) {
+            $.unblockUI();
+            var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
+            swal('Error', msg, 'error');
+        }
+
+        $(document).on('click', '.remove-reviewer', function (e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var mode = $btn.data('mode');
+            var name = $btn.data('reviewer-name');
+            var text = (mode === 'skip')
+                ? name + ' will be marked as skipped and kept in the review history. ' +
+                  'If nobody else in their stage is still to decide, the next stage is emailed ' +
+                  '(or the request is marked reviewed when no one is left).'
+                : name + ' will be deleted from this round with no record kept. ' +
+                  'If they had not decided, the request moves on as it would for a skip.';
+
+            swal({
+                title: (mode === 'skip' ? 'Skip ' : 'Delete ') + name + '?',
+                text: text,
+                icon: 'warning',
+                buttons: ['Cancel', mode === 'skip' ? 'Skip reviewer' : 'Delete reviewer'],
+                dangerMode: mode === 'delete',
+            }).then(function (confirmed) {
+                if (!confirmed) return;
+                $.blockUI();
+                $.ajax({
+                    type: 'POST',
+                    url: "{% url 'future_sections_ce:remove_reviewer' %}",
+                    data: {
+                        future_course_id: $btn.data('future-course-id'),
+                        reviewer_id: $btn.data('reviewer-id'),
+                        mode: mode
+                    },
+                    headers: {'X-CSRFToken': window.CSRF_TOKEN},
+                    success: function (resp) { $.unblockUI(); reloadAfterReviewerChange(resp); },
+                    error: reviewerChangeFailed
+                });
+            });
+        });
+
+        $(document).on('click', '.open-add-reviewer', function (e) {
+            e.preventDefault();
+            var futureCourseId = $(this).data('future-course-id');
+            var $form = $('#reviewersModal .add-reviewer-form').empty();
+
+            $.blockUI();
+            $.ajax({
+                type: 'GET',
+                url: "{% url 'future_sections_ce:addable_reviewers' %}",
+                data: {future_course_id: futureCourseId},
+                success: function (resp) {
+                    $.unblockUI();
+                    if (!resp.reviewers.length) {
+                        $form.append($('<p>').addClass('text-muted small').text(
+                            'No other active reviewer is assigned to this course. ' +
+                            'Add them as a course administrator first.'));
+                        return;
+                    }
+                    var $select = $('<select>').addClass('form-control form-control-sm add-reviewer-select');
+                    $.each(resp.reviewers, function (i, r) {
+                        $select.append($('<option>')
+                            .attr('value', r.reviewer_id)
+                            .attr('data-weight', Math.max(r.weight, resp.min_weight))
+                            .text(r.name + ' (' + r.role + ')'));
+                    });
+                    var $weight = $('<input>')
+                        .attr({type: 'number', min: resp.min_weight, step: 1})
+                        .addClass('form-control form-control-sm add-reviewer-weight');
+                    $select.on('change', function () {
+                        $weight.val($select.find(':selected').data('weight'));
+                    }).trigger('change');
+
+                    $form
+                        .append($('<label>').addClass('small mb-0').text('Reviewer'))
+                        .append($select)
+                        .append($('<label>').addClass('small mb-0 mt-2')
+                            .text('Stage weight (lowest allowed: ' + resp.min_weight + ')'))
+                        .append($weight)
+                        .append($('<button>')
+                            .attr('type', 'button')
+                            .addClass('btn btn-sm btn-primary submit-add-reviewer mt-2')
+                            .attr('data-future-course-id', futureCourseId)
+                            .text('Add'));
+                },
+                error: reviewerChangeFailed
+            });
+        });
+
+        $(document).on('click', '.submit-add-reviewer', function (e) {
+            e.preventDefault();
+            var $form = $(this).closest('.add-reviewer-form');
+            $.blockUI();
+            $.ajax({
+                type: 'POST',
+                url: "{% url 'future_sections_ce:add_reviewer' %}",
+                data: {
+                    future_course_id: $(this).data('future-course-id'),
+                    reviewer_id: $form.find('.add-reviewer-select').val(),
+                    weight: $form.find('.add-reviewer-weight').val()
+                },
+                headers: {'X-CSRFToken': window.CSRF_TOKEN},
+                success: function (resp) { $.unblockUI(); reloadAfterReviewerChange(resp); },
+                error: reviewerChangeFailed
             });
         });
 
