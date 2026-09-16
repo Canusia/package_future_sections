@@ -116,3 +116,58 @@ class CEChangeReviewersViewTests(ChangeReviewersBase):
         resp = self._post('add_reviewer', future_course_id=self.fc.id,
                           reviewer_id=newcomer.pk, weight='soon')
         self.assertEqual(resp.status_code, 400)
+
+    def test_an_oversized_weight_is_a_400_and_adds_nobody(self):
+        newcomer = self._reviewer('n@x.com', 'Dean')
+        _safe_force_login(self.client, self.staff)
+        resp = self._post('add_reviewer', future_course_id=self.fc.id,
+                          reviewer_id=newcomer.pk, weight='99999999999')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['message'], 'Missing or invalid parameters.')
+        self.assertFalse(self.fc.reviews.filter(reviewer=newcomer).exists())
+
+    def test_a_negative_weight_is_a_400(self):
+        newcomer = self._reviewer('n@x.com', 'Dean')
+        _safe_force_login(self.client, self.staff)
+        resp = self._post('add_reviewer', future_course_id=self.fc.id,
+                          reviewer_id=newcomer.pk, weight='-5')
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(self.fc.reviews.filter(reviewer=newcomer).exists())
+
+    def test_a_blank_weight_uses_the_configured_weight(self):
+        newcomer = self._reviewer('n@x.com', 'Dean')
+        _safe_force_login(self.client, self.staff)
+        resp = self._post('add_reviewer', future_course_id=self.fc.id,
+                          reviewer_id=newcomer.pk, weight='')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._row(newcomer).weight, 30)
+
+    def test_a_weight_below_the_open_stage_is_a_400_with_the_reason(self):
+        record_decision(self.fc, self.faculty, decision='approved')
+        newcomer = self._reviewer('n@x.com', 'Faculty')
+        _safe_force_login(self.client, self.staff)
+        resp = self._post('add_reviewer', future_course_id=self.fc.id,
+                          reviewer_id=newcomer.pk, weight='10')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('already closed', resp.json()['message'])
+        self.assertFalse(self.fc.reviews.filter(reviewer=newcomer).exists())
+
+    def test_addable_reviewers_on_a_request_not_under_review_is_a_400(self):
+        from ..review.helpers import reset_review
+        reset_review(self.fc)
+        _safe_force_login(self.client, self.staff)
+        resp = self.client.get(reverse('future_sections_ce:addable_reviewers'),
+                               {'future_course_id': self.fc.id})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('not under review', resp.json()['message'])
+
+    def test_removing_on_a_paused_request_says_to_notify_reviewers(self):
+        other = self._reviewer('g@x.com', 'Faculty')
+        from ..review.helpers import add_reviewer
+        add_reviewer(self.fc, other.pk, by=self.staff)
+        record_decision(self.fc, self.faculty, decision='not_approved')
+        _safe_force_login(self.client, self.staff)
+        resp = self._post('remove_reviewer', future_course_id=self.fc.id,
+                          reviewer_id=other.pk, mode='skip')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Notify reviewers', resp.json()['message'])

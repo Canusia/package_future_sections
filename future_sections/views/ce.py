@@ -857,11 +857,17 @@ def add_reviewer(request):
     fc = _live_future_course(request.POST.get('future_course_id'))
     reviewer_id = request.POST.get('reviewer_id')
     raw_weight = (request.POST.get('weight') or '').strip()
-    try:
-        weight = int(raw_weight) if raw_weight else None
-    except ValueError:
-        weight = -1
-    if fc is None or not reviewer_id or (weight is not None and weight < 0):
+    weight, weight_ok = None, True
+    if raw_weight:
+        try:
+            weight = int(raw_weight)
+        except ValueError:
+            weight_ok = False
+        else:
+            # SectionRequestReview.weight is a PositiveIntegerField: a value
+            # outside 0..2147483647 is a DataError (a 500) on Postgres.
+            weight_ok = 0 <= weight <= 2147483647
+    if fc is None or not reviewer_id or not weight_ok:
         return _reviewer_change_response(
             'Missing or invalid parameters.', status=400, ok=False)
 
