@@ -9,7 +9,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='future-sections',
-    version='2026.12.1',
+    version='2026.12.2',
     description='Django app for managing future section requests in MyCE',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -20,6 +20,7 @@ setup(
     include_package_data=True,
     install_requires=[
         'Django>=3.2',
+        'myce_cis>=0.1.7a',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
