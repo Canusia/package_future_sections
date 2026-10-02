@@ -14,6 +14,7 @@ from django.utils.translation import gettext_lazy as _
 from cis.models.highschool_administrator import HSAdministrator, HSPosition, HSAdministratorPosition
 from cis.models.teacher import Teacher, TeacherCourseCertificate, TeacherHighSchool
 
+from cis.highschool_scope import picker_queryset
 from cis.models.highschool import HighSchool
 from cis.models.course import Cohort, Course
 from cis.models.term import AcademicYear, Term
@@ -901,6 +902,9 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
             highschools = HighSchool.objects.filter(
                 id__in=highschools.values_list('highschool__id')
             )
+            # Only schools active on the current campus.
+            highschools = highschools.filter(
+                pk__in=picker_queryset().values('pk'))
 
             # Instructors: only courses they're certified for, scoped to campus.
             self.fields['course'].queryset = addable_courses_for_user(
@@ -914,7 +918,9 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
             return  # Exit early for instructors
 
         self.fields['academic_year_id'].initial = academic_year.id
-        self.fields['highschool'].queryset = highschools
+        # The admin's own schools, narrowed to those active on this campus.
+        self.fields['highschool'].queryset = highschools.filter(
+            pk__in=picker_queryset().values('pk'))
         self.fields['term'].queryset = Term.objects.filter(academic_year=academic_year)
 
         # For HS Admins: all active courses in the selected campus.
