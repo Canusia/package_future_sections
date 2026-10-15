@@ -3,6 +3,11 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.12.3
+
+### Fixed
+- Settings: changing **Requesting Information For** or **Previous Year Reference** no longer leaves the previous year's Cycle / Lookback Terms ticked on the page. Those leftovers could not be unticked and triggered a false "selected terms appear to span multiple academic years" warning. The warning now compares real academic years, so Fall and Spring terms in one academic year no longer set it off. Switching back to a year restores the terms ticked for it.
+
 ## 2026.12.0
 
 ### Added
