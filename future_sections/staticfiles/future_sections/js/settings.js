@@ -551,37 +551,80 @@ function rebuildTermCheckboxes(termName, academicYearId) {
     }
     if (!$group.length) return;
 
-    // Preserve currently-checked term ids across the rebuild.
-    var checked = {};
+    // Remember what was ticked under the year being left, so switching back
+    // restores it; the new year starts from whatever it had before (if any).
+    var memory = $group.data('termSelections') || {};
+    var leavingAy = $group.data('currentAy');
+    if (leavingAy === undefined) {
+        leavingAy = $(AY_TERM_PAIRS.filter(function (p) {
+            return p.termName === termName;
+        })[0].aySelector).data('previousVal');
+    }
+    var leaving = {};
     $('input[name="' + termName + '"]:checked').each(function () {
-        checked[$(this).val()] = true;
+        leaving[$(this).val()] = true;
     });
+    if (leavingAy) memory[leavingAy] = leaving;
+    $group.data('termSelections', memory);
+    $group.data('currentAy', academicYearId || '');
+    // Only terms in the new academic year can be ticked -- the list is rebuilt
+    // from that year.
+    var checked = memory[academicYearId] || {};
+
+    // The list to replace: crispy (bootstrap4) renders each choice as a
+    // div.custom-control, older renders use <ul><li>. Remove every existing
+    // choice so the previous year's terms (still checked, same ids) cannot
+    // linger next to the new list -- duplicate ids sent label clicks to the
+    // hidden-in-plain-sight old inputs, which is why the boxes "would not
+    // uncheck", and the stale checked terms tripped the multi-year warning.
+    var $wrap = $group.find('.term-choice-list').first();
+    if (!$wrap.length) {
+        $wrap = $('<div class="term-choice-list"></div>');
+        var $firstChoice = $group.find('input[name="' + termName + '"]').first();
+        var $anchor = $firstChoice.closest('.custom-control, ul, .form-check');
+        if ($anchor.length) {
+            $anchor.before($wrap);
+        } else {
+            var $hint = $group.find('#hint_id_' + termName);
+            if ($hint.length) { $hint.before($wrap); }
+            else { $group.find('label').first().after($wrap); }
+        }
+    }
+    $group.find('input[name="' + termName + '"]').each(function () {
+        var $choice = $(this).closest('.custom-control, li, .form-check');
+        if ($choice.length && !$choice.closest('.term-choice-list').length) $choice.remove();
+    });
+    $group.find('ul').filter(function () { return !$(this).children().length; }).remove();
+    // Drop a now-empty scroll wrapper left around the removed list.
+    $group.find('.term-scroll').filter(function () { return !$(this).find('input').length; }).remove();
 
     function render(terms) {
         var items = '';
         $.each(terms, function (i, term) {
-            var fieldId = 'id_' + termName + '_' + i;
-            var isChecked = checked[term.id] ? ' checked' : '';
+            var fieldId = 'id_' + termName + '_ay_' + i;
+            var ay = term.academic_year || {};
+            var label = (ay.name ? ay.name + ', ' : '') + term.label;
             items +=
-                '<li><label for="' + fieldId + '">' +
-                '<input type="checkbox" name="' + termName + '" value="' +
-                term.id + '" id="' + fieldId + '"' + isChecked + '> ' +
-                term.label + '</label></li>';
+                '<div class="custom-control custom-checkbox">' +
+                '<input type="checkbox" class="custom-control-input" name="' + termName +
+                '" value="' + term.id + '" id="' + fieldId + '" data-academic-year="' +
+                $('<div>').text(ay.id || '').html() + '"' +
+                (checked[term.id] ? ' checked' : '') + '>' +
+                '<label class="custom-control-label" for="' + fieldId + '">' +
+                $('<div>').text(label).html() + '</label></div>';
         });
-
-        var $list = $group.find('ul').first();
-        if (!$list.length) {
-            // Empty server render had no <ul>; create one after the field label.
-            $list = $('<ul></ul>');
-            var $label = $group.find('label').first();
-            if ($label.length) { $label.after($list); } else { $group.append($list); }
+        if (!terms.length) {
+            items = '<p class="text-muted small mb-0">No terms in this academic year.</p>';
         }
-        $list.html(items);
-
-        // Re-apply the scroll wrapper (no-op if already wrapped) and refresh
-        // the cycle-terms AY hint via the delegated handler.
-        initTermFieldScrollContainer(termName);
+        $wrap.html(items);
+        $wrap.css({
+            'max-height': '280px', 'overflow-y': 'auto',
+            'border': '1px solid #dee2e6', 'border-radius': '.25rem',
+            'padding': '.5rem .75rem', 'background': '#fafafa'
+        });
+        // Refresh the cycle-terms AY hint via the delegated handler.
         $('input[name="' + termName + '"]').first().trigger('change');
+        if (!terms.length) $(document).trigger('fsCycleTermsChanged');
     }
 
     if (!academicYearId) { render([]); return; }
@@ -602,6 +645,8 @@ function initAyScopedTerms() {
         var $ay = $(pair.aySelector);
         if (!$ay.length) return;
         bound = true;
+        // The year the server rendered the list for, so its ticks can be restored.
+        $ay.data('previousVal', $ay.val());
         $ay.on('change', function () {
             rebuildTermCheckboxes(pair.termName, $ay.val());
         });
@@ -621,12 +666,19 @@ function initCycleTermsHint() {
         }
         if (!$group.length) return;
 
+        // Group checked terms by academic year: the data attribute set when the
+        // list is rebuilt, else the "2026-2027, " prefix of the server-rendered
+        // label. (Matching the first 4-digit number flagged one AY's Fall 2026
+        // and Spring 2027 terms as two years.)
         var ays = new Set();
         $('input[name="cycle_terms"]:checked').each(function () {
-            var label = $(this).siblings('label').text().trim()
-                     || $(this).closest('label').text().trim();
-            var m = label.match(/(\d{4})/);
-            if (m) ays.add(m[1]);
+            var ay = $(this).attr('data-academic-year');
+            if (!ay) {
+                var label = $(this).siblings('label').text().trim()
+                         || $(this).closest('label').text().trim();
+                ay = label.split(',')[0].trim();
+            }
+            if (ay) ays.add(ay);
         });
 
         var $note = $group.find('#cycle-terms-ay-note');
@@ -643,8 +695,9 @@ function initCycleTermsHint() {
     }
 
     refreshHint();
-    $(document).off('change.cycleHint')
-               .on('change.cycleHint', 'input[name="cycle_terms"]', refreshHint);
+    $(document).off('change.cycleHint fsCycleTermsChanged.cycleHint')
+               .on('change.cycleHint', 'input[name="cycle_terms"]', refreshHint)
+               .on('fsCycleTermsChanged.cycleHint', refreshHint);
 }
 
 function initAll() {
