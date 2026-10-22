@@ -3,6 +3,11 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.12.4
+
+### Fixed
+- HS admin **Course Information** page shows the intro text saved in CE settings → HS Administrator portal (`future_sections_blurb`). It used to read only `section_requests_blurb`, a key the settings form no longer saves, so edits never appeared. Tenants that only have the old key stored keep seeing it until they save the new one. (package-highschool_admin#24)
+
 ## 2026.12.3
 
 ### Fixed
