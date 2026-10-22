@@ -19,6 +19,26 @@ from ..forms import (
 from ..utils import get_fs_config, get_user_context
 
 
+# The HS admin portal settings form saves each page's text under
+# '<menu item name>_blurb', so this page's key is 'future_sections_blurb'.
+# 'section_requests_blurb' is the key this page used to read; tenants that
+# only ever stored that one keep seeing it until they save the new key.
+INTRO_BLURB_KEYS = ('future_sections_blurb', 'section_requests_blurb')
+
+
+def hs_admin_intro(request):
+    """The HS admin Course Information intro text, or '' when none is saved."""
+    try:
+        from cis.settings.highschool_admin_portal import highschool_admin_portal as portal_lang
+        stored = portal_lang(request).from_db() or {}
+    except Exception:
+        return ''
+    for key in INTRO_BLURB_KEYS:
+        if stored.get(key):
+            return stored[key]
+    return ''
+
+
 class FutureSectionsPageView(View):
     """
     Unified future sections page view for both HS Admin and Instructor roles.
@@ -84,12 +104,7 @@ class FutureSectionsPageView(View):
             'confirm_administrators': reverse(f'{url_namespace}:actions-confirm-administrators'),
         }
 
-        # Get portal-specific intro text
-        try:
-            from cis.settings.highschool_admin_portal import highschool_admin_portal as portal_lang
-            intro = portal_lang(request).from_db().get('section_requests_blurb', '')
-        except Exception:
-            intro = ''
+        intro = hs_admin_intro(request)
 
         template = 'future_sections/future_sections.html'
 
