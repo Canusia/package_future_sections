@@ -13,6 +13,11 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 ### Migrations
 - `0009_futurecourse_sis_sections`: `FutureCourse.sis_sections` M2M to `cis.ClassSection`.
 
+### Upgrade notes
+- Run `migrate` (0009) before opening CE Course Information.
+- **Multi-campus tenants (Lamar) — pre-upgrade check:** every `AcademicYear` that has Course Information requests must have `campus` set, and every `Campus` needs a `site`. A campus-less year belongs to no campus's run, so `notify_pending_reviews` never chases its requests; each campus run now logs a warning and a `skipped` entry ("academic year has no campus", with the count and year names) instead of dropping them silently. Check with `AcademicYear.objects.filter(campus__isnull=True, fs_futurecourse_set__isnull=False).distinct()` in a shell before upgrading.
+- DEBUG tenants must set **Testers** (#8). RVC sets **Full-Year Sections Are Imported Into Term Code** (#7).
+
 ### Fixed
 - Tenants with an in-repo `cis` can install and load the package again (#9). `myce_cis` moved from `install_requires` to the optional `campus` extra (`future-sections[campus]`). The add-teacher school pickers narrow to the current campus only when `cis.highschool_scope` exists; otherwise they list the admin's or instructor's own schools, as before v2026.12.2. The HS admin and instructor Course Information pages fall back to a shipped `future_sections/partials/_breadcrumb.html` when the portal has no `<portal>/partials/_breadcrumb.html`.
 

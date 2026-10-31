@@ -998,6 +998,26 @@ class FutureCourse(models.Model):
         # reviewers with its own settings and host.
         campus = serving_campus()
         if campus is not None:
+            # A year with no campus belongs to no campus's run, so its
+            # requests would never be chased. Say so once per run rather than
+            # drop them silently (review I4); the fix is to set
+            # AcademicYear.campus.
+            campusless = outstanding.filter(
+                future_course__academic_year__campus__isnull=True)
+            orphan_count = campusless.count()
+            if orphan_count:
+                years = sorted(set(campusless.values_list(
+                    'future_course__academic_year__name', flat=True)))
+                logger.warning(
+                    'notify_pending_reviews: skipped %s outstanding review '
+                    'slot(s) whose academic year has no campus (%s); set '
+                    'AcademicYear.campus so a campus run sends them.',
+                    orphan_count, ', '.join(years))
+                detailed_log['skipped'].append({
+                    'reason': 'academic year has no campus',
+                    'count': orphan_count,
+                    'academic_years': years,
+                })
             outstanding = outstanding.filter(
                 future_course__academic_year__campus=campus)
 

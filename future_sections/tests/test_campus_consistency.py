@@ -300,3 +300,29 @@ class MultiCampusCEScopeTests(_People):
         with self.campus_context(self.c2):
             self.assertEqual(_full_year_code(self.ay1), '6L')
             self.assertEqual(_full_year_code(self.ay2), '')
+
+
+@unittest.skipUnless(HAS_CAMPUS_CIS, 'cis without multi-campus support')
+class CampuslessYearReviewTests(MultiCampusNotifyTests):
+    """Requests whose year has no campus are skipped by every campus's run;
+    the run says so instead of dropping them silently (review I4)."""
+
+    def setUp(self):
+        super().setUp()
+        self.ay_none = AcademicYear.objects.create(name='Orphan-2099')
+        with self.campus_context(self.c1):
+            self.orphan = self._pending(self._course(), self.ay_none, 'School X')
+
+    @override_settings(MULTI_CAMPUS=True, DEBUG=False)
+    def test_campusless_rows_are_logged_once(self):
+        with self.campus_context(self.c1), \
+                mock.patch('mailer.send_html_mail'), \
+                self.assertLogs(f'{PKG}.models', level='WARNING') as logs:
+            summary, log = FutureCourse.notify_pending_reviews()
+        warnings = [r for r in logs.records if 'no campus' in r.getMessage()]
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('1 ', warnings[0].getMessage())
+        skipped = [s for s in log['skipped']
+                   if isinstance(s, dict) and s.get('reason') == 'academic year has no campus']
+        self.assertEqual(skipped[0]['count'], 1)
+        self.assertIn('Orphan-2099', skipped[0]['academic_years'])
