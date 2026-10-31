@@ -265,3 +265,53 @@ class CEViewTests(_Base):
             '/', {'academic_year': str(self.ay.id)})
         got = view.get_queryset().get(pk=fc.pk)
         self.assertEqual(got.sis_link_count, 1)
+
+
+class CEListFeedQueryCountTests(_Base):
+    """The CE Course Information feed must not query sis_sections per row
+    (review I1): the link count travels in section_display.sis_link_count."""
+
+    def setUp(self):
+        super().setUp()
+        self.ce = CustomUser.objects.create_user(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com', password='pw')
+        self.ce.groups.add(Group.objects.get(name='ce'))
+        _safe_force_login(self.client, self.ce)
+        self.url = reverse('future_sections_ce:future_class_section-list')
+
+    def _add_rows(self, n):
+        for _ in range(n):
+            t = Teacher.objects.create(user=CustomUser.objects.create(
+                username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com'))
+            cert = TeacherCourseCertificate.objects.create(
+                teacher_highschool=TeacherHighSchool.objects.create(
+                    teacher=t, highschool=self.hs),
+                course=self.course, status='Teaching')
+            fc = self._request([{'term': str(self.fall.id)}], cert=cert)
+            fc.sis_sections.add(self._section(self.fall))
+
+    def _sis_queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get(self.url, {
+                'format': 'json', 'academic_year': str(self.ay.id)})
+        self.assertEqual(response.status_code, 200)
+        return [q['sql'] for q in ctx.captured_queries
+                if 'futurecourse_sis_sections' in q['sql']]
+
+    def test_sis_sections_not_serialized(self):
+        self._add_rows(1)
+        response = self.client.get(self.url, {
+            'format': 'json', 'academic_year': str(self.ay.id)})
+        data = response.json()
+        rows = data.get('results', data)
+        self.assertNotIn('sis_sections', rows[0])
+        self.assertEqual(rows[0]['section_display']['sis_link_count'], 1)
+
+    def test_link_queries_do_not_grow_with_rows(self):
+        self._add_rows(2)
+        two = len(self._sis_queries())
+        self._add_rows(3)
+        five = len(self._sis_queries())
+        self.assertEqual(two, five)

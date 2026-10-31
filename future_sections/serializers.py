@@ -37,7 +37,10 @@ class FutureCourseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FutureCourse
-        fields = '__all__'
+        # The sis_sections M2M would cost a query per row on the CE feed
+        # (drf-datatables trims unused keys only after serializing); the
+        # link count already travels in section_display.sis_link_count.
+        exclude = ('sis_sections',)
 
     def get_course_display(self, obj):
         from .settings.future_sections import future_sections as fs_settings
