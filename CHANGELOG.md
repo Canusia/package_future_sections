@@ -23,6 +23,14 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 
 - No email is sent to a hardcoded developer address in DEBUG any more (#8). The reviewed notification, the CE new-teacher email, the CE per-school pending reminder and the HS admin confirmation email now route through the tenant's `testers` setting like the other notifiers; with DEBUG on and no testers configured nothing is sent (the CE actions say so). The settings `install()` defaults no longer carry personal `testers` / `message_replyto` addresses.
 
+- Pre-release review fixes:
+  - The CE Course Information feed no longer serializes the `sis_sections` M2M (a query per row); the link count rides in `section_display`.
+  - CE can edit a request from any academic year: the term dropdown lists the request's year, not the configured cycle year. The CE save's error replies (formset errors, term/year mismatch) were 500s from a shadowed `json` import and now return the 400 message.
+  - Multi-campus: SIS Reconciliation, the SIS sections window and the CE Course Information / projection feeds and year dropdown refuse or hide another campus's years and requests; the full-year term code is read from the record's campus.
+  - The CE pending and review reminder buttons say "Cannot send: Campus … has no Site" instead of a server error.
+  - Reconciliation CSV: cells a spreadsheet would run as a formula are prefixed with `'`, and the filename is sanitised. The term/year error renders as text.
+  - A linked section later cancelled in the SIS stays linked and is labelled **Cancelled in SIS**; the section label no longer repeats the section number when there is no class number.
+
 ## 2026.12.4
 
 ### Fixed

@@ -403,3 +403,32 @@ class CancelledLinkedSectionTests(_Base):
         sec.class_number = 4321
         label = SisSectionChoiceField(queryset=None).label_from_instance(sec)
         self.assertIn(f'4321 ({sec.section_number})', label)
+
+
+class SisSectionsModalIsCEOnlyTests(_Base):
+    """The sis-sections action is CE-only (review M9): anonymous and
+    school-side users are redirected and nothing is linked."""
+
+    def _hit(self):
+        fc = self._request([{'term': str(self.fall.id)}])
+        sec = self._section(self.fall)
+        url = reverse('future_sections_ce:future_sections_actions')
+        get = self.client.get(url, {
+            'action': 'sis-sections', 'future_course_id': str(fc.id)})
+        post = self.client.post(url, {
+            'action': 'sis-sections', 'future_course_id': str(fc.id),
+            'sis_sections': [str(sec.id)]})
+        return fc, get, post
+
+    def test_anonymous_is_redirected(self):
+        fc, get, post = self._hit()
+        self.assertEqual((get.status_code, post.status_code), (302, 302))
+        self.assertEqual(fc.sis_sections.count(), 0)
+
+    def test_instructor_is_redirected(self):
+        user = self.teacher.user
+        user.groups.add(Group.objects.get(name='instructor'))
+        _safe_force_login(self.client, user)
+        fc, get, post = self._hit()
+        self.assertEqual((get.status_code, post.status_code), (302, 302))
+        self.assertEqual(fc.sis_sections.count(), 0)
