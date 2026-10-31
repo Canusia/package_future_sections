@@ -41,8 +41,7 @@ def route_notification_recipients(fs_config, real_email):
     """Resolve the ``to`` list for a future_sections notification email.
 
     Every tenant deployment of this shared package used to hardcode a
-    personal address (``kadaji@gmail.com``) as the DEBUG-mode redirect
-    target. That doesn't belong in code that ships to every tenant, so
+    personal address as the DEBUG-mode redirect target. That doesn't belong in code that ships to every tenant, so
     routing instead goes through the tenant's own ``cis_future_sections``
     settings, following the ``testers``/``DEBUG`` convention already used
     elsewhere in the codebase (see ``cis/models/section.py``).
@@ -56,14 +55,12 @@ def route_notification_recipients(fs_config, real_email):
         list[str]: addresses to actually send to.
 
     Raises:
-        NoTestRecipientsConfigured: ``DEBUG`` is truthy (the default,
-            since failing toward the testers list is the safe direction)
-            and no testers are configured. Never falls through to
-            ``real_email`` in that case.
+        NoTestRecipientsConfigured: ``DEBUG`` is on and no testers are
+            configured. Never falls through to ``real_email`` in that case.
     """
     from django.conf import settings as django_settings
 
-    if getattr(django_settings, 'DEBUG', True):
+    if getattr(django_settings, 'DEBUG', False):
         raw = (fs_config or {}).get('testers') or ''
         testers = [t.strip() for t in raw.split(',') if t and t.strip()]
         if not testers:
@@ -313,7 +310,7 @@ class FutureCourse(models.Model):
             message,
             settings.MY_CE.get('default_from'),
             to,
-            reply_to=[message_replyto]
+            reply_to=[message_replyto] if message_replyto else None
         )
         return email.send(fail_silently=True)
 

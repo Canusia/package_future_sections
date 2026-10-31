@@ -13,7 +13,9 @@ from django.template.loader import get_template
 
 from mailer import send_html_mail
 
-from .models import FutureCourse
+from .models import (
+    FutureCourse, NoTestRecipientsConfigured, route_notification_recipients,
+)
 from .settings.future_sections import future_sections as fs_settings
 
 logger = logging.getLogger(__name__)
@@ -99,11 +101,19 @@ def future_course_status_changed(sender, instance, **kwargs):
         logger.warning(f'No recipients for FutureCourse {instance.id} reviewed notification')
         return
 
-    to = list(recipients)
-
-    # DEBUG mode: redirect to test email address
-    if getattr(settings, 'DEBUG', True):
-        to = ['kadaji@gmail.com']
+    # DEBUG routes to the tenant's `testers` (once, not once per real
+    # recipient); with none configured nothing is sent (#8).
+    try:
+        to = sorted({
+            addr
+            for real in recipients
+            for addr in route_notification_recipients(email_settings, real)
+        })
+    except NoTestRecipientsConfigured:
+        logger.warning(
+            'Reviewed notification for FutureCourse %s skipped: DEBUG is on '
+            'and no testers are configured', instance.id)
+        return
 
     # Send the email
     try:

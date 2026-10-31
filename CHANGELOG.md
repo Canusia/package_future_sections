@@ -8,6 +8,8 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 ### Fixed
 - Tenants with an in-repo `cis` can install and load the package again (#9). `myce_cis` moved from `install_requires` to the optional `campus` extra (`future-sections[campus]`). The add-teacher school pickers narrow to the current campus only when `cis.highschool_scope` exists; otherwise they list the admin's or instructor's own schools, as before v2026.12.2. The HS admin and instructor Course Information pages fall back to a shipped `future_sections/partials/_breadcrumb.html` when the portal has no `<portal>/partials/_breadcrumb.html`.
 
+- No email is sent to a hardcoded developer address in DEBUG any more (#8). The reviewed notification, the CE new-teacher email, the CE per-school pending reminder and the HS admin confirmation email now route through the tenant's `testers` setting like the other notifiers; with DEBUG on and no testers configured nothing is sent (the CE actions say so). The settings `install()` defaults no longer carry personal `testers` / `message_replyto` addresses.
+
 ## 2026.12.4
 
 ### Fixed

@@ -30,7 +30,10 @@ from cis.models.term import AcademicYear, Term
 from cis.models.settings import Setting
 from cis.models.course import Cohort
 
-from ..models import FutureCourse, FutureSection, FutureProjection
+from ..models import (
+    FutureCourse, FutureSection, FutureProjection,
+    NoTestRecipientsConfigured, route_notification_recipients,
+)
 from ..settings.future_sections import future_sections as fs_settings
 from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
@@ -173,6 +176,18 @@ def email_new_teacher(request):
     data = form.cleaned_data
     recipient = data['recipient']
 
+    # Resolve DEBUG routing before anything is created: with DEBUG on and no
+    # `testers`, refuse up front rather than invite an applicant who is
+    # never emailed (#8).
+    try:
+        to = route_notification_recipients(fs_settings.from_db(), recipient)
+    except NoTestRecipientsConfigured:
+        return JsonResponse({
+            'status': 'error',
+            'message': ('Cannot send: DEBUG is on and no test recipients '
+                        '(testers) are configured. No email was sent.'),
+        }, status=400)
+
     if data['mode'] == 'invite':
         from ..utils import ExistingAccountNotApplicantError, get_or_create_applicant
         try:
@@ -208,9 +223,6 @@ def email_new_teacher(request):
     text_body = Template(data['message']).render(context)
     html_body = get_template('cis/email.html').render({'message': text_body})
 
-    to = [recipient]
-    if getattr(django_settings, 'DEBUG', True):
-        to = ['kadaji@gmail.com']
 
     send_html_mail(subject, text_body, html_body,
                    django_settings.DEFAULT_FROM_EMAIL, to)
@@ -706,6 +718,18 @@ def send_pending_reminder(request):
     site_url = getattr(s, 'SITE_URL', '')
     link = f"{site_url}/highschool_admin/future_sections/"
 
+    # DEBUG with no `testers` sends nothing (#8); say so instead of
+    # reporting "Sent reminder to 0 administrator(s)".
+    try:
+        route_notification_recipients(fs_config, '')
+    except NoTestRecipientsConfigured:
+        return JsonResponse({
+            'status': 'error',
+            'action': 'display',
+            'message': ('Cannot send: DEBUG is on and no test recipients '
+                        '(testers) are configured. No email was sent.'),
+        })
+
     emails_sent = 0
     seen_emails = set()
 
@@ -732,9 +756,7 @@ def send_pending_reminder(request):
             html_template = get_template('cis/email.html')
             html_body = html_template.render({'message': text_body})
 
-            to = [email]
-            if getattr(s, 'DEBUG', True):
-                to = ['kadaji@gmail.com']
+            to = route_notification_recipients(fs_config, email)
 
             send_html_mail(
                 subject,

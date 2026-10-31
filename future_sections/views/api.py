@@ -27,7 +27,10 @@ from mailer import send_html_mail
 from cis.models.highschool import HighSchool
 from cis.models.highschool_administrator import HSAdministrator, HSAdministratorPosition
 from cis.models.teacher import Teacher, TeacherCourseCertificate
-from ..models import FutureCourse, FutureProjection
+from ..models import (
+    FutureCourse, FutureProjection,
+    NoTestRecipientsConfigured, route_notification_recipients,
+)
 from cis.models.term import AcademicYear
 
 from ..forms import (
@@ -544,9 +547,16 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             html_template = get_template('cis/email.html')
             html_body = html_template.render({'message': text_body})
 
-            to = [request.user.email]
-            if getattr(django_settings, 'DEBUG', True):
-                to = ['kadaji@gmail.com']
+            # DEBUG routes to the tenant's `testers`; none configured
+            # means nothing is sent (#8).
+            try:
+                to = route_notification_recipients(
+                    fs_config, request.user.email)
+            except NoTestRecipientsConfigured:
+                logger.warning(
+                    'Confirmation email for %s skipped: DEBUG is on and no '
+                    'testers are configured', highschool.name)
+                continue
 
             try:
                 send_html_mail(
