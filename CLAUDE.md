@@ -160,6 +160,11 @@ The **Section Request Review** section's `reviewer_role_config` is a hidden `Cha
 
 - `migrate_future_sections_data` - Migrates data from old cis tables. Supports `--execute`, `--clear`, `--verify`.
 - `notify_pending_section_requests` - Sends reminder emails to HS admins. Checks `pending_notification_dates` setting. Logs to `CronLog`.
+- `notify_pending_section_requests`, `notify_pending_reviews` and `migrate_cycle_terms` subclass `campus.command_base()`: cis's `CampusCommand` when it exists (`--campus <code>`, required under `MULTI_CAMPUS`; the cron fan-out supplies the campus), plain `BaseCommand` on an in-repo cis.
+
+## Multi-campus (`campus.py`, FS-01 / #6)
+
+Everything here is a no-op unless `MULTI_CAMPUS` is on (and an in-repo cis without `cis.campus_context.campus_url` behaves as single-campus). A record's campus is `academic_year.campus`. Email links go through `campus.site_link(path, academic_year)` — `SITE_URL + path` when single-campus, else cis `campus_url()` on the record's (or serving) campus; do not build links from `SITE_URL` directly. `notify_pending_reviews` only chases requests whose year belongs to the serving campus; `notify_pending_section_requests` refuses a configured year from another campus. `FutureCourse.term_year_error()` / `clean()` reject a `term` FK or `section_info` row term from another academic year; `get_or_add()` and both teaching-form save views check it before saving. `cis_future_sections` is a STRICT campus setting: requests (middleware), cron (`run_for_each_campus` + `CampusCommand`) and reports (`Report.campus`) all read it inside a campus context.
 
 ## Reports (`reports/`)
 

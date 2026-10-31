@@ -1,0 +1,208 @@
+"""FS-01 campus consistency (#6).
+
+Terms must belong to the request's academic year; the notify commands are
+CampusCommands that work on their campus's records with that campus's
+settings and host. Single-campus behaviour is unchanged.
+"""
+import importlib.util
+import unittest
+import uuid
+from datetime import date
+from io import StringIO
+from unittest import mock
+
+from django.conf import settings
+from django.contrib.auth.models import Group
+from django.contrib.sites.models import Site
+from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.test import TestCase, override_settings
+
+from cis.models.course import Campus, Cohort, Course
+from cis.models.customuser import CustomUser
+from cis.models.highschool import HighSchool
+from cis.models.settings import Setting
+from cis.models.teacher import (
+    Teacher, TeacherCourseCertificate, TeacherHighSchool)
+from cis.models.term import AcademicYear, Term
+
+from . import PKG
+from .. import campus as fs_campus
+from ..models import FutureCourse, SectionRequestReview
+
+HAS_CAMPUS_CIS = bool(importlib.util.find_spec('cis.campus_context')) and \
+    bool(importlib.util.find_spec('cis.management.campus_command'))
+TODAY = date.today().strftime('%m/%d/%Y')
+
+
+def _sfx():
+    return uuid.uuid4().hex[:6]
+
+
+class _People(TestCase):
+    def _cert(self, course, hs):
+        Group.objects.get_or_create(name='instructor')
+        teacher = Teacher.objects.create(user=CustomUser.objects.create(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com'))
+        return TeacherCourseCertificate.objects.create(
+            teacher_highschool=TeacherHighSchool.objects.create(
+                teacher=teacher, highschool=hs),
+            course=course, status='Teaching')
+
+    def _course(self):
+        cohort = Cohort.objects.create(designator=f'C{_sfx()}', name='Co')
+        return Course.objects.create(
+            cohort=cohort, catalog_number='101', title='Alpha', name='A1',
+            credit_hours=3, status='Active')
+
+
+class TermYearTests(_People):
+    def setUp(self):
+        self.ay = AcademicYear.objects.create(name=f'AY-{_sfx()}')
+        self.other_ay = AcademicYear.objects.create(name=f'AY-{_sfx()}')
+        self.term = Term.objects.create(
+            academic_year=self.ay, code='FA', label='Fall')
+        self.foreign = Term.objects.create(
+            academic_year=self.other_ay, code='FA', label='Other Fall')
+        self.cert = self._cert(self._course(),
+                               HighSchool.objects.create(name='HS'))
+
+    def _fc(self, **kw):
+        return FutureCourse(teacher_course=self.cert, academic_year=self.ay, **kw)
+
+    def test_consistent_request_is_clean(self):
+        fc = self._fc(term=self.term, section_info={
+            'teaching': 'yes', 'sections': [{'term': str(self.term.id)}]})
+        fc.clean()
+        self.assertEqual(fc.term_year_error(), '')
+
+    def test_term_fk_from_another_year_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._fc(term=self.foreign).clean()
+
+    def test_row_term_from_another_year_is_rejected(self):
+        fc = self._fc(section_info={'teaching': 'yes', 'sections': [
+            {'term': str(self.term.id)}, {'term': str(self.foreign.id)}]})
+        with self.assertRaises(ValidationError) as ctx:
+            fc.clean()
+        self.assertIn('Other Fall', str(ctx.exception))
+
+    def test_rows_about_to_be_saved_are_checked(self):
+        fc = self._fc()
+        self.assertTrue(fc.term_year_error([{'term': str(self.foreign.id)}]))
+        self.assertEqual(fc.term_year_error([{'term': 'garbage'}]), '')
+
+    def test_get_or_add_refuses_foreign_rows(self):
+        with self.assertRaises(ValidationError):
+            FutureCourse.get_or_add(self.cert, self.ay, section_info={
+                'teaching': 'yes',
+                'sections': [{'term': str(self.foreign.id)}]})
+        self.assertFalse(FutureCourse.objects.filter(
+            teacher_course=self.cert).exists())
+
+
+class SingleCampusLinkTests(TestCase):
+    @override_settings(MULTI_CAMPUS=False, SITE_URL='https://old.example')
+    def test_single_campus_keeps_site_url(self):
+        self.assertEqual(fs_campus.site_link('/x/'), 'https://old.example/x/')
+        self.assertIsNone(fs_campus.serving_campus())
+        self.assertFalse(fs_campus.other_campus(None))
+
+    def test_without_campus_cis_falls_back(self):
+        with mock.patch.object(fs_campus, '_campus_context', return_value=None), \
+                override_settings(SITE_URL='https://old.example'):
+            self.assertEqual(fs_campus.site_link('/x/'),
+                             'https://old.example/x/')
+            self.assertFalse(fs_campus.is_multi_campus())
+
+    def test_without_campus_command_uses_base_command(self):
+        from django.core.management.base import BaseCommand
+        with mock.patch('importlib.util.find_spec', return_value=None):
+            self.assertIs(fs_campus.command_base(), BaseCommand)
+
+
+@unittest.skipUnless(HAS_CAMPUS_CIS, 'cis without multi-campus support')
+class MultiCampusNotifyTests(_People):
+    def setUp(self):
+        from cis.campus_context import campus_context
+        self.campus_context = campus_context
+        prefix = settings.CAMPUS_CODE_PREFIX
+        self.c1, self.c2 = [
+            Campus.objects.create(
+                name=f'{n}-{_sfx()}', code=f'{prefix}_{_sfx()}',
+                site=Site.objects.create(domain=f'{n}-{_sfx()}.test', name=n))
+            for n in ('one', 'two')]
+        self.ay1 = AcademicYear.objects.create(name='2099-2100', campus=self.c1)
+        self.ay2 = AcademicYear.objects.create(name='2099-2100', campus=self.c2)
+        for campus, ay, subject in ((self.c1, self.ay1, 'C1 subject'),
+                                    (self.c2, self.ay2, 'C2 subject')):
+            Setting.objects.create(key='cis_future_sections', campus=campus, value={
+                'require_review': '1', 'academic_year': str(ay.id),
+                'review_notification_dates': TODAY,
+                'review_notification_subject': subject,
+                'review_notification_message': '{{requests}} {{link}}',
+                'pending_notification_dates': TODAY,
+                'pending_notification_message': 'Hi {{link}}',
+            })
+        self.reviewer = CustomUser.objects.create(
+            username=f'{_sfx()}@x.com', email='rev@x.com')
+        course = self._course()
+        self.fc1 = self._pending(course, self.ay1, 'School One')
+        self.fc2 = self._pending(course, self.ay2, 'School Two')
+
+    def _pending(self, course, ay, school):
+        fc = FutureCourse.objects.create(
+            teacher_course=self._cert(course, HighSchool.objects.create(name=school)),
+            academic_year=ay, status='pending_review', review_round=1)
+        SectionRequestReview.objects.create(
+            future_course=fc, reviewer=self.reviewer, round=1, role='Faculty')
+        return fc
+
+    def test_commands_are_campus_commands(self):
+        from cis.management.campus_command import CampusCommand
+        from ..management.commands import (
+            notify_pending_reviews, notify_pending_section_requests)
+        self.assertTrue(issubclass(notify_pending_reviews.Command, CampusCommand))
+        self.assertTrue(issubclass(
+            notify_pending_section_requests.Command, CampusCommand))
+
+    @override_settings(MULTI_CAMPUS=True)
+    def test_multi_campus_without_campus_is_an_error(self):
+        with self.assertRaises(CommandError):
+            call_command('notify_pending_reviews', stdout=StringIO())
+
+    @override_settings(MULTI_CAMPUS=True, DEBUG=False)
+    def test_c2_run_uses_c2_records_settings_and_host(self):
+        with mock.patch('mailer.send_html_mail') as send:
+            call_command('notify_pending_reviews', campus=self.c2.code,
+                         stdout=StringIO())
+        self.assertEqual(send.call_count, 1)
+        subject, text = send.call_args.args[0], send.call_args.args[1]
+        self.assertEqual(subject, 'C2 subject')
+        self.assertIn(self.c2.site.domain, text)
+        self.assertNotIn(self.c1.site.domain, text)
+        self.assertIn('School Two', text)
+        self.assertNotIn('School One', text)
+
+    @override_settings(MULTI_CAMPUS=True)
+    def test_site_link_uses_the_records_campus(self):
+        with self.campus_context(self.c1):
+            link = fs_campus.site_link('/p/', self.ay2)
+        self.assertEqual(link, f'https://{self.c2.site.domain}/p/')
+
+    @override_settings(MULTI_CAMPUS=True)
+    def test_pending_requests_refuse_another_campus_year(self):
+        # c2's run, but its setting names c1's year.
+        with self.campus_context(self.c2):
+            row = Setting.objects.get(key='cis_future_sections')
+            row.value['academic_year'] = str(self.ay1.id)
+            row.save()
+            with mock.patch(f'{PKG}.utils.get_lookback_universe') as uni:
+                uni.return_value.exists.return_value = True
+                uni.return_value.exclude.return_value.values.return_value \
+                    .annotate.return_value = [{
+                        'teacher_highschool__highschool__id': uuid.uuid4(),
+                        'pending_count': 1}]
+                summary, log = FutureCourse.notify_pending_section_requests()
+        self.assertIn('belongs to another campus', summary)

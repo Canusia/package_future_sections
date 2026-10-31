@@ -167,6 +167,15 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
                 section_info = build_section_info_from_formset(
                     request, teaching_formset, future_course,
                 )
+                # A term must belong to the request's academic year (#6).
+                term_error = future_course.term_year_error(section_info)
+                if term_error:
+                    return Response({
+                        'message': 'Please correct the errors and try again.',
+                        'details': term_error,
+                        'errors': json.dumps({}),
+                        'status': 'error'
+                    }, status=400)
                 # Update future course
                 future_course.section_info = {'teaching': 'yes', 'sections': section_info}
                 if not future_course.meta:

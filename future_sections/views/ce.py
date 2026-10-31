@@ -404,6 +404,15 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
             section_info = build_section_info_from_formset(
                 request, teaching_formset, future_course,
             )
+            # A term must belong to the request's academic year (#6).
+            term_error = future_course.term_year_error(section_info)
+            if term_error:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Please correct the errors and try again.',
+                    'details': term_error,
+                    'errors': json.dumps({}),
+                }, status=400)
             future_course.section_info = {'teaching': 'yes', 'sections': section_info}
             future_course.submitted_by = request.user
             future_course.save()
@@ -819,8 +828,9 @@ def send_pending_reminder(request):
         status='Active'
     ).select_related('hsadmin__user')
 
-    site_url = getattr(s, 'SITE_URL', '')
-    link = f"{site_url}/highschool_admin/future_sections/"
+    from ..campus import site_link
+    link = site_link('/highschool_admin/future_sections/',
+                     academic_year if academic_year_name else None)
 
     # DEBUG with no `testers` sends nothing (#8); say so instead of
     # reporting "Sent reminder to 0 administrator(s)".

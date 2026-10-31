@@ -14,6 +14,7 @@ from django.db import models
 from django.db.models import JSONField
 from django.utils.functional import cached_property
 from django.utils.safestring import mark_safe
+from django.core.exceptions import ValidationError
 from django.core.mail import EmailMessage
 from django.template import Context, Template
 from django.http import HttpResponse
@@ -23,6 +24,8 @@ from model_utils import FieldTracker
 
 from cis.models.settings import Setting
 import importlib.util
+
+from .campus import other_campus, serving_campus, site_link
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +264,48 @@ class FutureCourse(models.Model):
                     app_upload.save()
                     app_upload.upload.save(filename, file_content, save=True)
 
+    def foreign_terms(self, sections=None):
+        """Terms on this request that belong to another academic year (#6).
+
+        Checks the ``term`` FK and every ``section_info`` row's term (or
+        ``sections`` when given, before they are stored). On a multi-campus
+        deployment each campus has its own years, so a term from another
+        year can be another campus's term.
+        """
+        from cis.models.term import Term
+
+        if not self.academic_year_id:
+            return []
+        ids = set()
+        if self.term_id:
+            ids.add(self.term_id)
+        if sections is None:
+            sections = (self.section_info or {}).get('sections') or []
+        for row in sections:
+            try:
+                ids.add(uuid.UUID(str((row or {}).get('term'))))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if not ids:
+            return []
+        return list(Term.objects.filter(id__in=ids).exclude(
+            academic_year_id=self.academic_year_id))
+
+    def term_year_error(self, sections=None):
+        """A message naming the foreign terms, or '' when consistent."""
+        foreign = self.foreign_terms(sections)
+        if not foreign:
+            return ''
+        names = ', '.join(sorted(t.label for t in foreign))
+        return (f'{names} is not a term of {self.academic_year}. Choose a '
+                f'term from that academic year.')
+
+    def clean(self):
+        super().clean()
+        error = self.term_year_error()
+        if error:
+            raise ValidationError(error)
+
     @classmethod
     def get_or_add(cls, teacher_course, academic_year, section_info=None, submitter=None):
         try:
@@ -289,6 +334,10 @@ class FutureCourse(models.Model):
                 meta=meta,
                 submitted_by=submitter
             )
+            # Never create a request whose rows name another year's term.
+            error = record.term_year_error()
+            if error:
+                raise ValidationError(error)
             record.save()
             return record
 
@@ -765,11 +814,20 @@ class FutureCourse(models.Model):
             academic_year = AcademicYear.objects.get(id=academic_year_id)
             academic_year_name = str(academic_year)
         except AcademicYear.DoesNotExist:
+            academic_year = None
             academic_year_name = ''
 
-        # Build link
-        site_url = getattr(django_settings, 'SITE_URL', '')
-        link = f"{site_url}/highschool_admin/future_sections/"
+        # Multi-campus (#6): this run serves one campus; a configured year
+        # that belongs to another campus is a misconfiguration, not a
+        # reason to email that campus's schools with this one's settings.
+        if other_campus(academic_year):
+            summary = (f'Error: academic year {academic_year_name} belongs to '
+                       f'another campus')
+            detailed_log['errors'].append(summary)
+            return summary, detailed_log
+
+        # Link on the record's campus host (SITE_URL unless multi-campus).
+        link = site_link('/highschool_admin/future_sections/', academic_year)
 
         # Send emails
         seen_emails = set()  # Avoid duplicate emails
@@ -935,6 +993,14 @@ class FutureCourse(models.Model):
             'future_course__teacher_course__teacher_highschool__teacher__user',
         ).order_by('reviewer_id', 'future_course_id')
 
+        # Multi-campus (#6): only this campus's requests, judged by the
+        # request's academic year, so each campus's run emails its own
+        # reviewers with its own settings and host.
+        campus = serving_campus()
+        if campus is not None:
+            outstanding = outstanding.filter(
+                future_course__academic_year__campus=campus)
+
         if not outstanding.exists():
             summary = "No reviewers with pending decisions found"
             detailed_log['skipped'].append(summary)
@@ -947,8 +1013,7 @@ class FutureCourse(models.Model):
             entry['rows'].append(row)
 
         # Build link to the reviewer's queue
-        site_url = getattr(django_settings, 'SITE_URL', '')
-        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+        link = site_link(reverse('future_sections_faculty:section_request_list'))
 
         for reviewer_id, info in by_reviewer.items():
             reviewer = info['reviewer']
@@ -1114,8 +1179,9 @@ class FutureCourse(models.Model):
                 'Review notification message template is not configured '
                 'in settings.')
 
-        site_url = getattr(django_settings, 'SITE_URL', '')
-        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+        link = site_link(
+            reverse('future_sections_faculty:section_request_list'),
+            row.future_course.academic_year)
 
         try:
             sent_to = cls._send_review_reminder_email(
@@ -1157,8 +1223,9 @@ class FutureCourse(models.Model):
         if not message_template:
             return 0
 
-        site_url = getattr(django_settings, 'SITE_URL', '')
-        link = f"{site_url}{reverse('future_sections_faculty:section_request_list')}"
+        link = site_link(
+            reverse('future_sections_faculty:section_request_list'),
+            future_course.academic_year)
 
         sent = 0
         for row in stage_rows(future_course, stage).filter(decision=''):
@@ -1219,11 +1286,11 @@ class FutureCourse(models.Model):
         fc = row.future_course
         tc = fc.teacher_course
         instructor = tc.teacher_highschool.teacher.user if tc else None
-        site_url = getattr(django_settings, 'SITE_URL', '')
         try:
-            link = f"{site_url}{reverse('future_sections_ce:future_sections')}"
+            link = site_link(reverse('future_sections_ce:future_sections'),
+                             fc.academic_year)
         except NoReverseMatch:
-            link = site_url
+            link = site_link('', fc.academic_year)
 
         text_body = Template(message_template).render(Context({
             'reviewer_first_name': row.reviewer.first_name,

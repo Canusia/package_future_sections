@@ -4,12 +4,14 @@ One-shot: populate cycle_terms from the existing single academic_year setting.
 For tenants upgrading from the AY-only schema. Run once after deploying the
 per-term cycle feature. Idempotent: skips if cycle_terms is already set.
 """
-from django.core.management.base import BaseCommand
 from cis.models.settings import Setting
 from cis.models.term import Term
 
+from ...campus import command_base
 
-class Command(BaseCommand):
+
+# Per campus on a multi-campus cis (#6): run with --campus <code> for each.
+class Command(command_base()):
     help = "Populate cycle_terms from the existing academic_year setting."
 
     def handle(self, *args, **opts):
