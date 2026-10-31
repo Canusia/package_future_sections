@@ -852,9 +852,20 @@ def send_pending_reminder(request):
         status='Active'
     ).select_related('hsadmin__user')
 
+    from django.core.exceptions import ImproperlyConfigured
+
     from ..campus import site_link
-    link = site_link('/highschool_admin/future_sections/',
-                     academic_year if academic_year_name else None)
+    try:
+        link = site_link('/highschool_admin/future_sections/',
+                         academic_year if academic_year_name else None)
+    except ImproperlyConfigured as exc:
+        # Multi-campus: the campus has no Site, so no link can be built
+        # (review M4). Fail closed with a message, not a 500.
+        return JsonResponse({
+            'status': 'error',
+            'action': 'display',
+            'message': f'Cannot send: {exc} No email was sent.',
+        })
 
     # DEBUG with no `testers` sends nothing (#8); say so instead of
     # reporting "Sent reminder to 0 administrator(s)".

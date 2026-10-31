@@ -357,3 +357,68 @@ class CEIndexReviewNotificationHistoryTabTests(TestCase):
         _safe_force_login(self.client, self.ce_user)
         resp = self.client.get(reverse('future_sections_ce:future_sections'))
         self.assertNotContains(resp, 'review_notification_history')
+
+
+class NoSiteForCampusTests(TestCase):
+    """A multi-campus campus with no Site makes cis campus_url raise
+    ImproperlyConfigured; the CE reminder buttons answer with a clear JSON
+    error instead of a 500 (review M4)."""
+
+    def setUp(self):
+        import uuid
+        from django.core.exceptions import ImproperlyConfigured
+        from unittest import mock
+        from . import PKG
+        Group.objects.get_or_create(name='ce')
+        self.ay = AcademicYear.objects.create(name='2099-2100')
+        self.hs = HighSchool.objects.create(name='Test HS')
+        Setting.objects.create(key='cis_future_sections', value=dict(
+            BASE_SETTINGS, pending_notification_message='Hi {{link}}'))
+        ce = _user('ce@x.com')
+        ce.groups.add(Group.objects.get(name='ce'))
+        _safe_force_login(self.client, ce)
+        self.uuid = uuid.uuid4
+        boom = ImproperlyConfigured('Campus Two has no Site; set Campus.site.')
+        patcher = mock.patch(f'{PKG}.campus.site_link', side_effect=boom)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch(f'{PKG}.models.site_link', side_effect=boom)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_pending_reminder_returns_json_error(self):
+        response = self.client.get(
+            reverse('future_sections_ce:send_pending_reminder'), {
+                'highschool_id': str(self.hs.id),
+                'academic_year_id': str(self.ay.id),
+                'admin_ids[]': [str(self.uuid())]})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['status'], 'error')
+        self.assertIn('no Site', body['message'])
+
+    def test_review_reminder_returns_json_error(self):
+        cohort = Cohort.objects.create(name='Co', designator='CO')
+        course = Course.objects.create(
+            name='A1', title='Alpha', cohort=cohort, catalog_number='101',
+            credit_hours=3, campus=Campus.objects.create(name='Main', code='M'),
+            status='Active')
+        Group.objects.get_or_create(name='instructor')
+        tc = TeacherCourseCertificate.objects.create(
+            teacher_highschool=TeacherHighSchool.objects.create(
+                teacher=Teacher.objects.create(user=_user('t@x.com')),
+                highschool=self.hs),
+            course=course, status='Applicant')
+        fc = FutureCourse.objects.create(
+            academic_year=self.ay, teacher_course=tc, status='submitted')
+        reviewer = _user('r@x.com')
+        CourseAdministrator.objects.create(
+            course=course, user=reviewer, role='Faculty', status='Active')
+        open_review_round(fc)
+        response = self.client.post(
+            reverse('future_sections_ce:send_review_reminder'),
+            {'future_course_id': str(fc.id), 'reviewer_id': str(reviewer.id)})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['status'], 'error')
+        self.assertIn('no Site', body['message'])

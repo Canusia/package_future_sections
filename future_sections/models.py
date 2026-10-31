@@ -1199,9 +1199,14 @@ class FutureCourse(models.Model):
                 'Review notification message template is not configured '
                 'in settings.')
 
-        link = site_link(
-            reverse('future_sections_faculty:section_request_list'),
-            row.future_course.academic_year)
+        from django.core.exceptions import ImproperlyConfigured
+        try:
+            link = site_link(
+                reverse('future_sections_faculty:section_request_list'),
+                row.future_course.academic_year)
+        except ImproperlyConfigured as exc:
+            # Multi-campus campus with no Site (review M4).
+            return False, f'Cannot send: {exc} No email was sent.'
 
         try:
             sent_to = cls._send_review_reminder_email(
