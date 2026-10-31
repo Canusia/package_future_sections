@@ -283,13 +283,19 @@ class TeacherCourseSectionForm(forms.Form):
         widget=forms.HiddenInput
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, academic_year=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         from .settings.future_sections import future_sections as fs_settings
         fs_config = fs_settings.from_db()
 
-        academic_year_id = fs_config.get('academic_year')
+        # The request's own year when the caller knows it, so CE can edit a
+        # request from any year (review I2); the configured cycle year
+        # otherwise.
+        if academic_year is not None:
+            academic_year_id = getattr(academic_year, 'pk', academic_year)
+        else:
+            academic_year_id = fs_config.get('academic_year')
 
         self.fields['term'].queryset = Term.objects.filter(
             academic_year__id=academic_year_id

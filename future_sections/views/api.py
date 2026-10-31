@@ -157,7 +157,9 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
 
         if request.method == 'POST':
             teacher_course_teaching_form = TeacherCourseTeachingForm(request.POST)
-            teaching_formset = TeachingFormSet(request.POST, request.FILES)
+            teaching_formset = TeachingFormSet(
+                request.POST, request.FILES,
+                form_kwargs={'academic_year': academic_year})
 
             # Get or create FutureProjection
             highschool_id = teacher_course.teacher_highschool.highschool.id
@@ -224,7 +226,9 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
                     'academic_year_id': academic_year.id,
                 }
             )
-            teaching_formset = TeachingFormSet(initial=initial_data)
+            teaching_formset = TeachingFormSet(
+                initial=initial_data,
+                form_kwargs={'academic_year': academic_year})
 
         fs_config = get_fs_config()
 

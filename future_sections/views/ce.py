@@ -398,7 +398,9 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
             request.POST
         )
 
-        teaching_formset = TeachingFormSet(request.POST, request.FILES)
+        teaching_formset = TeachingFormSet(
+            request.POST, request.FILES,
+            form_kwargs={'academic_year': academic_year})
 
         if teacher_course_teaching_form.is_valid() and teaching_formset.is_valid():
             section_info = build_section_info_from_formset(
@@ -451,13 +453,14 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
         )
 
         teaching_formset = TeachingFormSet(
-            initial=initial_data
+            initial=initial_data,
+            form_kwargs={'academic_year': academic_year},
         )
 
     fs_config = fs_settings.from_db()
 
-    # Parse form config for dynamic field rendering
-    import json
+    # Parse form config for dynamic field rendering. (A local `import json`
+    # here used to shadow the module import and 500 both 400 branches.)
     try:
         form_config = json.loads(fs_config.get('teaching_form_config', '{}'))
     except (json.JSONDecodeError, TypeError):
