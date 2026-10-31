@@ -65,6 +65,32 @@ def other_campus(academic_year):
     return campus is not None and campus != serving_campus()
 
 
+def record_context(academic_year):
+    """Context manager serving the record's campus, so a campus setting is
+    read for the college the record belongs to (multi-campus only; a no-op
+    otherwise or when the year has no campus)."""
+    import contextlib
+    campus = record_campus(academic_year)
+    if campus is None or not is_multi_campus():
+        return contextlib.nullcontext()
+    from cis.campus_context import campus_context
+    return campus_context(campus)
+
+
+def exclude_other_campuses(queryset, path):
+    """Drop rows whose academic year belongs to another campus.
+
+    ``path`` is the lookup to the year's campus (``academic_year__campus``).
+    Years with no campus stay visible, matching ``other_campus()``. A no-op
+    unless multi-campus.
+    """
+    if not is_multi_campus():
+        return queryset
+    from django.db.models import Q
+    return queryset.filter(
+        Q(**{path: serving_campus()}) | Q(**{f'{path}__isnull': True}))
+
+
 def command_base():
     """``CampusCommand`` when cis has it (``--campus``, runs in a campus
     context), else Django's ``BaseCommand``."""

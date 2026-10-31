@@ -15,6 +15,7 @@ from cis.serializers.teacher import TeacherCourseCertificateSerializer
 
 from cis.models.crontab import CronLog
 from ..models import FutureCourse, FutureProjection, SectionRequestReview
+from ..campus import exclude_other_campuses
 from ..settings.future_sections import future_sections as fs_settings
 
 from cis.models.teacher import TeacherCourseCertificate
@@ -155,9 +156,9 @@ class FutureProjectionViewSet(viewsets.ReadOnlyModelViewSet):
         highschool_id = self.request.GET.get('highschool_id')
         academic_year_id = self.request.GET.get('academic_year')
 
-        records = FutureProjection.objects.filter(
+        records = exclude_other_campuses(FutureProjection.objects.filter(
             academic_year__id=academic_year_id
-        )
+        ), 'academic_year__campus')
 
         if highschool_id:
             records = records.filter(
@@ -186,6 +187,10 @@ class FutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
             records = FutureCourse.objects.filter(
                 academic_year__id=academic_year_id
             )
+
+        # Multi-campus: never another campus's requests (review I3) -- the
+        # blank-year filter used to list every college's.
+        records = exclude_other_campuses(records, 'academic_year__campus')
 
         if highschool_id:
             records = records.filter(

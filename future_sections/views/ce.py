@@ -34,6 +34,7 @@ from ..models import (
     FutureCourse, FutureSection, FutureProjection,
     NoTestRecipientsConfigured, route_notification_recipients,
 )
+from ..campus import exclude_other_campuses, other_campus
 from ..settings.future_sections import future_sections as fs_settings
 from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
@@ -103,7 +104,12 @@ def _future_course_from(source):
         uuid.UUID(str(future_course_id))
     except (ValueError, AttributeError, TypeError):
         raise Http404('Invalid future_course_id')
-    return get_object_or_404(FutureCourse, pk=future_course_id)
+    future_course = get_object_or_404(
+        FutureCourse.objects.select_related('academic_year'),
+        pk=future_course_id)
+    if other_campus(future_course.academic_year):
+        raise Http404('No such request on this campus')
+    return future_course
 
 
 def sis_sections(request):
@@ -140,7 +146,8 @@ def sis_sections(request):
         })
 
     form = SisSectionLinkForm(future_course=future_course)
-    buckets = TermBuckets(future_course.academic_year, _full_year_code())
+    buckets = TermBuckets(future_course.academic_year,
+                          _full_year_code(future_course.academic_year))
     requested = sorted(
         (buckets.label(b), n)
         for b, n in requested_by_bucket(future_course, buckets).items())
@@ -174,6 +181,8 @@ def sis_reconciliation(request):
         raise Http404('Invalid academic_year')
     academic_year = get_object_or_404(
         AcademicYear, pk=request.GET.get('academic_year'))
+    if other_campus(academic_year):
+        raise Http404('No such academic year on this campus')
     flagged_only = request.GET.get('flagged_only') in ('1', 'on', 'true')
     rows = reconcile(academic_year, flagged_only=flagged_only)
 
@@ -719,7 +728,8 @@ def index(request):
             'notification_log_api_url': '/ce/future_sections/api/notification_logs/?format=datatables',
             'review_notification_log_api_url': '/ce/future_sections/api/review_notification_logs/?format=datatables',
             'active_academic_year': active_academic_year,
-            'academic_years': AcademicYear.objects.all().order_by('-name'),
+            'academic_years': exclude_other_campuses(
+                AcademicYear.objects.all(), 'campus').order_by('-name'),
             'enter_course_details_label': (
                 setting.value.get('enter_course_details_label')
                 or 'Enter Course Details'),

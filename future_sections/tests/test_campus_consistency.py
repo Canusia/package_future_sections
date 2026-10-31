@@ -206,3 +206,97 @@ class MultiCampusNotifyTests(_People):
                         'pending_count': 1}]
                 summary, log = FutureCourse.notify_pending_section_requests()
         self.assertIn('belongs to another campus', summary)
+
+
+@unittest.skipUnless(HAS_CAMPUS_CIS, 'cis without multi-campus support')
+@override_settings(MULTI_CAMPUS=True)
+class MultiCampusCEScopeTests(_People):
+    """CE reconciliation, the SIS-sections modal and the CE list feed refuse
+    another campus's year or request (review I3)."""
+
+    def setUp(self):
+        from cis.campus_context import campus_context
+        from django.urls import reverse
+        from .test_email_new_teacher_send import _safe_force_login
+        self.campus_context = campus_context
+        prefix = settings.CAMPUS_CODE_PREFIX
+        self.c1, self.c2 = [
+            Campus.objects.create(
+                name=f'{n}-{_sfx()}', code=f'{prefix}_{_sfx()}',
+                site=Site.objects.create(domain=f'{n}-{_sfx()}.test', name=n))
+            for n in ('one', 'two')]
+        self.ay1 = AcademicYear.objects.create(name=f'A1-{_sfx()}', campus=self.c1)
+        self.ay2 = AcademicYear.objects.create(name=f'A2-{_sfx()}', campus=self.c2)
+        self.t1 = Term.objects.create(academic_year=self.ay1, code='FA6L', label='Fall')
+        self.t2 = Term.objects.create(academic_year=self.ay2, code='FA', label='Fall')
+        for campus, ay, code in ((self.c1, self.ay1, '6L'), (self.c2, self.ay2, '')):
+            Setting.objects.create(key='cis_future_sections', campus=campus, value={
+                'academic_year': str(ay.id), 'sis_full_year_term_code': code})
+        with campus_context(self.c1):
+            course = self._course()
+            self.fc1 = FutureCourse.objects.create(
+                teacher_course=self._cert(course, HighSchool.objects.create(name='S1')),
+                academic_year=self.ay1, section_info={'teaching': 'yes', 'sections': []})
+            self.fc2 = FutureCourse.objects.create(
+                teacher_course=self._cert(course, HighSchool.objects.create(name='S2')),
+                academic_year=self.ay2, section_info={'teaching': 'yes', 'sections': []})
+        Group.objects.get_or_create(name='ce')
+        self.ce = CustomUser.objects.create_user(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com', password='pw',
+            is_superuser=True)  # passes CampusMiddleware's process_campuses gate
+        self.ce.groups.add(Group.objects.get(name='ce'))
+        _safe_force_login(self.client, self.ce)
+        self.actions = reverse('future_sections_ce:future_sections_actions')
+        self.recon = reverse('future_sections_ce:sis_reconciliation')
+        self.feed = reverse('future_sections_ce:future_class_section-list')
+
+    def _serve(self, campus):
+        # CampusMiddleware serves the campus whose Site matches the host.
+        from contextlib import contextmanager
+
+        @contextmanager
+        def served():
+            self.client.defaults['HTTP_HOST'] = campus.site.domain
+            try:
+                yield
+            finally:
+                self.client.defaults.pop('HTTP_HOST', None)
+        return served()
+
+    def test_reconciliation_404s_for_another_campus_year(self):
+        with self._serve(self.c1):
+            ok = self.client.get(self.recon, {'academic_year': str(self.ay1.id)})
+            other = self.client.get(self.recon, {'academic_year': str(self.ay2.id)})
+            csv_other = self.client.get(self.recon, {
+                'academic_year': str(self.ay2.id), 'format': 'csv'})
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(other.status_code, 404)
+        self.assertEqual(csv_other.status_code, 404)
+
+    def test_modal_get_and_post_404_for_another_campus_request(self):
+        with self._serve(self.c1):
+            ok = self.client.get(self.actions, {
+                'action': 'sis-sections', 'future_course_id': str(self.fc1.id)})
+            get = self.client.get(self.actions, {
+                'action': 'sis-sections', 'future_course_id': str(self.fc2.id)})
+            post = self.client.post(self.actions, {
+                'action': 'sis-sections', 'future_course_id': str(self.fc2.id),
+                'sis_sections': []})
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(get.status_code, 404)
+        self.assertEqual(post.status_code, 404)
+
+    def test_ce_list_feed_hides_another_campus_requests(self):
+        with self._serve(self.c1):
+            response = self.client.get(self.feed, {
+                'format': 'json', 'academic_year': ''})
+        data = response.json()
+        ids = {r['id'] for r in data.get('results', data)}
+        self.assertIn(str(self.fc1.id), ids)
+        self.assertNotIn(str(self.fc2.id), ids)
+
+    def test_full_year_code_is_read_in_the_records_campus(self):
+        from ..sis_reconcile import _full_year_code
+        with self.campus_context(self.c2):
+            self.assertEqual(_full_year_code(self.ay1), '6L')
+            self.assertEqual(_full_year_code(self.ay2), '')

@@ -100,9 +100,14 @@ class TermBuckets:
         return term.label if term is not None else 'No term'
 
 
-def _full_year_code():
+def _full_year_code(academic_year=None):
+    """The ``sis_full_year_term_code`` setting of the year's campus (review
+    I3): ``cis_future_sections`` is a per-campus setting, so it is read in
+    the record's campus context, not the serving one."""
+    from .campus import record_context
     from .utils import get_fs_config
-    return (get_fs_config() or {}).get('sis_full_year_term_code') or ''
+    with record_context(academic_year):
+        return (get_fs_config() or {}).get('sis_full_year_term_code') or ''
 
 
 def requested_by_bucket(future_course, buckets):
@@ -149,7 +154,7 @@ def reconcile(academic_year, highschool=None, flagged_only=False):
     """
     from .models import FutureCourse
 
-    buckets = TermBuckets(academic_year, _full_year_code())
+    buckets = TermBuckets(academic_year, _full_year_code(academic_year))
 
     requests = FutureCourse.objects.filter(
         academic_year=academic_year).select_related(
@@ -232,7 +237,8 @@ def candidate_sections(future_course):
     ).exclude(id__in=taken).select_related('term', 'teacher__user').order_by(
         'term__code', 'section_number')
 
-    buckets = TermBuckets(future_course.academic_year, _full_year_code())
+    buckets = TermBuckets(future_course.academic_year,
+                          _full_year_code(future_course.academic_year))
     wanted = requested_by_bucket(future_course, buckets)
     suggested = {
         sec.id for sec in qs
