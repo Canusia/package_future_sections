@@ -35,7 +35,7 @@ from ..models import (
     FutureCourse, FutureSection, FutureProjection,
     NoTestRecipientsConfigured, route_notification_recipients,
 )
-from ..campus import exclude_other_campuses, other_campus
+from ..campus import exclude_other_campuses, is_multi_campus, other_campus
 from ..settings.future_sections import future_sections as fs_settings
 from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
@@ -44,10 +44,54 @@ from cis.menu import cis_menu, draw_menu
 logger = logging.getLogger(__name__)
 
 
+def _refuse_other_campus(academic_year):
+    """404 when (multi-campus) the year belongs to another campus; a no-op
+    otherwise, so single-campus behaviour is unchanged."""
+    if other_campus(academic_year):
+        raise Http404('No such record on this campus')
+
+
+def _refuse_other_campus_year_id(academic_year_id):
+    """``_refuse_other_campus`` for a client-supplied year id. Only looks the
+    year up in multi-campus mode; an unknown or malformed id falls through to
+    the caller's existing handling."""
+    if not is_multi_campus():
+        return
+    from django.core.exceptions import ValidationError
+    try:
+        year = AcademicYear.objects.filter(pk=academic_year_id).first()
+    except (ValidationError, ValueError, TypeError):
+        return
+    _refuse_other_campus(year)
+
+
+def _split_other_campus(courses):
+    """``(own, skipped_count)`` for bulk actions: requests whose year belongs
+    to another campus are dropped, not 404ed. Single-campus: all kept."""
+    courses = list(courses)
+    if not is_multi_campus():
+        return courses, 0
+    own = [fc for fc in courses if not other_campus(fc.academic_year)]
+    return own, len(courses) - len(own)
+
+
+def _campus_skip_note(skipped):
+    return (f' Skipped, belongs to another campus: {skipped} request(s).'
+            if skipped else '')
+
+
+def _bulk_courses(ids):
+    return FutureCourse.objects.filter(id__in=ids).select_related(
+        'academic_year', 'teacher_course__course')
+
+
 def delete_section(request):
     """Delete a future section"""
     section_id = request.GET.get('section')
-    future_section = get_object_or_404(FutureSection, pk=section_id)
+    future_section = get_object_or_404(
+        FutureSection.objects.select_related('future_course__academic_year'),
+        pk=section_id)
+    _refuse_other_campus(future_section.future_course.academic_year)
 
     future_section.delete()
     return JsonResponse({'status': 'success'})
@@ -236,7 +280,10 @@ def email_new_teacher(request):
         uuid.UUID(str(future_course_id))
     except (ValueError, AttributeError, TypeError):
         raise Http404('Invalid future_course_id')
-    future_course = get_object_or_404(FutureCourse, pk=future_course_id)
+    future_course = get_object_or_404(
+        FutureCourse.objects.select_related('academic_year'),
+        pk=future_course_id)
+    _refuse_other_campus(future_course.academic_year)
     fs_config = get_fs_config()
 
     sections = (future_course.section_info or {}).get('sections') or []
@@ -376,6 +423,7 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
         AcademicYear,
         pk=academic_year_id
     )
+    _refuse_other_campus(academic_year)
 
     future_course = FutureCourse.get_or_add(
         teacher_course,
@@ -507,6 +555,7 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
 
 def remove_marked_as_not_teaching(request, course_certificate_id, academic_year_id):
     """Remove the not teaching designation"""
+    _refuse_other_campus_year_id(academic_year_id)
     future_course = FutureCourse.objects.filter(
         teacher_course__certificate_id=course_certificate_id,
         academic_year__id=academic_year_id
@@ -532,6 +581,7 @@ def mark_as_not_teaching(request, course_certificate_id, academic_year_id):
         AcademicYear,
         pk=academic_year_id
     )
+    _refuse_other_campus(academic_year)
 
     future_course = FutureCourse.get_or_add(
         teacher_course,
@@ -812,6 +862,7 @@ def send_pending_reminder(request):
             'message': 'Missing required parameters.'
         }, status=400)
 
+    _refuse_other_campus_year_id(academic_year_id)
     highschool = get_object_or_404(HighSchool, pk=highschool_id)
     fs_config = fs_settings.from_db()
 
@@ -953,6 +1004,7 @@ def send_review_reminder(request):
             'message': 'Missing required parameters.'
         }, status=400)
 
+    _refuse_other_campus_fc(_live_future_course(future_course_id))
     success, message = FutureCourse.send_review_reminder(
         future_course_id, reviewer_id)
 
@@ -977,9 +1029,15 @@ def _live_future_course(future_course_id):
     """The FutureCourse for a client-supplied id, or None (malformed ids too)."""
     from django.core.exceptions import ValidationError
     try:
-        return FutureCourse.objects.filter(pk=future_course_id).first()
+        return FutureCourse.objects.filter(
+            pk=future_course_id).select_related('academic_year').first()
     except (ValidationError, ValueError, TypeError):
         return None
+
+
+def _refuse_other_campus_fc(future_course):
+    if future_course is not None:
+        _refuse_other_campus(future_course.academic_year)
 
 
 def _outcome_suffix(fc):
@@ -1005,6 +1063,7 @@ def remove_reviewer(request):
 
     mode = request.POST.get('mode')
     fc = _live_future_course(request.POST.get('future_course_id'))
+    _refuse_other_campus_fc(fc)
     reviewer_id = request.POST.get('reviewer_id')
     if mode not in ('skip', 'delete') or fc is None or not reviewer_id:
         return _reviewer_change_response(
@@ -1026,6 +1085,7 @@ def add_reviewer(request):
     from ..review.helpers import ReviewerChangeError, add_reviewer as _add
 
     fc = _live_future_course(request.POST.get('future_course_id'))
+    _refuse_other_campus_fc(fc)
     reviewer_id = request.POST.get('reviewer_id')
     raw_weight = (request.POST.get('weight') or '').strip()
     weight, weight_ok = None, True
@@ -1056,6 +1116,7 @@ def addable_reviewers(request):
     from ..review.helpers import addable_reviewers as _addable, lowest_addable_weight
 
     fc = _live_future_course(request.GET.get('future_course_id'))
+    _refuse_other_campus_fc(fc)
     if fc is None or fc.status != 'pending_review':
         return _reviewer_change_response(
             'This request is not under review.', status=400, ok=False)
@@ -1124,7 +1185,8 @@ def mark_as_pending_review(request):
             'action': 'display'})
 
     marked, no_reviewer, already_open = 0, [], []
-    for fc in FutureCourse.objects.filter(id__in=ids):
+    own, other = _split_other_campus(_bulk_courses(ids))
+    for fc in own:
         label = str(fc.teacher_course.course.title
                     if fc.teacher_course else fc.id)
         if fc.status != 'submitted':
@@ -1143,8 +1205,9 @@ def mark_as_pending_review(request):
     if already_open:
         message += (' Skipped, already pending review or reviewed: '
                     + ', '.join(already_open) + '.')
+    message += _campus_skip_note(other)
     return JsonResponse({
-        'status': 'warning' if (no_reviewer or already_open) else 'success',
+        'status': 'warning' if (no_reviewer or already_open or other) else 'success',
         'title': 'Pending Review',
         'message': message,
         'action': 'display'})
@@ -1170,7 +1233,7 @@ def mark_as_reviewed(request):
             'action': 'display'
         })
 
-    courses = list(FutureCourse.objects.filter(id__in=ids))
+    courses, other = _split_other_campus(_bulk_courses(ids))
     live = [fc for fc in courses if fc.status == 'pending_review']
     eligible_ids = [fc.id for fc in courses if fc.status != 'pending_review']
 
@@ -1186,9 +1249,10 @@ def mark_as_reviewed(request):
                       if fc.teacher_course else fc.id) for fc in live]
         message += (' Skipped, still pending review (reset to finish '
                     'or wait for all reviewers): ' + ', '.join(labels) + '.')
+    message += _campus_skip_note(other)
 
     return JsonResponse({
-        'status': 'warning' if live else 'success',
+        'status': 'warning' if (live or other) else 'success',
         'title': 'Success',
         'message': message,
         'action': 'display'
@@ -1217,7 +1281,8 @@ def notify_next_stage(request):
             'action': 'display'})
 
     advanced, finished, skipped = 0, 0, []
-    for fc in FutureCourse.objects.filter(id__in=ids):
+    own, other = _split_other_campus(_bulk_courses(ids))
+    for fc in own:
         label = str(fc.teacher_course.course.title
                     if fc.teacher_course else fc.id)
         if not fc.is_review_paused:
@@ -1234,8 +1299,9 @@ def notify_next_stage(request):
                     'reviewed.')
     if skipped:
         message += (' Skipped, not paused: ' + ', '.join(skipped) + '.')
+    message += _campus_skip_note(other)
     return JsonResponse({
-        'status': 'warning' if skipped else 'success',
+        'status': 'warning' if (skipped or other) else 'success',
         'title': 'Notify Reviewers',
         'message': message,
         'action': 'display'})
@@ -1260,13 +1326,15 @@ def mark_as_submitted(request):
         })
 
     updated_count = 0
-    for fc in FutureCourse.objects.filter(id__in=ids):
+    own, other = _split_other_campus(_bulk_courses(ids))
+    for fc in own:
         reset_review(fc)
         updated_count += 1
 
     return JsonResponse({
-        'status': 'success',
+        'status': 'warning' if other else 'success',
         'title': 'Success',
-        'message': f'Successfully marked {updated_count} request(s) as submitted.',
+        'message': (f'Successfully marked {updated_count} request(s) as '
+                    f'submitted.' + _campus_skip_note(other)),
         'action': 'display'
     })

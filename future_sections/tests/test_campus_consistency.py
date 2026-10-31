@@ -294,6 +294,104 @@ class MultiCampusCEScopeTests(_People):
             self.assertEqual(_full_year_code(self.ay1), '6L')
             self.assertEqual(_full_year_code(self.ay2), '')
 
+    # --- remaining CE actions (package_future_sections#6) ---
+
+    def test_email_new_teacher_404s_for_another_campus_request(self):
+        with self._serve(self.c1):
+            get = self.client.get(self.actions, {
+                'action': 'email-new-teacher',
+                'future_course_id': str(self.fc2.id)})
+            post = self.client.post(self.actions, {
+                'action': 'email-new-teacher',
+                'future_course_id': str(self.fc2.id)})
+        self.assertEqual(get.status_code, 404)
+        self.assertEqual(post.status_code, 404)
+
+    def test_mark_as_teaching_and_not_teaching_404_for_another_campus_year(self):
+        cert = self.fc1.teacher_course.certificate_id
+        with self._serve(self.c1):
+            for action in ('teaching-section', 'not-teaching-section',
+                           'remove-not-teaching-section'):
+                response = self.client.get(self.actions, {
+                    'action': action, 'course_certificate': str(cert),
+                    'academic_year_id': str(self.ay2.id)})
+                self.assertEqual(response.status_code, 404, action)
+            post = self.client.post(self.actions, {
+                'action': 'teaching-section',
+                'teacher_course_certificate_id': str(cert),
+                'academic_year_id': str(self.ay2.id)})
+        self.assertEqual(post.status_code, 404)
+        self.assertFalse(FutureCourse.objects.filter(
+            academic_year=self.ay2, teacher_course__certificate_id=cert).exists())
+
+    def test_delete_section_404s_for_another_campus_request(self):
+        from ..models import FutureSection
+        from django.urls import reverse
+        section = FutureSection.objects.create(
+            future_course=self.fc2, section_info={})
+        with self._serve(self.c1):
+            response = self.client.get(
+                reverse('future_sections_ce:delete_future_section'),
+                {'section': str(section.id)})
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(FutureSection.objects.filter(pk=section.pk).exists())
+
+    def test_reviewer_actions_404_for_another_campus_request(self):
+        from django.urls import reverse
+        names = ('send_review_reminder', 'remove_reviewer', 'add_reviewer')
+        with self._serve(self.c1):
+            for name in names:
+                response = self.client.post(
+                    reverse(f'future_sections_ce:{name}'), {
+                        'future_course_id': str(self.fc2.id),
+                        'reviewer_id': str(self.ce.pk), 'mode': 'skip'})
+                self.assertEqual(response.status_code, 404, name)
+            response = self.client.get(
+                reverse('future_sections_ce:addable_reviewers'),
+                {'future_course_id': str(self.fc2.id)})
+        self.assertEqual(response.status_code, 404)
+
+    def test_send_pending_reminder_404s_for_another_campus_year(self):
+        from django.urls import reverse
+        with self._serve(self.c1):
+            response = self.client.get(
+                reverse('future_sections_ce:send_pending_reminder'), {
+                    'highschool_id': str(
+                        self.fc2.teacher_course.teacher_highschool.highschool_id),
+                    'academic_year_id': str(self.ay2.id),
+                    'admin_ids[]': [str(uuid.uuid4())]})
+        self.assertEqual(response.status_code, 404)
+
+    def test_bulk_actions_skip_another_campus_requests(self):
+        from django.urls import reverse
+        bulk = reverse('future_sections_ce:bulk_actions')
+        FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
+            status='submitted')
+        with self._serve(self.c1):
+            response = self.client.get(bulk, {
+                'action': 'mark_as_reviewed',
+                'ids[]': [str(self.fc1.id), str(self.fc2.id)]})
+        self.assertEqual(response.status_code, 200)
+        self.fc1.refresh_from_db()
+        self.fc2.refresh_from_db()
+        self.assertEqual(self.fc1.status, 'reviewed')
+        self.assertEqual(self.fc2.status, 'submitted')
+        data = response.json()
+        self.assertEqual(data['status'], 'warning')
+        self.assertIn('another campus', data['message'])
+
+    def test_bulk_mark_as_submitted_skips_another_campus_requests(self):
+        from django.urls import reverse
+        FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
+            status='reviewed')
+        with self._serve(self.c1):
+            response = self.client.get(reverse('future_sections_ce:bulk_actions'), {
+                'action': 'mark_as_submitted',
+                'ids[]': [str(self.fc1.id), str(self.fc2.id)]})
+        self.fc2.refresh_from_db()
+        self.assertEqual(self.fc2.status, 'reviewed')
+        self.assertIn('another campus', response.json()['message'])
+
 
 @unittest.skipUnless(HAS_CAMPUS_CIS, 'cis without multi-campus support')
 class CampuslessYearReviewTests(MultiCampusNotifyTests):
