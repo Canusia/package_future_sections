@@ -14,7 +14,6 @@ from unittest import mock
 from django.conf import settings
 from django.contrib.auth.models import Group
 from django.contrib.sites.models import Site
-from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
@@ -71,35 +70,29 @@ class TermYearTests(_People):
     def _fc(self, **kw):
         return FutureCourse(teacher_course=self.cert, academic_year=self.ay, **kw)
 
-    def test_consistent_request_is_clean(self):
+    def test_consistent_request_has_no_error(self):
         fc = self._fc(term=self.term, section_info={
             'teaching': 'yes', 'sections': [{'term': str(self.term.id)}]})
-        fc.clean()
         self.assertEqual(fc.term_year_error(), '')
 
     def test_term_fk_from_another_year_is_rejected(self):
-        with self.assertRaises(ValidationError):
-            self._fc(term=self.foreign).clean()
+        self.assertIn('Other Fall', self._fc(term=self.foreign).term_year_error())
 
     def test_row_term_from_another_year_is_rejected(self):
         fc = self._fc(section_info={'teaching': 'yes', 'sections': [
             {'term': str(self.term.id)}, {'term': str(self.foreign.id)}]})
-        with self.assertRaises(ValidationError) as ctx:
-            fc.clean()
-        self.assertIn('Other Fall', str(ctx.exception))
+        self.assertIn('Other Fall', fc.term_year_error())
 
     def test_rows_about_to_be_saved_are_checked(self):
         fc = self._fc()
         self.assertTrue(fc.term_year_error([{'term': str(self.foreign.id)}]))
         self.assertEqual(fc.term_year_error([{'term': 'garbage'}]), '')
 
-    def test_get_or_add_refuses_foreign_rows(self):
-        with self.assertRaises(ValidationError):
-            FutureCourse.get_or_add(self.cert, self.ay, section_info={
-                'teaching': 'yes',
-                'sections': [{'term': str(self.foreign.id)}]})
-        self.assertFalse(FutureCourse.objects.filter(
-            teacher_course=self.cert).exists())
+    def test_dead_model_guards_are_gone(self):
+        # Review M5: nothing called FutureCourse.clean() and no get_or_add
+        # caller passes rows; the views own the check (test_term_year_views).
+        from django.db import models as dj_models
+        self.assertIs(FutureCourse.clean, dj_models.Model.clean)
 
 
 class SingleCampusLinkTests(TestCase):

@@ -14,7 +14,6 @@ from django.db import models
 from django.db.models import JSONField
 from django.utils.functional import cached_property
 from django.utils.safestring import mark_safe
-from django.core.exceptions import ValidationError
 from django.core.mail import EmailMessage
 from django.template import Context, Template
 from django.http import HttpResponse
@@ -300,12 +299,6 @@ class FutureCourse(models.Model):
         return (f'{names} is not a term of {self.academic_year}. Choose a '
                 f'term from that academic year.')
 
-    def clean(self):
-        super().clean()
-        error = self.term_year_error()
-        if error:
-            raise ValidationError(error)
-
     @classmethod
     def get_or_add(cls, teacher_course, academic_year, section_info=None, submitter=None):
         try:
@@ -334,10 +327,10 @@ class FutureCourse(models.Model):
                 meta=meta,
                 submitted_by=submitter
             )
-            # Never create a request whose rows name another year's term.
-            error = record.term_year_error()
-            if error:
-                raise ValidationError(error)
+            # The term/year rule (#6) is enforced where rows are written: the
+            # teaching-form views call term_year_error() before saving. Every
+            # caller here passes {} or {'teaching': 'no'}, so a check at this
+            # point could never fire (review M5).
             record.save()
             return record
 
