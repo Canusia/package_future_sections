@@ -66,6 +66,9 @@ def future_sections_actions(request):
         if action == 'email-new-teacher':
             return email_new_teacher(request)
 
+        if action == 'sis-sections':
+            return sis_sections(request)
+
     if request.method == 'GET':
         action = request.GET.get('action')
 
@@ -89,6 +92,107 @@ def future_sections_actions(request):
             )
         elif action == 'email-new-teacher':
             return email_new_teacher(request)
+        elif action == 'sis-sections':
+            return sis_sections(request)
+
+
+def _future_course_from(source):
+    """The FutureCourse named by ``future_course_id``; 404 on a bad id."""
+    future_course_id = source.get('future_course_id')
+    try:
+        uuid.UUID(str(future_course_id))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404('Invalid future_course_id')
+    return get_object_or_404(FutureCourse, pk=future_course_id)
+
+
+def sis_sections(request):
+    """Show / confirm the imported SIS sections that fulfil a request (#7).
+
+    GET renders the modal with candidate sections (suggestions ticked when
+    nothing is linked yet); POST saves the staff's choice. Only the link is
+    written — never the request's answers or the section.
+    """
+    from django.urls import reverse as url_reverse
+
+    from ..forms import SisSectionLinkForm
+    from ..sis_reconcile import TermBuckets, _full_year_code, link_sections, \
+        requested_by_bucket
+
+    source = request.POST if request.method == 'POST' else request.GET
+    future_course = _future_course_from(source)
+
+    if request.method == 'POST':
+        form = SisSectionLinkForm(request.POST, future_course=future_course)
+        if not form.is_valid():
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Please correct the errors and try again.',
+                'errors': form.errors.as_json(),
+            }, status=400)
+        chosen = list(form.cleaned_data['sis_sections'])
+        changed = link_sections(future_course, chosen, request.user)
+        return JsonResponse({
+            'status': 'success',
+            'message': (f'Linked {len(chosen)} SIS section(s).' if changed
+                        else 'No change.'),
+            'action': 'reload_table',
+        })
+
+    form = SisSectionLinkForm(future_course=future_course)
+    buckets = TermBuckets(future_course.academic_year, _full_year_code())
+    requested = sorted(
+        (buckets.label(b), n)
+        for b, n in requested_by_bucket(future_course, buckets).items())
+    cert = future_course.teacher_course
+    return render(request, 'future_sections/ce/sis_sections.html', {
+        'form': form,
+        'future_course': future_course,
+        'course': cert.course,
+        'highschool': cert.teacher_highschool.highschool,
+        'requested': requested,
+        'form_action_url': url_reverse(
+            'future_sections_ce:future_sections_actions'),
+    })
+
+
+@require_GET
+def sis_reconciliation(request):
+    """Requested vs. imported sections per school, course and term (#7).
+
+    Read-only and computed on every request, so it reflects the latest SIS
+    import. ``format=csv`` downloads the same rows.
+    """
+    import csv
+    from django.http import HttpResponse
+
+    from ..sis_reconcile import reconcile
+
+    try:
+        uuid.UUID(str(request.GET.get('academic_year')))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404('Invalid academic_year')
+    academic_year = get_object_or_404(
+        AcademicYear, pk=request.GET.get('academic_year'))
+    flagged_only = request.GET.get('flagged_only') in ('1', 'on', 'true')
+    rows = reconcile(academic_year, flagged_only=flagged_only)
+
+    if request.GET.get('format') == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = (
+            f'attachment; filename="sis_reconciliation_{academic_year.name}.csv"')
+        writer = csv.writer(response)
+        writer.writerow(['High School', 'Course', 'Term', 'Requested',
+                         'Imported', 'Linked', 'Flag'])
+        for row in rows:
+            writer.writerow([row['highschool'].name, str(row['course']),
+                             row['term'], row['requested'], row['imported'],
+                             row['linked'], row['flag']])
+        return response
+
+    return render(request, 'future_sections/ce/sis_reconciliation.html', {
+        'rows': rows, 'flagged_only': flagged_only,
+    })
 
 
 def email_new_teacher(request):

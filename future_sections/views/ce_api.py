@@ -4,7 +4,8 @@ CE Portal API ViewSets for Future Sections
 import json
 import logging
 
-from django.db.models import Exists, OuterRef
+from django.db.models import Count, Exists, IntegerField, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 
 from rest_framework import viewsets, serializers
 
@@ -243,5 +244,13 @@ class FutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
             # Denied and waiting on staff: still pending_review, pause set.
             records = records.filter(
                 status='pending_review', review_paused_on__isnull=False)
+
+        # Linked SIS sections for the offering column (#7), as a subquery
+        # so it cannot multiply rows or cost a query per row.
+        through = FutureCourse.sis_sections.through
+        records = records.annotate(sis_link_count=Coalesce(Subquery(
+            through.objects.filter(futurecourse_id=OuterRef('pk'))
+            .values('futurecourse_id').annotate(n=Count('id')).values('n')[:1],
+            output_field=IntegerField()), 0))
 
         return records

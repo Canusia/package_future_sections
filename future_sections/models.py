@@ -175,6 +175,14 @@ class FutureCourse(models.Model):
                   'unaffected.',
     )
 
+    # The imported SIS ClassSection(s) staff confirmed fulfil this request
+    # (#7). Link only: nothing here writes to the request or the section.
+    sis_sections = models.ManyToManyField(
+        'cis.ClassSection', blank=True, related_name='fs_future_courses',
+        help_text='Imported SIS sections confirmed by staff as fulfilling '
+                  'this request.',
+    )
+
     # Track status field changes for signal notifications
     tracker = FieldTracker(fields=['status'])
 

@@ -5,6 +5,12 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 
 ## Unreleased
 
+### Added
+- **SIS Reconciliation** (#7). A CE tab compares, per school, course and term, the sections requested in Course Information with the sections the SIS import created and flags "Need N more" / "Remove N" (CSV download too). Read-only and recomputed on every load. Each offering row gets a **SIS sections (N)** modal where staff confirm which imported sections fulfil the request; suggestions (requested term + same teacher) are pre-ticked but nothing links until saved. New optional setting **Full-Year Sections Are Imported Into Term Code** maps Full Year rows to e.g. the spring `6L` sub-term.
+
+### Migrations
+- `0009_futurecourse_sis_sections`: `FutureCourse.sis_sections` M2M to `cis.ClassSection`.
+
 ### Fixed
 - Tenants with an in-repo `cis` can install and load the package again (#9). `myce_cis` moved from `install_requires` to the optional `campus` extra (`future-sections[campus]`). The add-teacher school pickers narrow to the current campus only when `cis.highschool_scope` exists; otherwise they list the admin's or instructor's own schools, as before v2026.12.2. The HS admin and instructor Course Information pages fall back to a shipped `future_sections/partials/_breadcrumb.html` when the portal has no `<portal>/partials/_breadcrumb.html`.
 

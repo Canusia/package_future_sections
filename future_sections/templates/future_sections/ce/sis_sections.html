@@ -1,0 +1,30 @@
+{% load crispy_forms_tags %}
+<div class="modal-header">
+    <h5 class="modal-title">SIS sections</h5>
+</div>
+<div class="modal-body">
+    <p class="text-muted small">
+        {{ course }} &middot; {{ highschool }} &middot; {{ future_course.academic_year }}
+    </p>
+    {% if requested %}
+    <p class="small mb-2">Requested:
+        {% for term, count in requested %}{{ term }}: {{ count }}{% if not forloop.last %}; {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if form.fields.sis_sections.queryset.exists %}
+        {% if form.prefilled_from_suggestions %}
+        <div class="alert alert-info small">Suggested sections (same term and teacher) are ticked. Nothing is linked until you save.</div>
+        {% endif %}
+        <form method="post" action="{{ form_action_url }}" class="fs-ajax-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sis-sections">
+            <input type="hidden" name="future_course_id" value="{{ future_course.id }}">
+            {{ form|crispy }}
+            <input type="submit" class="btn btn-primary" value="Save links">
+            <button type="button" class="btn btn-sm" onclick="window.closeTeachingModal()">Cancel</button>
+        </form>
+    {% else %}
+        <p class="text-muted">No imported sections for this school, course and academic year that are not already linked to another request.</p>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="window.closeTeachingModal()">Close</button>
+    {% endif %}
+</div>

@@ -28,6 +28,9 @@
                         <a class="nav-link" data-toggle="tab" href="#pending">Pending</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" data-toggle="tab" href="#sis_reconciliation">SIS Reconciliation</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" data-toggle="tab" href="#notification_history">Notification History</a>
                     </li>
                     {% if require_review %}
@@ -718,6 +721,10 @@
                                                             '<i class="fas fa-envelope"></i>&nbsp;Email ' +
                                                             $('<div>').text(who).html() + '</a>';
                                                     });
+                                                    offer_info += '<br><a href="#" class="sis-sections-link" ' +
+                                                        'data-toggle="modal" data-target="#teachingModal" ' +
+                                                        'data-future-course="' + row.id + '" title="Link imported SIS sections">' +
+                                                        '<i class="fas fa-link"></i>&nbsp;SIS sections (' + (sd.sis_link_count || 0) + ')</a>';
                                                     return offer_info;
                                                 } else if (teaching == 'no') {
                                                     return 'Not Teaching';
@@ -746,6 +753,46 @@
                     </script>
                 </div>
                 <!-- end tab # records_pending -->
+
+                <div class="tab-pane" id="sis_reconciliation">
+                    <div class="card border-top-0"><div class="card-body">
+                        <div class="card mb-3"><div class="card-body bg-gray-200">
+                            <form id="sis_reconciliation_filter" class="form-inline">
+                                <select class="form-control mr-2" name="academic_year">
+                                    {% for ay in academic_years %}
+                                    <option value="{{ ay.id }}" {% if ay.id == active_academic_year.id %}selected{% endif %}>{{ ay.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-check mr-2">
+                                    <input class="form-check-input" type="checkbox" name="flagged_only" value="1" id="sis_flagged_only" checked>
+                                    <label class="form-check-label" for="sis_flagged_only">Differences only</label>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary mr-2">Compare</button>
+                                <a href="#" class="btn btn-sm btn-outline-secondary" id="sis_reconciliation_csv"><i class="fas fa-download"></i> CSV</a>
+                            </form>
+                            <p class="small text-muted mb-0 mt-2">Compares the sections each school asked for in Course Information with the sections the SIS import created, per school, course and term. Read-only: nothing is changed. Schools do not see this.</p>
+                        </div></div>
+                        <div id="sis_reconciliation_results"></div>
+                    </div></div>
+                    <script>
+                        $(function () {
+                            var url = "{% url 'future_sections_ce:sis_reconciliation' %}";
+                            function load() {
+                                var $out = $('#sis_reconciliation_results');
+                                $out.html('<p class="text-muted">Loading…</p>');
+                                $.get(url, $('#sis_reconciliation_filter').serialize())
+                                    .done(function (html) { $out.html(html); })
+                                    .fail(function () { $out.html('<p class="text-danger">Could not load the comparison.</p>'); });
+                            }
+                            $('#sis_reconciliation_filter').on('submit', function (e) { e.preventDefault(); load(); });
+                            $('a[href="#sis_reconciliation"]').on('shown.bs.tab', load);
+                            $('#sis_reconciliation_csv').on('click', function (e) {
+                                e.preventDefault();
+                                window.location = url + '?format=csv&' + $('#sis_reconciliation_filter').serialize();
+                            });
+                        });
+                    </script>
+                </div>
 
                 <div class="tab-pane" id="notification_history">
                     <div class="bg-white border border-top-0">
@@ -1388,6 +1435,24 @@
                     var msg = xhr.responseJSON ? xhr.responseJSON.message : 'Request failed';
                     swal('Error', msg, 'error');
                     $btn.prop('disabled', false);
+                }
+            });
+        });
+
+        $(document).on('click', '.sis-sections-link', function () {
+            var $link = $(this);
+            $.blockUI();
+            $.ajax({
+                type: 'GET',
+                url: "{% url 'future_sections_ce:future_sections_actions' %}",
+                data: {'action': 'sis-sections', 'future_course_id': $link.attr('data-future-course')},
+                success: function (response) {
+                    $.unblockUI();
+                    $('#teachingModal .modal-content > .modal-body').html(response);
+                },
+                error: function () {
+                    $.unblockUI();
+                    alert('Could not open the SIS sections');
                 }
             });
         });

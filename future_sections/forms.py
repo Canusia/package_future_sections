@@ -1262,3 +1262,36 @@ class EmailNewTeacherForm(forms.Form):
         if self.errors:
             self.section = None
         return cleaned
+
+
+class SisSectionChoiceField(forms.ModelMultipleChoiceField):
+    def label_from_instance(self, sec):
+        teacher = ''
+        if sec.teacher_id and getattr(sec.teacher, 'user', None):
+            teacher = f' · {sec.teacher.user.last_name}, {sec.teacher.user.first_name}'
+        number = sec.class_number or sec.section_number or ''
+        return f'{sec.term.label} · {number} ({sec.section_number}){teacher}'
+
+
+class SisSectionLinkForm(forms.Form):
+    """CE confirms which imported SIS sections fulfil one request (#7)."""
+
+    sis_sections = SisSectionChoiceField(
+        queryset=None, required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label='Imported SIS sections',
+    )
+
+    def __init__(self, *args, future_course, **kwargs):
+        from .sis_reconcile import candidate_sections
+
+        super().__init__(*args, **kwargs)
+        self.future_course = future_course
+        candidates, self.suggested_ids = candidate_sections(future_course)
+        self.fields['sis_sections'].queryset = candidates
+        if not self.is_bound:
+            linked = list(future_course.sis_sections.values_list('id', flat=True))
+            self.initial['sis_sections'] = linked or list(self.suggested_ids)
+            self.prefilled_from_suggestions = not linked and bool(self.suggested_ids)
+        else:
+            self.prefilled_from_suggestions = False

@@ -15,7 +15,7 @@ Settings key: `cis_future_sections` in the `Setting` model.
 ## Models (`models.py`)
 
 - **FutureProjection** - Tracks a high school's overall survey progress. Unique on `(academic_year, highschool)`. Meta JSON stores confirmation status and history.
-- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`pending_review`/`reviewed`) with `FieldTracker` for signal-based email notifications. `pending_review` and `reviewed` are the locked statuses (`LOCKED_STATUSES`): while in either, the high school administrator and instructor may no longer edit the request — see `utils.assert_editable`. `review_round` tracks the live review round; reviewer decisions live in `SectionRequestReview` rows, not in `section_info`. `review_paused_on` (and the `is_review_paused` property) is set when a reviewer denies a request — see "Review flow: rounds, stages and pause" below. Can create `TeacherApplication` via `create_teacher_application()`.
+- **FutureCourse** - Tracks an instructor's intention to teach a course. Unique on `(teacher_course, academic_year)`. `section_info` JSON stores `{teaching: 'yes'/'no', sections: [...]}`. Has `status` field (`submitted`/`pending_review`/`reviewed`) with `FieldTracker` for signal-based email notifications. `pending_review` and `reviewed` are the locked statuses (`LOCKED_STATUSES`): while in either, the high school administrator and instructor may no longer edit the request — see `utils.assert_editable`. `review_round` tracks the live review round; reviewer decisions live in `SectionRequestReview` rows, not in `section_info`. `review_paused_on` (and the `is_review_paused` property) is set when a reviewer denies a request — see "Review flow: rounds, stages and pause" below. Can create `TeacherApplication` via `create_teacher_application()`. `sis_sections` (M2M to `cis.ClassSection`, `related_name='fs_future_courses'`) holds the imported SIS sections staff confirmed fulfil the request — see "SIS reconciliation" below.
 - **FutureSection** - Legacy per-section model. `FutureCourse.section_info` now stores primary data, but this model is still used in CE portal deletion and exports.
 - **SectionRequestReview** (`review/helpers.py` operates on it) - One reviewer's slot on one round of review for one section request. Unique on `(future_course, reviewer, round)`. `role` and `weight` are copied from the qualifying `CourseAdministrator` at snapshot time (`qualifying_reviewers()`), so later role/weight changes never strand or reshuffle a live round. `decision` (`''`/`approved`/`not_approved`/`skipped`), `comment`, `mentor`, `decided_on` are filled in by `record_decision()`; `skipped_by` records the CE user who took the reviewer out. Ordered `('round', 'weight', 'created_on')`.
 
@@ -30,6 +30,22 @@ All FKs to cis models use explicit `related_name` with `fs_` prefix (e.g., `fs_f
 - **`resume_review()`** clears the pause and calls `advance_or_finish()`, so it re-notifies whichever stage is *actually* current: the denier's own stage again if a peer there is still undecided, or the following stage once that stage is complete. It does not always advance to a new stage — the CE "Notify next stage" action and its button are deliberately labelled "Notify reviewers" for this reason. `reset_review()` (back to `submitted`) also clears the pause; history rows from the finished round are left untouched.
 - **Backward compatibility:** every pre-existing `SectionRequestReview` row defaults `weight` to 0, so an unmigrated tenant (or one that never opens the new settings card) has exactly one stage — the parallel quorum behaves identically, except that opening a round now also emails that one stage immediately rather than only via the cron/manual reminder.
 - **CE can change a live round (`skip_reviewer`, `delete_reviewer`, `add_reviewer`).** A skip sets `decision='skipped'` plus `skipped_by`/`decided_on` and keeps the row as history. Because every "outstanding" query tests `decision=''`, a skipped row drops out of `current_stage`, `pending_for` and the reminders with no further changes. Code that reads a *filled* decision as a verdict must exclude `skipped` (`reviewed_for`, the reviewer status column). Delete removes an outstanding or skipped row and leaves only a log line. A decided row can be neither skipped nor deleted. When taking out a row completes the current stage, the helpers call `advance_or_finish()`, so removing the last outstanding reviewer marks the request `reviewed`, and a paused request is changed but never advanced. `add_reviewer` accepts only a qualifying reviewer (Active `CourseAdministrator` in a configured role) who has no row in the live round, at a weight no lower than `lowest_addable_weight()`. It emails that reviewer alone when they land in the current stage of an unpaused request. A skipped reviewer must be deleted before they can be added back (one row per reviewer per round).
+
+## SIS reconciliation (`sis_reconcile.py`, #7)
+
+Read-only, computed live (nothing is stored, so it is current after every SIS import):
+`reconcile(academic_year)` compares requested sections (per row: `number_of_sections`, else 1;
+0 for a `teaching: 'no'` answer) with imported non-cancelled `ClassSection`s, keyed on
+(high school, course, top-level term). Sub-terms count against their parent (`Term.parent`,
+skipped when the tenant's cis has no such field). Only (school, course) pairs with a
+`FutureCourse` for the year are compared. A `full_year` row counts against the top-level
+term holding a term whose code ends with the `sis_full_year_term_code` setting, when set.
+`candidate_sections(fc)` lists sections staff may link (same school/course/AY, not linked to
+another request) and suggests those in a requested term with the request's teacher;
+`link_sections()` is the only write (the M2M plus a history entry). CE UI: the **SIS
+Reconciliation** tab (`sis_reconciliation` view, HTML fragment or `format=csv`) and the
+per-row **SIS sections (N)** modal (`future_sections_actions` action `sis-sections`).
+Section numbers are never a match key.
 
 ## Key Dependencies
 
@@ -164,5 +180,5 @@ Located in `staticfiles/future_sections/js/`. Must be registered in `STATICFILES
 - Role detection uses `cis.utils.user_has_highschool_admin_role()` / `user_has_instructor_role()`
 - `utils.py` provides shared helpers: `get_fs_config()`, `get_user_context()`, `validate_certificate_access()`, `get_or_create_future_projection()`, `add_history_entry()`
 - Emails use Django `Template` + `Context` with `cis/email.html` wrapper and `mailer.send_html_mail()`
-- DEBUG mode redirects emails to the tenant's `testers` setting (comma-separated) via `route_notification_recipients`. With `DEBUG` on and `testers` empty, nothing is sent and the attempt is recorded as skipped — it never falls through to the real recipient. Note several older call sites still hardcode a redirect address; only the notifiers were converted in 2026.8.0.
+- DEBUG mode redirects emails to the tenant's `testers` setting (comma-separated) via `route_notification_recipients`. With `DEBUG` on and `testers` empty, nothing is sent and the attempt is recorded as skipped — it never falls through to the real recipient. Every send path uses it (the last hardcoded redirects went in #8); `test_debug_email_routing.py` fails if a personal mailbox reappears in shipped source.
 - Settings registered via `CONFIGURATORS` in `apps.py`, reports via `REPORTS`

@@ -118,6 +118,8 @@ class FutureCourseSerializer(serializers.ModelSerializer):
                 # <th data-data="changed_teacher_sections"> to request it.
                 'changed_teacher_sections':
                     self.get_changed_teacher_sections(obj),
+                # Linked SIS sections (#7); annotated by the CE viewset.
+                'sis_link_count': getattr(obj, 'sis_link_count', None),
             }
         except Exception:
             return {'teaching': None, 'displays': [], 'review': None,

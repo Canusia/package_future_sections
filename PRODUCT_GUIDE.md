@@ -145,6 +145,12 @@ These settings control the email sent to HS administrators after they confirm an
 
 **Who receives it:** The HS administrator who submitted the confirmation.
 
+### SIS Reconciliation
+
+| Setting | What It Controls |
+|---------|-----------------|
+| **Full-Year Sections Are Imported Into Term Code** | Optional. When a request row is marked **Full Year**, compare it with imported sections in the term whose code ends with this value (e.g. `6L` for a spring sub-term) instead of the term the school chose. Blank compares every row with its own term. |
+
 ---
 
 ## Screens Overview
@@ -168,7 +174,9 @@ These settings control the email sent to HS administrators after they confirm an
   1. **Section Requests** - All submitted FutureCourse records with status, school, instructor, course, and section details. When review is enabled, each row in review shows a stage badge ("Stage N") or a "Paused — awaiting staff" badge, and a Review filter (Approved / Not Approved / Pending / **Paused (not approved)**) narrows the list. Clicking a row's review progress opens the **reviewers modal** — every snapshotted reviewer, their decision, and whose turn it currently is ("Current stage"). Skipped reviewers are not counted as decided: the row's badge and the modal heading show them as a separate "N skipped" count; a **Notify reviewers** button appears there whenever the request is paused.
   2. **School Progress** - FutureProjection records showing which schools have confirmed personnel and sections.
   3. **Pending Requests** - Instructor-course combinations that have not yet been responded to.
-  4. **Notification Logs** - History of pending notification emails sent by the system.
+  4. **SIS Reconciliation** - Per school, course and term: sections requested in Course Information, sections the SIS import created, how many are linked, and a flag ("Need N more" / "Remove N"). Sections in a sub-term count against the parent term. Read-only and recomputed every time the tab loads, so it reflects the latest import; a CSV button downloads the same rows. Only schools that answered for that course are compared — a "not teaching" answer counts as 0 requested. Schools never see it.
+  5. **Notification Logs** - History of pending notification emails sent by the system.
+- Each offering row has a **SIS sections (N)** link. It opens the imported sections for the same school, course and academic year (excluding cancelled ones and ones linked to another request). Sections in a requested term taught by the request's teacher are pre-ticked as suggestions the first time; nothing is linked until staff click **Save links**. The change is recorded in the request's history.
 - Checkboxes on each row allow selecting records for bulk actions.
 - Filter by academic year using the dropdown at the top.
 

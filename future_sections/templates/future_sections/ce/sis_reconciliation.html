@@ -1,0 +1,26 @@
+{% if rows %}
+<table class="table table-sm table-striped" id="sis_reconciliation_table">
+    <thead>
+        <tr>
+            <th>High School</th><th>Course</th><th>Term</th>
+            <th class="text-right">Requested</th><th class="text-right">Imported</th>
+            <th class="text-right">Linked</th><th>Flag</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td>{{ row.highschool.name }}</td>
+            <td>{{ row.course }}</td>
+            <td>{{ row.term }}</td>
+            <td class="text-right">{{ row.requested }}</td>
+            <td class="text-right">{{ row.imported }}</td>
+            <td class="text-right">{{ row.linked }}</td>
+            <td>{% if row.flag == 'OK' %}<span class="badge badge-success">OK</span>{% elif row.difference < 0 %}<span class="badge badge-warning">{{ row.flag }}</span>{% else %}<span class="badge badge-danger">{{ row.flag }}</span>{% endif %}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted">{% if flagged_only %}No differences between requests and imported sections.{% else %}No Course Information requests for this academic year.{% endif %}</p>
+{% endif %}

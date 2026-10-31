@@ -9,7 +9,8 @@ from rest_framework import routers
 from ..views.ce import (
     index, detail, settings, delete_section, future_sections_actions,
     bulk_actions, get_highschool_admins, send_pending_reminder,
-    send_review_reminder, remove_reviewer, add_reviewer, addable_reviewers
+    send_review_reminder, remove_reviewer, add_reviewer, addable_reviewers,
+    sis_reconciliation,
 )
 from ..views.ce_api import (
     PendingFutureClassSectionViewSet,
@@ -107,6 +108,11 @@ urlpatterns = [
         'add_reviewer',
         user_passes_test(user_has_cis_role, login_url='/')(add_reviewer),
         name='add_reviewer'
+    ),
+    path(
+        'sis_reconciliation',
+        user_passes_test(user_has_cis_role, login_url='/')(sis_reconciliation),
+        name='sis_reconciliation'
     ),
     path(
         'addable_reviewers',
