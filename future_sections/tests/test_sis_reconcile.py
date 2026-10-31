@@ -355,3 +355,51 @@ class CSVExportHardeningTests(_Base):
             self.assertEqual(csv_safe(raw), "'" + raw)
         self.assertEqual(csv_safe('plain'), 'plain')
         self.assertEqual(csv_safe(3), 3)
+
+
+class CancelledLinkedSectionTests(_Base):
+    """A linked section later cancelled in the SIS stays linked and shows as
+    cancelled, so a Save does not drop it silently (review M6)."""
+
+    def setUp(self):
+        super().setUp()
+        ce = CustomUser.objects.create_user(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com', password='pw')
+        ce.groups.add(Group.objects.get(name='ce'))
+        _safe_force_login(self.client, ce)
+        self.actions = reverse('future_sections_ce:future_sections_actions')
+
+    def test_cancelled_linked_section_is_kept_and_marked(self):
+        fc = self._request([{'term': str(self.fall.id)}])
+        sec = self._section(self.fall)
+        fc.sis_sections.add(sec)
+        sec.status = 'C'
+        sec.save()
+        qs, suggested = candidate_sections(fc)
+        self.assertIn(sec, qs)
+        self.assertNotIn(sec.id, suggested)
+        body = self.client.get(self.actions, {
+            'action': 'sis-sections', 'future_course_id': str(fc.id)}
+        ).content.decode()
+        self.assertIn(f'value="{sec.id}"', body)
+        self.assertIn('Cancelled in SIS', body)
+        ok = self.client.post(self.actions, {
+            'action': 'sis-sections', 'future_course_id': str(fc.id),
+            'sis_sections': [str(sec.id)]})
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(list(fc.sis_sections.all()), [sec])
+
+    def test_cancelled_unlinked_section_is_still_not_offered(self):
+        fc = self._request([{'term': str(self.fall.id)}])
+        sec = self._section(self.fall, status='C')
+        self.assertNotIn(sec, candidate_sections(fc)[0])
+
+    def test_label_without_class_number_does_not_repeat(self):
+        from ..forms import SisSectionChoiceField
+        sec = self._section(self.fall)
+        sec.class_number = None
+        label = SisSectionChoiceField(queryset=None).label_from_instance(sec)
+        self.assertEqual(label.count(sec.section_number), 1, label)
+        sec.class_number = 4321
+        label = SisSectionChoiceField(queryset=None).label_from_instance(sec)
+        self.assertIn(f'4321 ({sec.section_number})', label)

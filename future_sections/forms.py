@@ -1275,8 +1275,13 @@ class SisSectionChoiceField(forms.ModelMultipleChoiceField):
         teacher = ''
         if sec.teacher_id and getattr(sec.teacher, 'user', None):
             teacher = f' · {sec.teacher.user.last_name}, {sec.teacher.user.first_name}'
-        number = sec.class_number or sec.section_number or ''
-        return f'{sec.term.label} · {number} ({sec.section_number}){teacher}'
+        from .sis_reconcile import is_cancelled
+        if sec.class_number and sec.section_number:
+            number = f'{sec.class_number} ({sec.section_number})'
+        else:
+            number = str(sec.class_number or sec.section_number or '')
+        cancelled = ' · Cancelled in SIS' if is_cancelled(sec) else ''
+        return f'{sec.term.label} · {number}{teacher}{cancelled}'
 
 
 class SisSectionLinkForm(forms.Form):
@@ -1293,7 +1298,8 @@ class SisSectionLinkForm(forms.Form):
 
         super().__init__(*args, **kwargs)
         self.future_course = future_course
-        candidates, self.suggested_ids = candidate_sections(future_course)
+        candidates, self.suggested_ids = candidate_sections(
+            future_course, suggest=not self.is_bound)
         self.fields['sis_sections'].queryset = candidates
         if not self.is_bound:
             linked = list(future_course.sis_sections.values_list('id', flat=True))

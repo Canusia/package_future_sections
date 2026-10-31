@@ -121,6 +121,10 @@ def requested_by_bucket(future_course, buckets):
     return counts
 
 
+def is_cancelled(section):
+    return (section.status or '').strip().lower() in CANCELLED_STATUSES
+
+
 def imported_sections(academic_year):
     """Imported, non-cancelled ``ClassSection``\\ s for the academic year."""
     from cis.models.section import ClassSection
@@ -216,11 +220,12 @@ def reconcile(academic_year, highschool=None, flagged_only=False):
     return rows
 
 
-def candidate_sections(future_course):
+def candidate_sections(future_course, suggest=True):
     """Imported sections that could fulfil ``future_course``.
 
     Same high school, course and academic year, not cancelled, and not
-    already linked to a different request. Returns
+    already linked to a different request -- plus any section already linked
+    to this request, even if since cancelled. Returns
     ``(queryset, suggested_ids)``: a section is suggested when its term
     matches a requested term and its teacher is the request's teacher.
     """
@@ -232,11 +237,23 @@ def candidate_sections(future_course):
         futurecourse__academic_year=future_course.academic_year,
     ).exclude(futurecourse_id=future_course.pk).values('classsection_id')
 
-    qs = imported_sections(future_course.academic_year).filter(
+    from cis.models.section import ClassSection
+
+    eligible = imported_sections(future_course.academic_year).filter(
         highschool_id=ths.highschool_id, course_id=cert.course_id,
-    ).exclude(id__in=taken).select_related('term', 'teacher__user').order_by(
+    ).exclude(id__in=taken)
+    # Sections already linked here stay listed even once cancelled in the
+    # SIS (labelled so), so saving the form never unlinks them silently
+    # (review M6); staff untick them to drop the link.
+    linked_here = future_course.sis_sections.values('id') \
+        if future_course.pk else ClassSection.objects.none().values('id')
+    qs = ClassSection.objects.filter(
+        Q(id__in=eligible.values('id')) | Q(id__in=linked_here),
+    ).select_related('term', 'teacher__user').order_by(
         'term__code', 'section_number')
 
+    if not suggest:  # a bound (POST) form only validates against qs
+        return qs, set()
     buckets = TermBuckets(future_course.academic_year,
                           _full_year_code(future_course.academic_year))
     wanted = requested_by_bucket(future_course, buckets)
@@ -244,6 +261,7 @@ def candidate_sections(future_course):
         sec.id for sec in qs
         if wanted.get(buckets.top(sec.term_id))
         and sec.teacher_id == ths.teacher_id
+        and not is_cancelled(sec)
     }
     return qs, suggested
 
