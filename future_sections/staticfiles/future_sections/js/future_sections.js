@@ -323,8 +323,11 @@ function getCookie(name) {
                     var span = document.createElement('span');
                     span.innerHTML = '';
 
-                    // Show non-form errors from details
-                    if (response.details) {
+                    // Show non-form errors. `details_text` carries DB text
+                    // (term labels) and is rendered as text, never markup.
+                    if (response.details_text) {
+                        span.appendChild(document.createTextNode(response.details_text));
+                    } else if (response.details) {
                         span.innerHTML += response.details;
                     }
 

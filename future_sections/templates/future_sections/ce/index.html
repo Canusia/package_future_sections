@@ -1055,7 +1055,12 @@
                 }
 
                 var span = document.createElement('span')
-                span.innerHTML = xhr.responseJSON.details
+                if (xhr.responseJSON.details_text) {
+                    // DB text (term labels): render as text, not markup.
+                    span.appendChild(document.createTextNode(xhr.responseJSON.details_text))
+                } else {
+                    span.innerHTML = xhr.responseJSON.details
+                }
                 swal({
                     title: xhr.responseJSON.message,
                     content: span,

@@ -154,3 +154,31 @@ class SchoolTeachingSaveTests(_Base):
             self.url, self._data(self.old_fall, self.other))
         self.assertEqual(response.status_code, 400)
         self.assertIn('Cfg Fall', response.json()['details'])
+
+
+class TermErrorIsTextTests(CETeachingSaveTests):
+    """The term/year error carries DB text (term labels, year names); it is
+    sent escaped in ``details`` and raw in ``details_text`` for the JS to
+    render as text (review M3)."""
+
+    def test_term_error_is_escaped(self):
+        self.cfg_fall.label = '<img src=x onerror=alert(1)>'
+        self.cfg_fall.save()
+        fc = FutureCourse.get_or_add(self.cert, self.other)
+        FutureCourse.objects.filter(pk=fc.pk).update(term=self.cfg_fall)
+        body = self._post(self.old_fall, self.other).json()
+        self.assertNotIn('<img', body['details'])
+        self.assertIn('&lt;img', body['details'])
+        self.assertIn('<img', body['details_text'])
+
+    def test_package_js_renders_details_text_as_text(self):
+        import os
+        from .. import __file__ as pkg_file
+        root = os.path.dirname(pkg_file)
+        js = open(os.path.join(
+            root, 'staticfiles/future_sections/js/future_sections.js')).read()
+        html = open(os.path.join(
+            root, 'templates/future_sections/ce/index.html')).read()
+        for name, source in (('future_sections.js', js), ('ce/index.html', html)):
+            self.assertTrue('details_text' in source and
+                            'createTextNode' in source, name)

@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, render
 from django.http import Http404, JsonResponse
 from django.forms.formsets import formset_factory
 from django.template.loader import get_template
+from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET, require_POST
@@ -187,16 +188,22 @@ def sis_reconciliation(request):
     rows = reconcile(academic_year, flagged_only=flagged_only)
 
     if request.GET.get('format') == 'csv':
+        from django.utils.text import get_valid_filename
+
+        from ..utils import csv_safe
+
+        filename = get_valid_filename(
+            f'sis_reconciliation_{academic_year.name}.csv')
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = (
-            f'attachment; filename="sis_reconciliation_{academic_year.name}.csv"')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
         writer.writerow(['High School', 'Course', 'Term', 'Requested',
                          'Imported', 'Linked', 'Flag'])
         for row in rows:
-            writer.writerow([row['highschool'].name, str(row['course']),
-                             row['term'], row['requested'], row['imported'],
-                             row['linked'], row['flag']])
+            writer.writerow([csv_safe(cell) for cell in (
+                row['highschool'].name, str(row['course']), row['term'],
+                row['requested'], row['imported'], row['linked'],
+                row['flag'])])
         return response
 
     return render(request, 'future_sections/ce/sis_reconciliation.html', {
@@ -421,7 +428,11 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
                 return JsonResponse({
                     'status': 'error',
                     'message': 'Please correct the errors and try again.',
-                    'details': term_error,
+                    # DB text (term labels, year names): escaped for consumers
+                # that innerHTML `details`, raw in `details_text` for ours,
+                # which render it as text (review M3).
+                'details': escape(term_error),
+                'details_text': term_error,
                     'errors': json.dumps({}),
                 }, status=400)
             future_course.section_info = {'teaching': 'yes', 'sections': section_info}

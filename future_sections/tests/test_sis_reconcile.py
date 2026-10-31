@@ -315,3 +315,43 @@ class CEListFeedQueryCountTests(_Base):
         self._add_rows(3)
         five = len(self._sis_queries())
         self.assertEqual(two, five)
+
+
+class CSVExportHardeningTests(_Base):
+    """Reconciliation CSV: formula cells neutralised, filename sanitised
+    (review M1, M2)."""
+
+    def setUp(self):
+        super().setUp()
+        ce = CustomUser.objects.create_user(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com', password='pw')
+        ce.groups.add(Group.objects.get(name='ce'))
+        _safe_force_login(self.client, ce)
+
+    def test_formula_cells_are_prefixed(self):
+        self.hs.name = '=HYPERLINK("http://x")'
+        self.hs.save()
+        self._request([{'term': str(self.fall.id)}])
+        response = self.client.get(
+            reverse('future_sections_ce:sis_reconciliation'),
+            {'academic_year': str(self.ay.id), 'format': 'csv'})
+        rows = list(csv.reader(io.StringIO(response.content.decode())))
+        self.assertEqual(rows[1][0], '\'=HYPERLINK("http://x")')
+        self.assertEqual(rows[1][3], '1')  # numbers untouched
+
+    def test_filename_is_sanitised(self):
+        self.ay.name = '2026"; evil=1'
+        self.ay.save()
+        response = self.client.get(
+            reverse('future_sections_ce:sis_reconciliation'),
+            {'academic_year': str(self.ay.id), 'format': 'csv'})
+        header = response['Content-Disposition']
+        self.assertNotIn('";', header)
+        self.assertEqual(header.count('"'), 2, header)
+
+    def test_csv_safe_helper(self):
+        from ..utils import csv_safe
+        for raw in ('=1', '+1', '-1', '@a', '\tx', '\rx'):
+            self.assertEqual(csv_safe(raw), "'" + raw)
+        self.assertEqual(csv_safe('plain'), 'plain')
+        self.assertEqual(csv_safe(3), 3)

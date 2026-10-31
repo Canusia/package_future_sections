@@ -746,3 +746,17 @@ def build_section_info_from_formset(request, teaching_formset, future_course):
 
         sections.append(cleaned)
     return sections
+
+
+_CSV_FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def csv_safe(value):
+    """Neutralise a CSV cell a spreadsheet would run as a formula.
+
+    Text starting with ``= + - @`` (or a tab / CR) gets a leading ``'``;
+    numbers and other values pass through unchanged.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value

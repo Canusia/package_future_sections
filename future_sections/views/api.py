@@ -15,6 +15,7 @@ from django.forms.formsets import formset_factory
 from django.shortcuts import render, get_object_or_404
 from django.template import Context, Template
 from django.template.loader import get_template
+from django.utils.html import escape
 from django.utils.safestring import mark_safe
 
 from rest_framework import viewsets
@@ -174,7 +175,11 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
                 if term_error:
                     return Response({
                         'message': 'Please correct the errors and try again.',
-                        'details': term_error,
+                        # DB text (term labels, year names): escaped for consumers
+                    # that innerHTML `details`, raw in `details_text` for ours,
+                    # which render it as text (review M3).
+                    'details': escape(term_error),
+                    'details_text': term_error,
                         'errors': json.dumps({}),
                         'status': 'error'
                     }, status=400)
