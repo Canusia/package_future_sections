@@ -20,8 +20,11 @@ setup(
     include_package_data=True,
     install_requires=[
         'Django>=3.2',
-        'myce_cis>=0.1.7a',
     ],
+    # myce_cis is optional (package_future_sections#9); see setup.cfg.
+    extras_require={
+        'campus': ['myce_cis>=0.1.7a'],
+    },
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Web Environment',

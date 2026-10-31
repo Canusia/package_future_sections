@@ -6,6 +6,8 @@ These views render the main future sections pages for different user roles.
 
 from django.conf import settings
 from django.shortcuts import render
+from django.template import TemplateDoesNotExist
+from django.template.loader import get_template
 from django.views import View
 
 from ..models import FutureCourse
@@ -37,6 +39,24 @@ def hs_admin_intro(request):
         if stored.get(key):
             return stored[key]
     return ''
+
+
+FALLBACK_BREADCRUMB = 'future_sections/partials/_breadcrumb.html'
+
+
+def breadcrumb_template(portal_key):
+    """The portal's own breadcrumb partial, or this package's fallback.
+
+    Not every tenant's HS admin / instructor portal ships
+    ``<portal>/partials/_breadcrumb.html`` (package_future_sections#9); an
+    unguarded include of a missing one 500s the whole page.
+    """
+    name = f'{portal_key}/partials/_breadcrumb.html'
+    try:
+        get_template(name)
+    except TemplateDoesNotExist:
+        return FALLBACK_BREADCRUMB
+    return name
 
 
 class FutureSectionsPageView(View):
@@ -112,6 +132,7 @@ class FutureSectionsPageView(View):
             'base_template': base_template,
             'menu': menu,
             'portal_key': portal_key,
+            'breadcrumb_template': breadcrumb_template(portal_key),
             'is_admin': context['is_admin'],
             'window_is_open': window_is_open,
             'allow_teacher_create': fs_config.get('allow_new_teacher_create', '1') == '1',

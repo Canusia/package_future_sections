@@ -1,0 +1,12 @@
+{% comment %}
+Fallback breadcrumb for portals that do not ship <portal>/partials/_breadcrumb.html
+(package_future_sections#9). `{% url ... as var %}` never raises, so a portal
+without a dashboard route still renders the page name.
+{% endcomment %}
+{% if portal_key == 'highschool_admin' %}{% url 'highschool_admin:dashboard' as home_url %}{% else %}{% url 'instructor:dashboard' as home_url %}{% endif %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        {% if home_url %}<li class="breadcrumb-item"><a href="{{ home_url }}">Home</a></li>{% endif %}
+        <li class="breadcrumb-item active" aria-current="page">{{ page_name }}</li>
+    </ol>
+</nav>

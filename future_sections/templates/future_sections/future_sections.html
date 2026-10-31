@@ -6,11 +6,7 @@
 
 {% block page_header %}
 {{intro|safe}}
-{% if portal_key == 'highschool_admin' %}
-{% include "highschool_admin/partials/_breadcrumb.html" with page_name=page_name %}
-{% else %}
-{% include "instructor/partials/_breadcrumb.html" with page_name=page_name %}
-{% endif %}
+{% include breadcrumb_template with page_name=page_name %}
 {% endblock %}
 
 {% block content %}

@@ -1,5 +1,11 @@
 """Campus-scoped school picker on the add-teacher form (cis HighSchoolCampus)."""
+import importlib.util
+import unittest
 import uuid
+
+# In-repo cis has no campus scoping (package_future_sections#9).
+if not importlib.util.find_spec('cis.highschool_scope'):
+    raise unittest.SkipTest('cis.highschool_scope unavailable (in-repo cis)')
 
 from django.conf import settings
 from django.contrib.auth.models import Group
