@@ -148,7 +148,7 @@ class NotifyNextStageActionTests(_CEFixture):
 
     def _post_action(self):
         _safe_force_login(self.client, self._ce_user())
-        return self.client.get(
+        return self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'notify_next_stage', 'ids[]': [str(self.fc.id)]})
 

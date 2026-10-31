@@ -411,12 +411,14 @@ function getCookie(name) {
                 }
             }
 
-            // remove-not-teaching-section maps to the remove-teaching-status
-            // endpoint, which is now POST-only and CSRF-protected (PT-33).
-            // All other course-actions remain form-fetch GETs.
-            var isRemoveAction = action === 'remove-not-teaching-section';
+            // Actions that write are POST-only and CSRF-protected:
+            // remove-not-teaching-section (remove-teaching-status, PT-33) and
+            // not-teaching-section (mark-not-teaching, security re-review).
+            // The other course-actions only fetch a form, so stay GETs.
+            var isWriteAction = action === 'remove-not-teaching-section' ||
+                action === 'not-teaching-section';
             var ajaxOptions = {
-                type: isRemoveAction ? 'POST' : 'GET',
+                type: isWriteAction ? 'POST' : 'GET',
                 url: actionUrl,
                 data: data,
                 success: function(response) {
@@ -436,7 +438,7 @@ function getCookie(name) {
                     alert('Failed request');
                 }
             };
-            if (isRemoveAction) {
+            if (isWriteAction) {
                 ajaxOptions.headers = {
                     'X-CSRFToken': getCookie(window.CSRF_COOKIE_NAME || 'csrftoken')
                 };

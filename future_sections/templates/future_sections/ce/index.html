@@ -339,8 +339,10 @@
 
                                             // Step 3: Send reminder to selected admins
                                             $.blockUI();
+                                            // send_pending_reminder: POST-only, sends mail
                                             $.ajax({
-                                                type: "GET",
+                                                type: "POST",
+                                                headers: {'X-CSRFToken': window.CSRF_TOKEN},
                                                 url: "{% url 'future_sections_ce:send_pending_reminder' %}",
                                                 data: {
                                                     highschool_id: highschoolId,
@@ -390,8 +392,10 @@
                                 })
 
                                 $.blockUI();
+                                // bulk_actions: POST-only, changes status / sends mail
                                 $.ajax({
-                                    type: "GET",
+                                    type: "POST",
+                                    headers: {'X-CSRFToken': window.CSRF_TOKEN},
                                     url: "{% url 'future_sections_ce:bulk_actions' %}",
                                     data: data,
                                     success: function(response) {
@@ -1106,8 +1110,13 @@
                     return;
             }
                 $.blockUI();
+                // course-action: POST for the actions that write (not-teaching,
+                // remove); the teaching form itself is a read-only GET.
+                var isWrite = data['action'] === 'not-teaching-section' ||
+                    data['action'] === 'remove-not-teaching-section';
                 $.ajax({
-                    type: "GET",
+                    type: isWrite ? "POST" : "GET",
+                    headers: isWrite ? {'X-CSRFToken': window.CSRF_TOKEN} : {},
                     url: "{% url 'future_sections_ce:future_sections_actions' %}",
                     data: data,
                     success: function(response) {
@@ -1422,8 +1431,10 @@
             var $btn = $(this).prop('disabled', true);
 
             $.blockUI();
+            // notify_next_stage: POST-only (bulk_actions), sends mail
             $.ajax({
-                type: 'GET',
+                type: 'POST',
+                headers: {'X-CSRFToken': window.CSRF_TOKEN},
                 url: "{% url 'future_sections_ce:bulk_actions' %}",
                 data: {
                     action: 'notify_next_stage',

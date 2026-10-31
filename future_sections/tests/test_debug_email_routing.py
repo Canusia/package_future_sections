@@ -140,7 +140,7 @@ class PendingReminderTests(_Base):
 
     def _send(self):
         from ..views.ce import send_pending_reminder
-        request = RequestFactory().get('/', {
+        request = RequestFactory().post('/', {
             'highschool_id': str(self.hs.id),
             'academic_year_id': str(self.ay.id),
             'admin_ids[]': [str(self.position.id)]})

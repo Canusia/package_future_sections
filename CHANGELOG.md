@@ -5,6 +5,18 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 
 ## Unreleased
 
+### Security (security re-review) — behaviour change for custom tenant JS
+- **State-changing endpoints are POST-only and CSRF-checked.** A GET now returns **405** and changes nothing:
+  - CE `delete/` (`section` is read from the POST body),
+  - CE `bulk_actions` — every action (`mark_as_reviewed`, `mark_as_submitted`, `mark_as_pending_review`, `notify_next_stage`; `action` and `ids[]` in the POST body),
+  - CE `send_pending_reminder` (sends mail),
+  - CE `ajax` actions `not-teaching-section` and `remove-not-teaching-section` (`course_certificate`, `academic_year_id` in the POST body),
+  - HS admin / instructor `api/actions/mark-not-teaching/`.
+  The package's own pages (CE index, `future_sections.js`) now POST these with `X-CSRFToken`. **Any tenant template or script that calls one of these URLs with GET must switch to POST with the CSRF token**; a grep of every tenant repo found none outside this package. Browsers with a cached old `future_sections.js` / CE page get a 405 until they reload; run `collectstatic` (deploys do).
+- Opening the teaching form (CE `ajax?action=teaching-section`, API `mark-teaching` GET) no longer creates an empty "teaching" request; the request is created when the form is saved.
+- Bulk actions report ids that are malformed, missing or on another campus together as "Skipped N not found or not accessible", so the reply no longer confirms that a guessed id exists on another campus; a malformed id is skipped instead of a 500. The campus 404s read "No such record".
+- Multi-campus: `get_highschool_admins`, `send_pending_reminder` and the CE pending-instructors feed only accept/list schools linked to the serving campus (cis `highschool_scope`; no-op single-campus or on a cis without it). The review/pending notification-log feeds stay tenant-wide (follow-up).
+
 ### Added
 - **SIS Reconciliation** (#7). A CE tab compares, per school, course and term, the sections requested in Course Information with the sections the SIS import created and flags "Need N more" / "Remove N" (CSV download too). Read-only and recomputed on every load. Each offering row gets a **SIS sections (N)** modal where staff confirm which imported sections fulfil the request; suggestions (requested term + same teacher) are pre-ticked but nothing links until saved. New optional setting **Full-Year Sections Are Imported Into Term Code** maps Full Year rows to e.g. the spring `6L` sub-term.
 

@@ -15,9 +15,10 @@ from cis.serializers.teacher import TeacherCourseCertificateSerializer
 
 from cis.models.crontab import CronLog
 from ..models import FutureCourse, FutureProjection, SectionRequestReview
-from ..campus import exclude_other_campuses
+from ..campus import exclude_other_campuses, is_multi_campus, scope_highschools
 from ..settings.future_sections import future_sections as fs_settings
 
+from cis.models.highschool import HighSchool
 from cis.models.teacher import TeacherCourseCertificate
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,13 @@ class PendingFutureClassSectionViewSet(viewsets.ReadOnlyModelViewSet):
         ).exclude(
             certificate_id__in=received_records
         )
+
+        # Multi-campus: only the serving campus's schools (security
+        # re-review M-2), the same scope the per-school reminder applies.
+        if is_multi_campus():
+            records = records.filter(
+                teacher_highschool__highschool__in=scope_highschools(
+                    HighSchool.objects.all()))
 
         if highschool_id:
             records = records.filter(

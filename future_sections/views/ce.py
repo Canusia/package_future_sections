@@ -35,7 +35,9 @@ from ..models import (
     FutureCourse, FutureSection, FutureProjection,
     NoTestRecipientsConfigured, route_notification_recipients,
 )
-from ..campus import exclude_other_campuses, is_multi_campus, other_campus
+from ..campus import (
+    exclude_other_campuses, is_multi_campus, other_campus, scope_highschools,
+)
 from ..settings.future_sections import future_sections as fs_settings
 from ..utils import build_initial_from_prev_year, build_section_info_from_formset
 
@@ -46,9 +48,10 @@ logger = logging.getLogger(__name__)
 
 def _refuse_other_campus(academic_year):
     """404 when (multi-campus) the year belongs to another campus; a no-op
-    otherwise, so single-campus behaviour is unchanged."""
+    otherwise, so single-campus behaviour is unchanged. The message is the
+    same as for a missing record, so it does not confirm the id exists."""
     if other_campus(academic_year):
-        raise Http404('No such record on this campus')
+        raise Http404('No such record')
 
 
 def _refuse_other_campus_year_id(academic_year_id):
@@ -65,29 +68,57 @@ def _refuse_other_campus_year_id(academic_year_id):
     _refuse_other_campus(year)
 
 
-def _split_other_campus(courses):
-    """``(own, skipped_count)`` for bulk actions: requests whose year belongs
-    to another campus are dropped, not 404ed. Single-campus: all kept."""
-    courses = list(courses)
-    if not is_multi_campus():
-        return courses, 0
-    own = [fc for fc in courses if not other_campus(fc.academic_year)]
-    return own, len(courses) - len(own)
+def _valid_uuids(ids):
+    """The distinct well-formed UUIDs in ``ids`` (a malformed one would make
+    the ``id__in`` lookup raise ValidationError, a 500)."""
+    valid = set()
+    for value in ids:
+        try:
+            valid.add(uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return valid
 
 
-def _campus_skip_note(skipped):
-    return (f' Skipped, belongs to another campus: {skipped} request(s).'
+def _bulk_selection(ids):
+    """``(own, skipped_count)`` for bulk actions.
+
+    ``own`` is the selected requests this CE may act on; ``skipped_count``
+    lumps together ids that are malformed, do not exist, or (multi-campus)
+    belong to another campus's year, so the response never tells a CE that a
+    guessed id exists elsewhere (security re-review M-1). Single-campus: only
+    missing/malformed ids are skipped.
+    """
+    requested = {str(v) for v in ids if v not in (None, '')}
+    courses = list(FutureCourse.objects.filter(
+        id__in=_valid_uuids(requested)).select_related(
+        'academic_year', 'teacher_course__course'))
+    if is_multi_campus():
+        courses = [fc for fc in courses if not other_campus(fc.academic_year)]
+    return courses, len(requested) - len(courses)
+
+
+def _skip_note(skipped):
+    return (f' Skipped {skipped} not found or not accessible.'
             if skipped else '')
 
 
-def _bulk_courses(ids):
-    return FutureCourse.objects.filter(id__in=ids).select_related(
-        'academic_year', 'teacher_course__course')
+def _bulk_ids(request):
+    return request.POST.getlist('ids[]')
 
 
+@require_POST
 def delete_section(request):
-    """Delete a future section"""
-    section_id = request.GET.get('section')
+    """Delete a future section.
+
+    POST-only (security re-review): a GET must not delete, and the POST goes
+    through CsrfViewMiddleware.
+    """
+    section_id = request.POST.get('section')
+    try:
+        uuid.UUID(str(section_id))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404('Invalid section')
     future_section = get_object_or_404(
         FutureSection.objects.select_related('future_course__academic_year'),
         pk=section_id)
@@ -97,8 +128,20 @@ def delete_section(request):
     return JsonResponse({'status': 'success'})
 
 
+# Actions that write: accepted only as POST (security re-review). A GET
+# naming one is refused with a 405 rather than falling through.
+_POST_ONLY_ACTIONS = ('remove-not-teaching-section', 'not-teaching-section')
+
+
 def future_sections_actions(request):
-    """AJAX handler for future sections actions"""
+    """AJAX handler for future sections actions.
+
+    GET only opens read-only modals (the teaching form, the email compose box,
+    the SIS-sections picker); every write is a POST, so CsrfViewMiddleware
+    applies and a cross-site GET cannot change anything.
+    """
+    from django.http import HttpResponseNotAllowed
+
     if request.method == 'POST':
         action = request.POST.get('action')
 
@@ -115,21 +158,25 @@ def future_sections_actions(request):
         if action == 'sis-sections':
             return sis_sections(request)
 
-    if request.method == 'GET':
-        action = request.GET.get('action')
-
         if action == 'remove-not-teaching-section':
             return remove_marked_as_not_teaching(
                 request,
-                request.GET.get('course_certificate'),
-                request.GET.get('academic_year_id')
+                request.POST.get('course_certificate'),
+                request.POST.get('academic_year_id')
             )
-        elif action == 'not-teaching-section':
+
+        if action == 'not-teaching-section':
             return mark_as_not_teaching(
                 request,
-                request.GET.get('course_certificate'),
-                request.GET.get('academic_year_id')
+                request.POST.get('course_certificate'),
+                request.POST.get('academic_year_id')
             )
+
+    if request.method == 'GET':
+        action = request.GET.get('action')
+
+        if action in _POST_ONLY_ACTIONS:
+            return HttpResponseNotAllowed(['POST'])
         elif action == 'teaching-section':
             return mark_as_teaching(
                 request,
@@ -425,11 +472,20 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
     )
     _refuse_other_campus(academic_year)
 
-    future_course = FutureCourse.get_or_add(
-        teacher_course,
-        academic_year,
-        submitter=request.user
-    )
+    if request.method == 'POST':
+        future_course = FutureCourse.get_or_add(
+            teacher_course,
+            academic_year,
+            submitter=request.user
+        )
+    else:
+        # Opening the form is read-only (security re-review): an unsaved
+        # stand-in when there is no request yet, so a GET creates nothing.
+        future_course = FutureCourse.objects.filter(
+            teacher_course=teacher_course, academic_year=academic_year,
+        ).first() or FutureCourse(
+            teacher_course=teacher_course, academic_year=academic_year,
+            section_info={})
 
     is_new = future_course.section_info == {}
     if is_new:
@@ -437,7 +493,8 @@ def mark_as_teaching(request, course_certificate_id, academic_year_id):
             'teaching': 'yes',
             'sections': []
         }
-        future_course.save()
+        if request.method == 'POST':
+            future_course.save()
 
     if future_course.section_info:
         initial_data = future_course.section_info.get('sections')
@@ -816,7 +873,7 @@ def get_highschool_admins(request):
     if not highschool_id:
         return JsonResponse({'status': 'error', 'message': 'Missing highschool_id'}, status=400)
 
-    highschool = get_object_or_404(HighSchool, pk=highschool_id)
+    highschool = _campus_highschool_or_404(highschool_id)
 
     admins = HSAdministratorPosition.objects.filter(
         highschool=highschool,
@@ -841,8 +898,25 @@ def get_highschool_admins(request):
     return JsonResponse({'status': 'success', 'admins': data, 'highschool': highschool.name})
 
 
+def _campus_highschool_or_404(highschool_id):
+    """The school, 404 when the id is malformed, missing or (multi-campus)
+    not linked to the serving campus -- same response for each, so it does not
+    confirm that another campus's school exists."""
+    from cis.models.highschool import HighSchool
+    try:
+        uuid.UUID(str(highschool_id))
+    except (ValueError, AttributeError, TypeError):
+        raise Http404('No such record')
+    return get_object_or_404(
+        scope_highschools(HighSchool.objects.all()), pk=highschool_id)
+
+
+@require_POST
 def send_pending_reminder(request):
-    """Send pending section request reminder email to selected admins at a specific highschool."""
+    """Send pending section request reminder email to selected admins at a specific highschool.
+
+    POST-only (security re-review): it sends mail, so a GET must not.
+    """
     import logging
     from django.template import Context, Template
     from cis.models.highschool import HighSchool
@@ -851,9 +925,9 @@ def send_pending_reminder(request):
 
     logger = logging.getLogger(__name__)
 
-    highschool_id = request.GET.get('highschool_id')
-    academic_year_id = request.GET.get('academic_year_id')
-    admin_ids = request.GET.getlist('admin_ids[]')
+    highschool_id = request.POST.get('highschool_id')
+    academic_year_id = request.POST.get('academic_year_id')
+    admin_ids = request.POST.getlist('admin_ids[]')
 
     if not highschool_id or not academic_year_id or not admin_ids:
         return JsonResponse({
@@ -863,7 +937,7 @@ def send_pending_reminder(request):
         }, status=400)
 
     _refuse_other_campus_year_id(academic_year_id)
-    highschool = get_object_or_404(HighSchool, pk=highschool_id)
+    highschool = _campus_highschool_or_404(highschool_id)
     fs_config = fs_settings.from_db()
 
     subject = fs_config.get('pending_notification_subject', 'Reminder: Section Request Response Needed')
@@ -1135,9 +1209,14 @@ def addable_reviewers(request):
     })
 
 
+@require_POST
 def bulk_actions(request):
-    """Handle bulk actions for future courses"""
-    action = request.GET.get('action')
+    """Handle bulk actions for future courses.
+
+    POST-only (security re-review): every action changes a status or sends
+    mail, so a GET (a crafted link, a prefetcher) must not run one.
+    """
+    action = request.POST.get('action')
 
     if action == 'mark_as_reviewed':
         return mark_as_reviewed(request)
@@ -1177,7 +1256,7 @@ def mark_as_pending_review(request):
             'message': 'Review is not enabled for this tenant.',
             'action': 'display'})
 
-    ids = request.GET.getlist('ids[]')
+    ids = _bulk_ids(request)
     if not ids:
         return JsonResponse({
             'status': 'warning', 'title': 'No Selection',
@@ -1185,7 +1264,7 @@ def mark_as_pending_review(request):
             'action': 'display'})
 
     marked, no_reviewer, already_open = 0, [], []
-    own, other = _split_other_campus(_bulk_courses(ids))
+    own, other = _bulk_selection(ids)
     for fc in own:
         label = str(fc.teacher_course.course.title
                     if fc.teacher_course else fc.id)
@@ -1205,7 +1284,7 @@ def mark_as_pending_review(request):
     if already_open:
         message += (' Skipped, already pending review or reviewed: '
                     + ', '.join(already_open) + '.')
-    message += _campus_skip_note(other)
+    message += _skip_note(other)
     return JsonResponse({
         'status': 'warning' if (no_reviewer or already_open or other) else 'success',
         'title': 'Pending Review',
@@ -1223,7 +1302,7 @@ def mark_as_reviewed(request):
     Reset (back to `submitted`) is the designed way out of a live round;
     silently closing one here is the ambiguous behaviour we don't want.
     """
-    ids = request.GET.getlist('ids[]')
+    ids = _bulk_ids(request)
 
     if not ids:
         return JsonResponse({
@@ -1233,7 +1312,7 @@ def mark_as_reviewed(request):
             'action': 'display'
         })
 
-    courses, other = _split_other_campus(_bulk_courses(ids))
+    courses, other = _bulk_selection(ids)
     live = [fc for fc in courses if fc.status == 'pending_review']
     eligible_ids = [fc.id for fc in courses if fc.status != 'pending_review']
 
@@ -1249,7 +1328,7 @@ def mark_as_reviewed(request):
                       if fc.teacher_course else fc.id) for fc in live]
         message += (' Skipped, still pending review (reset to finish '
                     'or wait for all reviewers): ' + ', '.join(labels) + '.')
-    message += _campus_skip_note(other)
+    message += _skip_note(other)
 
     return JsonResponse({
         'status': 'warning' if (live or other) else 'success',
@@ -1273,7 +1352,7 @@ def notify_next_stage(request):
     """
     from ..review.helpers import resume_review
 
-    ids = request.GET.getlist('ids[]')
+    ids = _bulk_ids(request)
     if not ids:
         return JsonResponse({
             'status': 'warning', 'title': 'No Selection',
@@ -1281,7 +1360,7 @@ def notify_next_stage(request):
             'action': 'display'})
 
     advanced, finished, skipped = 0, 0, []
-    own, other = _split_other_campus(_bulk_courses(ids))
+    own, other = _bulk_selection(ids)
     for fc in own:
         label = str(fc.teacher_course.course.title
                     if fc.teacher_course else fc.id)
@@ -1299,7 +1378,7 @@ def notify_next_stage(request):
                     'reviewed.')
     if skipped:
         message += (' Skipped, not paused: ' + ', '.join(skipped) + '.')
-    message += _campus_skip_note(other)
+    message += _skip_note(other)
     return JsonResponse({
         'status': 'warning' if (skipped or other) else 'success',
         'title': 'Notify Reviewers',
@@ -1315,7 +1394,7 @@ def mark_as_submitted(request):
     """
     from ..review.helpers import reset_review
 
-    ids = request.GET.getlist('ids[]')
+    ids = _bulk_ids(request)
 
     if not ids:
         return JsonResponse({
@@ -1326,7 +1405,7 @@ def mark_as_submitted(request):
         })
 
     updated_count = 0
-    own, other = _split_other_campus(_bulk_courses(ids))
+    own, other = _bulk_selection(ids)
     for fc in own:
         reset_review(fc)
         updated_count += 1
@@ -1335,6 +1414,6 @@ def mark_as_submitted(request):
         'status': 'warning' if other else 'success',
         'title': 'Success',
         'message': (f'Successfully marked {updated_count} request(s) as '
-                    f'submitted.' + _campus_skip_note(other)),
+                    f'submitted.' + _skip_note(other)),
         'action': 'display'
     })

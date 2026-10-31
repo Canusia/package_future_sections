@@ -99,3 +99,16 @@ def command_base():
         return CampusCommand
     from django.core.management.base import BaseCommand
     return BaseCommand
+
+
+def scope_highschools(queryset):
+    """Narrow a HighSchool queryset to the schools linked to the serving
+    campus (cis ``highschool_scope.scope_highschools``).
+
+    A no-op unless multi-campus, and on a cis without ``highschool_scope``,
+    so single-campus tenants see every school exactly as before.
+    """
+    if not is_multi_campus() or not importlib.util.find_spec('cis.highschool_scope'):
+        return queryset
+    from cis.highschool_scope import scope_highschools as _scope
+    return _scope(queryset, campus=serving_campus())

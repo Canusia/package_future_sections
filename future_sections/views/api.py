@@ -133,13 +133,24 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
         # Verify access based on user role
         validate_certificate_access(request, teacher_course)
 
-        future_course = FutureCourse.get_or_add(teacher_course, academic_year, submitter=request.user)
+        if request.method == 'POST':
+            future_course = FutureCourse.get_or_add(
+                teacher_course, academic_year, submitter=request.user)
+        else:
+            # Opening the form is read-only (security re-review): an unsaved
+            # stand-in when there is no request yet, so a GET creates nothing.
+            future_course = FutureCourse.objects.filter(
+                teacher_course=teacher_course, academic_year=academic_year,
+            ).first() or FutureCourse(
+                teacher_course=teacher_course, academic_year=academic_year,
+                section_info={})
         assert_editable(future_course, request)
 
         is_new = future_course.section_info == {}
         if is_new:
             future_course.section_info = {'teaching': 'yes', 'sections': []}
-            future_course.save()
+            if request.method == 'POST':
+                future_course.save()
 
         initial_data = future_course.section_info.get('sections', []) if future_course.section_info else []
 
@@ -265,18 +276,17 @@ class FutureSectionsActionViewSet(viewsets.ViewSet):
             'is_admin': context['is_admin'],
         })
 
-    @action(detail=False, methods=['get', 'post'], url_path='mark-not-teaching')
+    @action(detail=False, methods=['post'], url_path='mark-not-teaching')
     def mark_not_teaching(self, request):
         """
         Mark a course as not being taught for an academic year.
+
+        POST-only (security re-review, as PT-33 did for
+        remove-teaching-status): it writes, so DRF's SessionAuthentication
+        enforces CSRF and a cross-site GET cannot record an answer.
         """
-        # Handle both GET (form params) and POST (data params)
-        if request.method == 'GET':
-            course_certificate_id = request.GET.get('course_certificate_id')
-            academic_year_id = request.GET.get('academic_year_id')
-        else:
-            course_certificate_id = request.data.get('course_certificate_id')
-            academic_year_id = request.data.get('academic_year_id')
+        course_certificate_id = request.data.get('course_certificate_id')
+        academic_year_id = request.data.get('academic_year_id')
 
         if not course_certificate_id or not academic_year_id:
             return Response({

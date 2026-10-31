@@ -53,9 +53,9 @@ class CEAjaxPermissionTests(TestCase):
         # No action (or an unrecognized action) makes the view return None,
         # which the Django test client raises as a hard error rather than a
         # 500 response -- not a permission failure, but not assertable via
-        # status code either. 'remove-not-teaching-section' with no matching
+        # status code either. A POSTed 'remove-not-teaching-section' with no matching
         # records is a real branch that always returns a 200 JsonResponse, so
         # it exercises the guard without depending on view-internal dispatch.
-        response = self.client.get(
+        response = self.client.post(
             self.url, {'action': 'remove-not-teaching-section'})
         self.assertNotIn(response.status_code, (302, 403))

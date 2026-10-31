@@ -310,9 +310,13 @@ class MultiCampusCEScopeTests(_People):
     def test_mark_as_teaching_and_not_teaching_404_for_another_campus_year(self):
         cert = self.fc1.teacher_course.certificate_id
         with self._serve(self.c1):
-            for action in ('teaching-section', 'not-teaching-section',
+            response = self.client.get(self.actions, {
+                'action': 'teaching-section', 'course_certificate': str(cert),
+                'academic_year_id': str(self.ay2.id)})
+            self.assertEqual(response.status_code, 404)
+            for action in ('not-teaching-section',
                            'remove-not-teaching-section'):
-                response = self.client.get(self.actions, {
+                response = self.client.post(self.actions, {
                     'action': action, 'course_certificate': str(cert),
                     'academic_year_id': str(self.ay2.id)})
                 self.assertEqual(response.status_code, 404, action)
@@ -330,7 +334,7 @@ class MultiCampusCEScopeTests(_People):
         section = FutureSection.objects.create(
             future_course=self.fc2, section_info={})
         with self._serve(self.c1):
-            response = self.client.get(
+            response = self.client.post(
                 reverse('future_sections_ce:delete_future_section'),
                 {'section': str(section.id)})
         self.assertEqual(response.status_code, 404)
@@ -354,7 +358,7 @@ class MultiCampusCEScopeTests(_People):
     def test_send_pending_reminder_404s_for_another_campus_year(self):
         from django.urls import reverse
         with self._serve(self.c1):
-            response = self.client.get(
+            response = self.client.post(
                 reverse('future_sections_ce:send_pending_reminder'), {
                     'highschool_id': str(
                         self.fc2.teacher_course.teacher_highschool.highschool_id),
@@ -368,7 +372,7 @@ class MultiCampusCEScopeTests(_People):
         FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
             status='submitted')
         with self._serve(self.c1):
-            response = self.client.get(bulk, {
+            response = self.client.post(bulk, {
                 'action': 'mark_as_reviewed',
                 'ids[]': [str(self.fc1.id), str(self.fc2.id)]})
         self.assertEqual(response.status_code, 200)
@@ -378,19 +382,169 @@ class MultiCampusCEScopeTests(_People):
         self.assertEqual(self.fc2.status, 'submitted')
         data = response.json()
         self.assertEqual(data['status'], 'warning')
-        self.assertIn('another campus', data['message'])
+        self.assertIn('Skipped 1 not found or not accessible', data['message'])
+        self.assertNotIn('campus', data['message'])
 
     def test_bulk_mark_as_submitted_skips_another_campus_requests(self):
         from django.urls import reverse
         FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
             status='reviewed')
         with self._serve(self.c1):
-            response = self.client.get(reverse('future_sections_ce:bulk_actions'), {
+            response = self.client.post(reverse('future_sections_ce:bulk_actions'), {
                 'action': 'mark_as_submitted',
                 'ids[]': [str(self.fc1.id), str(self.fc2.id)]})
         self.fc2.refresh_from_db()
         self.assertEqual(self.fc2.status, 'reviewed')
-        self.assertIn('another campus', response.json()['message'])
+        self.assertIn('Skipped 1 not found or not accessible',
+                      response.json()['message'])
+
+
+    # --- security re-review: M-2 / M-3 ---
+
+    def test_projection_feed_hides_another_campus_year(self):
+        from django.urls import reverse
+        from ..models import FutureProjection
+        hs1 = self.fc1.teacher_course.teacher_highschool.highschool
+        hs2 = self.fc2.teacher_course.teacher_highschool.highschool
+        p1 = FutureProjection.objects.create(academic_year=self.ay1, highschool=hs1)
+        p2 = FutureProjection.objects.create(academic_year=self.ay2, highschool=hs2)
+        feed = reverse('future_sections_ce:future_projection-list')
+
+        def ids(year):
+            data = self.client.get(feed, {
+                'format': 'json', 'academic_year': str(year.id)}).json()
+            return {r['id'] for r in data.get('results', data)}
+
+        with self._serve(self.c1):
+            own, other = ids(self.ay1), ids(self.ay2)
+        self.assertIn(str(p1.id), own)
+        self.assertEqual(other, set())
+        self.assertNotIn(str(p2.id), own)
+
+    def _bulk(self, action, *ids):
+        from django.urls import reverse
+        with self._serve(self.c1):
+            return self.client.post(reverse('future_sections_ce:bulk_actions'), {
+                'action': action, 'ids[]': [str(i) for i in ids]})
+
+    def test_notify_next_stage_skips_another_campus_request(self):
+        from datetime import datetime, timezone
+        paused = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
+            status='pending_review', review_paused_on=paused)
+        with mock.patch(f'{PKG}.review.helpers.resume_review') as resume:
+            response = self._bulk('notify_next_stage', self.fc1.id, self.fc2.id)
+        resumed = [c.args[0].pk for c in resume.call_args_list]
+        self.assertEqual(resumed, [self.fc1.pk])
+        self.fc2.refresh_from_db()
+        self.assertEqual(self.fc2.review_paused_on, paused)
+        message = response.json()['message']
+        self.assertIn('Skipped 1 not found or not accessible', message)
+        self.assertNotIn('campus', message)
+
+    def test_mark_as_pending_review_skips_another_campus_request(self):
+        FutureCourse.objects.filter(pk__in=[self.fc1.pk, self.fc2.pk]).update(
+            status='submitted')
+        with mock.patch(f'{PKG}.review.helpers.review_required',
+                        return_value=True), \
+                mock.patch(f'{PKG}.review.helpers.open_review_round') as opened:
+            response = self._bulk('mark_as_pending_review',
+                                  self.fc1.id, self.fc2.id)
+        self.assertEqual([c.args[0].pk for c in opened.call_args_list],
+                         [self.fc1.pk])
+        self.fc2.refresh_from_db()
+        self.assertEqual(self.fc2.status, 'submitted')
+        message = response.json()['message']
+        self.assertIn('Skipped 1 not found or not accessible', message)
+        self.assertNotIn('campus', message)
+
+    def test_another_campus_id_reads_like_a_missing_one(self):
+        FutureCourse.objects.filter(pk=self.fc2.pk).update(status='submitted')
+        other = self._bulk('mark_as_reviewed', self.fc2.id).json()['message']
+        missing = self._bulk('mark_as_reviewed', uuid.uuid4()).json()['message']
+        self.assertEqual(other, missing)
+
+    def _link(self, hs, campus):
+        # A school created inside a campus context may already be linked to
+        # it; make ``campus`` its only link.
+        from cis.models.highschool import HighSchoolCampus
+        HighSchoolCampus.objects.filter(highschool=hs).delete()
+        HighSchoolCampus.objects.create(highschool=hs, campus=campus)
+
+    def _admin(self, hs):
+        from cis.models.highschool_administrator import (
+            HSAdministrator, HSAdministratorPosition, HSPosition)
+        user = CustomUser.objects.create_user(
+            username=f'{_sfx()}@x.com', email=f'{_sfx()}@x.com', password='pw')
+        return HSAdministratorPosition.objects.create(
+            hsadmin=HSAdministrator.objects.create(user=user), highschool=hs,
+            position=HSPosition.objects.create(name=f'P{_sfx()}'),
+            status='Active')
+
+    @unittest.skipUnless(importlib.util.find_spec('cis.highschool_scope'),
+                         'cis without high school campus links')
+    def test_get_highschool_admins_is_limited_to_the_campus_schools(self):
+        from django.urls import reverse
+        hs1 = self.fc1.teacher_course.teacher_highschool.highschool
+        hs2 = self.fc2.teacher_course.teacher_highschool.highschool
+        self._link(hs1, self.c1)
+        self._link(hs2, self.c2)
+        self._admin(hs1)
+        other_admin = self._admin(hs2).hsadmin.user
+        url = reverse('future_sections_ce:get_highschool_admins')
+        with self._serve(self.c1):
+            own = self.client.get(url, {'highschool_id': str(hs1.id)})
+            other = self.client.get(url, {'highschool_id': str(hs2.id)})
+            missing = self.client.get(url, {'highschool_id': str(uuid.uuid4())})
+        self.assertEqual(own.status_code, 200)
+        self.assertEqual(len(own.json()['admins']), 1)
+        self.assertEqual(other.status_code, 404)
+        self.assertEqual(missing.status_code, 404)
+        self.assertNotIn(other_admin.email.encode(), other.content)
+
+    @unittest.skipUnless(importlib.util.find_spec('cis.highschool_scope'),
+                         'cis without high school campus links')
+    def test_send_pending_reminder_404s_for_another_campus_school(self):
+        from django.urls import reverse
+        hs1 = self.fc1.teacher_course.teacher_highschool.highschool
+        hs2 = self.fc2.teacher_course.teacher_highschool.highschool
+        self._link(hs1, self.c1)
+        self._link(hs2, self.c2)
+        pos = self._admin(hs2)
+        with self._serve(self.c1), \
+                mock.patch(f'{PKG}.views.ce.send_html_mail') as send:
+            response = self.client.post(
+                reverse('future_sections_ce:send_pending_reminder'), {
+                    'highschool_id': str(hs2.id),
+                    'academic_year_id': str(self.ay1.id),  # own year
+                    'admin_ids[]': [str(pos.id)]})
+        self.assertEqual(response.status_code, 404)
+        send.assert_not_called()
+
+    @unittest.skipUnless(importlib.util.find_spec('cis.highschool_scope'),
+                         'cis without high school campus links')
+    def test_pending_feed_lists_only_the_campus_schools(self):
+        from django.urls import reverse
+        hs1 = self.fc1.teacher_course.teacher_highschool.highschool
+        hs2 = self.fc2.teacher_course.teacher_highschool.highschool
+        self._link(hs1, self.c1)
+        self._link(hs2, self.c2)
+        with self.campus_context(self.c1):
+            course = self._course()
+            cert1, cert2 = self._cert(course, hs1), self._cert(course, hs2)
+        for campus in (self.c1, self.c2):
+            row = Setting.objects.get(key='cis_future_sections', campus=campus)
+            row.value.update({'course_status': ['Active'],
+                              'teacher_course_status': ['Teaching']})
+            row.save()
+        feed = reverse('future_sections_ce:pending_future_class_sections-list')
+        with self._serve(self.c1):
+            data = self.client.get(feed, {
+                'format': 'json', 'academic_year': str(self.ay1.id)}).json()
+        ids = {str(r.get('certificate_id') or r.get('id'))
+               for r in data.get('results', data)}
+        self.assertTrue({str(cert1.certificate_id), str(cert1.id)} & ids)
+        self.assertFalse({str(cert2.certificate_id), str(cert2.id)} & ids)
 
 
 @unittest.skipUnless(HAS_CAMPUS_CIS, 'cis without multi-campus support')

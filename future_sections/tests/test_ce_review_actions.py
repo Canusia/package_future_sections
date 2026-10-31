@@ -74,7 +74,7 @@ class CEReviewActionsTests(TestCase):
     def test_marking_pending_review_opens_a_round(self):
         self._reviewer('a@x.com')
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         self.assertEqual(resp.json()['status'], 'success')
@@ -84,7 +84,7 @@ class CEReviewActionsTests(TestCase):
 
     def test_a_request_with_no_reviewers_is_reported_not_marked(self):
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         body = resp.json()
@@ -106,7 +106,7 @@ class CEReviewActionsTests(TestCase):
             academic_year=self.ay, teacher_course=bare_tc, status='submitted')
 
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review',
              'ids[]': [str(self.fc.id), str(other.id)]})
@@ -121,14 +121,14 @@ class CEReviewActionsTests(TestCase):
         self._reviewer('a@x.com')
         _safe_force_login(self.client, self.ce_user)
         # Opens round 1.
-        self.client.get(
+        self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.review_round, 1)
         # Re-selecting the same (still pending_review) request must not
         # open round 2 and orphan round 1's decisions.
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         self.fc.refresh_from_db()
@@ -143,7 +143,7 @@ class CEReviewActionsTests(TestCase):
         self.fc.refresh_from_db()
         self.assertEqual(self.fc.status, 'reviewed')
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         self.fc.refresh_from_db()
@@ -155,7 +155,7 @@ class CEReviewActionsTests(TestCase):
         self._reviewer('a@x.com')
         open_review_round(self.fc)
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_reviewed', 'ids[]': [str(self.fc.id)]})
         body = resp.json()
@@ -166,7 +166,7 @@ class CEReviewActionsTests(TestCase):
 
     def test_mark_as_reviewed_still_works_on_a_plain_submitted_request(self):
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_reviewed', 'ids[]': [str(self.fc.id)]})
         self.assertEqual(resp.json()['status'], 'success')
@@ -178,7 +178,7 @@ class CEReviewActionsTests(TestCase):
         Setting.objects.filter(key='cis_future_sections').update(
             value={'require_review': 'No', 'reviewer_roles': ['Faculty']})
         _safe_force_login(self.client, self.ce_user)
-        resp = self.client.get(
+        resp = self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_pending_review', 'ids[]': [str(self.fc.id)]})
         body = resp.json()
@@ -193,7 +193,7 @@ class CEReviewActionsTests(TestCase):
         open_review_round(self.fc)
         record_decision(self.fc, a, decision='approved')
         _safe_force_login(self.client, self.ce_user)
-        self.client.get(
+        self.client.post(
             reverse('future_sections_ce:bulk_actions'),
             {'action': 'mark_as_submitted', 'ids[]': [str(self.fc.id)]})
         self.fc.refresh_from_db()

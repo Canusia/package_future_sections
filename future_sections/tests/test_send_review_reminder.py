@@ -387,7 +387,7 @@ class NoSiteForCampusTests(TestCase):
         self.addCleanup(patcher.stop)
 
     def test_pending_reminder_returns_json_error(self):
-        response = self.client.get(
+        response = self.client.post(
             reverse('future_sections_ce:send_pending_reminder'), {
                 'highschool_id': str(self.hs.id),
                 'academic_year_id': str(self.ay.id),
