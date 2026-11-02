@@ -48,6 +48,7 @@ class FutureSectionsConfig(AppConfig):
 
     def ready(self):
         import future_sections.signals  # noqa: F401
+        from . import menu  # noqa: F401  sidebar items (cis.menu_registry)
 
 
 class DevFutureSectionsConfig(AppConfig):
@@ -95,3 +96,4 @@ class DevFutureSectionsConfig(AppConfig):
 
     def ready(self):
         import future_sections.future_sections.signals  # noqa: F401
+        from . import menu  # noqa: F401  sidebar items (cis.menu_registry)
