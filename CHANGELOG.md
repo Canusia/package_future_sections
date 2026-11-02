@@ -3,7 +3,7 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
-## Unreleased
+## 2026.13.0
 
 ### Security (security re-review) — behaviour change for custom tenant JS
 - **State-changing endpoints are POST-only and CSRF-checked.** A GET now returns **405** and changes nothing:
@@ -16,8 +16,11 @@ each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`
 - Opening the teaching form (CE `ajax?action=teaching-section`, API `mark-teaching` GET) no longer creates an empty "teaching" request; the request is created when the form is saved.
 - Bulk actions report ids that are malformed, missing or on another campus together as "Skipped N not found or not accessible", so the reply no longer confirms that a guessed id exists on another campus; a malformed id is skipped instead of a 500. The campus 404s read "No such record".
 - Multi-campus: `get_highschool_admins`, `send_pending_reminder` and the CE pending-instructors feed only accept/list schools linked to the serving campus (cis `highschool_scope`; no-op single-campus or on a cis without it). The review/pending notification-log feeds stay tenant-wide (follow-up).
+- The CE Course Information page sets `window.CSRF_TOKEN` itself when the tenant's `cis/logged-base.html` does not (older in-repo cis), so its POSTs are not refused with a 403.
 
 ### Added
+- Publishes its sidebar items (CE Classes → Future Sections; faculty, instructor and HS admin Section Requests) to the cis menu registry (myce_cis v0.1.43a+); on older cis nothing changes.
+
 - **SIS Reconciliation** (#7). A CE tab compares, per school, course and term, the sections requested in Course Information with the sections the SIS import created and flags "Need N more" / "Remove N" (CSV download too). Read-only and recomputed on every load. Each offering row gets a **SIS sections (N)** modal where staff confirm which imported sections fulfil the request; suggestions (requested term + same teacher) are pre-ticked but nothing links until saved. New optional setting **Full-Year Sections Are Imported Into Term Code** maps Full Year rows to e.g. the spring `6L` sub-term.
 
 - Multi-campus consistency (FS-01, #6). A request's term (the `term` field or any section row's term) must belong to its academic year; the teaching-form saves refuse a mix with a 400, and the term dropdown offers the request's own year, so CE can edit requests from any year. `notify_pending_section_requests`, `notify_pending_reviews` and `migrate_cycle_terms` are `CampusCommand`s (`--campus`, required under `MULTI_CAMPUS`) on a cis that has them. Each campus's run only emails about its own records, with its own settings, and links use that campus's host. Single-campus tenants: no change (links still use `SITE_URL`).
