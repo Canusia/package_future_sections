@@ -4,6 +4,11 @@
 {% load templatehelpers %}
 
 {% block body %}
+{% comment %}
+The POSTs below send window.CSRF_TOKEN. A tenant whose in-repo cis logged-base.html
+predates it would 403 every one, so set it here when the base did not.
+{% endcomment %}
+<script>window.CSRF_TOKEN = window.CSRF_TOKEN || "{{ csrf_token }}";</script>
 <main>
     <div class="">
         <div class="row">

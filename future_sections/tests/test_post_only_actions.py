@@ -287,6 +287,12 @@ class JavaScriptCallersPostTests(_CE):
                        '// notify_next_stage: POST', '// course-action: POST'):
             self.assertIn(marker, src)
 
+    def test_ce_index_defines_the_csrf_token_itself(self):
+        """Tenants on an in-repo cis whose logged-base.html predates
+        window.CSRF_TOKEN would 403 every POST; the page sets it if absent."""
+        src = self._read('templates', 'future_sections', 'ce', 'index.html')
+        self.assertIn('window.CSRF_TOKEN = window.CSRF_TOKEN || "{{ csrf_token }}"', src)
+
     def test_portal_js_posts_mark_not_teaching(self):
         src = self._read('staticfiles', 'future_sections', 'js',
                          'future_sections.js')
