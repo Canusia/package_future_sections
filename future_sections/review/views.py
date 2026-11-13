@@ -14,6 +14,7 @@ from cis.models.course import CourseAdministrator
 from cis.models.term import AcademicYear
 from cis.menu import draw_menu, FACULTY_MENU, cis_menu
 
+from ..portal_text import page_blurb, page_heading
 from ..models import SectionRequestReview
 from ..settings.future_sections import future_sections as fs_settings
 from ..schemas import TeachingSectionFieldSchema
@@ -133,6 +134,17 @@ def _section_field_specs(cfg):
     return [(name, label) for _w, name, label in decorated]
 
 
+def _list_heading(portal):
+    """Faculty's list page has its own menu item, so it follows a rename (#12)."""
+    if portal == 'faculty':
+        return page_heading('faculty', 'section_requests', 'Section Requests')
+    return 'Section Requests'
+
+
+def _list_intro(portal):
+    return page_blurb('faculty', 'section_requests') if portal == 'faculty' else ''
+
+
 def _check_review_enabled():
     if not review_required():
         raise Http404('Review is disabled.')
@@ -153,7 +165,8 @@ def section_request_list(request, *, portal):
         request,
         'future_sections/review/list.html',
         {
-            'page_title': 'Section Requests',
+            'page_title': _list_heading(portal),
+            'intro': _list_intro(portal),
             'menu': menu,
             'academic_years': academic_years,
             'selected_ay_id': selected_ay_id,

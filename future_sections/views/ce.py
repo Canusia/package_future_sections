@@ -19,6 +19,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from mailer import send_html_mail
 
+from ..portal_text import page_heading
 from ..forms import (
     TeacherCourseBaseLinkFormSet,
     TeacherCourseSectionForm,
@@ -838,7 +839,7 @@ def index(request):
         request,
         template, {
             'menu': menu,
-            'page_title': 'Course Requests',
+            'page_title': page_heading('ce', 'future_sections', 'Course Requests'),
             'require_review': review_required(),
             'api_url': '/ce/future_sections/api/future_class_section?format=datatables',
             'future_projections_url': '/ce/future_sections/api/future_projection?format=datatables',

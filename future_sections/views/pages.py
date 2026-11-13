@@ -18,6 +18,7 @@ from ..forms import (
     ConfirmHighSchoolAdministratorsForm,
     ConfirmClassSectionsForm
 )
+from ..portal_text import page_blurb, page_heading
 from ..utils import get_fs_config, get_user_context
 
 
@@ -50,17 +51,14 @@ def active_menu_item(role):
     return next((n for n in MENU_ITEM_NAMES if n in names), MENU_ITEM_NAMES[0])
 
 
+def page_intro(role, item):
+    """The Course Information text staff saved for ``role``, or ''."""
+    return page_blurb(role, item, legacy_keys=INTRO_BLURB_KEYS)
+
+
 def hs_admin_intro(request):
     """The HS admin Course Information intro text, or '' when none is saved."""
-    try:
-        from cis.settings.highschool_admin_portal import highschool_admin_portal as portal_lang
-        stored = portal_lang(request).from_db() or {}
-    except Exception:
-        return ''
-    for key in INTRO_BLURB_KEYS:
-        if stored.get(key):
-            return stored[key]
-    return ''
+    return page_intro('highschool_admin', 'future_sections')
 
 
 FALLBACK_BREADCRUMB = 'future_sections/partials/_breadcrumb.html'
@@ -98,13 +96,15 @@ class FutureSectionsPageView(View):
         # Role-specific configuration
         if context['is_admin']:
             from cis.menu import draw_menu, HS_ADMIN_MENU
-            menu = draw_menu(HS_ADMIN_MENU, active_menu_item('highschool_admin'), '', 'highschool_admin')
+            menu_item = active_menu_item('highschool_admin')
+            menu = draw_menu(HS_ADMIN_MENU, menu_item, '', 'highschool_admin')
             portal_key = 'highschool_admin'
             base_template = 'highschool_admin/base_hsadmin.html'
             url_namespace = 'future_sections_highschool_admin'
         else:
             from cis.menu import draw_menu, INSTRUCTOR_MENU
-            menu = draw_menu(INSTRUCTOR_MENU, active_menu_item('instructor'), '', 'instructor')
+            menu_item = active_menu_item('instructor')
+            menu = draw_menu(INSTRUCTOR_MENU, menu_item, '', 'instructor')
             portal_key = 'instructor'
             base_template = 'instructor/base_instructor.html'
             url_namespace = 'future_sections_instructor'
@@ -146,7 +146,8 @@ class FutureSectionsPageView(View):
             'confirm_administrators': reverse(f'{url_namespace}:actions-confirm-administrators'),
         }
 
-        intro = hs_admin_intro(request)
+        # Each portal's own saved text; instructors used to get the HS admin's (#12).
+        intro = page_intro(portal_key, menu_item)
 
         template = 'future_sections/future_sections.html'
 
@@ -175,7 +176,9 @@ class FutureSectionsPageView(View):
             'highschools': highschools,
             'confirm_admins_form': confirm_admins_form,
             'confirm_sections_form': confirm_sections_form,
-            'page_name': fs_config.get('page_name', 'Future Section Requests'),
+            # A renamed menu item wins over the page_name setting (#12).
+            'page_name': page_heading(portal_key, menu_item,
+                                      fs_config.get('page_name', 'Future Section Requests')),
             'tab_course_requests': fs_config.get('tab_course_requests', 'Course Requests'),
             'tab_school_personnel': fs_config.get('tab_school_personnel', 'School Personnel'),
             'api_urls': api_urls,
