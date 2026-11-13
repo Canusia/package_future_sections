@@ -35,3 +35,8 @@ class HsAdminIntroBlurbTests(SimpleTestCase):
         with mock.patch.object(pages, 'page_intro', return_value='X') as m:
             self.assertEqual(pages.hs_admin_intro(None), 'X')
         m.assert_called_once_with('highschool_admin', 'future_sections')
+
+    def test_legacy_menu_item_still_prefers_the_saved_key(self):
+        self.assertEqual(_intro({'future_sections_blurb': 'New',
+                                 'section_requests_blurb': 'Old'},
+                                item='section_requests'), 'New')

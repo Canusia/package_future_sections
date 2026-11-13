@@ -48,9 +48,15 @@ def page_heading(role, name, default):
     """The renamed label of ``role``'s menu item ``name``, else ``default``."""
     cis_heading = _cis_helper('page_heading')
     if cis_heading is not None:
-        return cis_heading(role, name, default)
+        # A menu converted from the settings-driven layout keeps its old
+        # label as an override ("Course Projections"); that is not a rename.
+        heading = cis_heading(role, name, default)
+        return default if heading in STOCK_LABELS else heading
     try:
         from cis.menu import get_role_menu
+    except ImportError:   # cis without get_role_menu (< v0.0.34) or no cis
+        return default
+    try:
         item = _find_item(get_role_menu(role, visible_only=False), name)
     except Exception:
         log.exception('future_sections: could not read the %s menu', role)

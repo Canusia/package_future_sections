@@ -39,6 +39,10 @@ def active_menu_item(role):
     """The name this page's item has in ``role``'s menu ('future_sections' if unsure)."""
     try:
         from cis.menu import get_role_menu
+    except ImportError:
+        # cis < v0.0.34 has only the settings-driven menu ('section_requests').
+        return MENU_ITEM_NAMES[1]
+    try:
         items = list(get_role_menu(role, visible_only=False) or ())
     except Exception:
         return MENU_ITEM_NAMES[0]
@@ -51,9 +55,13 @@ def active_menu_item(role):
     return next((n for n in MENU_ITEM_NAMES if n in names), MENU_ITEM_NAMES[0])
 
 
-def page_intro(role, item):
-    """The Course Information text staff saved for ``role``, or ''."""
-    return page_blurb(role, item, legacy_keys=INTRO_BLURB_KEYS)
+def page_intro(role, item=None):
+    """The Course Information text staff saved for ``role``, or ''.
+
+    Always 'future_sections_blurb' first (what the settings form saves),
+    then the legacy key, whatever the menu item is called.
+    """
+    return page_blurb(role, 'future_sections', legacy_keys=INTRO_BLURB_KEYS[1:])
 
 
 def hs_admin_intro(request):

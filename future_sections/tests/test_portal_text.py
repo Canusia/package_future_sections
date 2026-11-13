@@ -54,7 +54,32 @@ class FallbackBlurbTests(SimpleTestCase):
             self.assertEqual(portal_text.page_blurb('student', 'x'), '')
 
 
+class OldCisTests(SimpleTestCase):
+
+    def test_no_get_role_menu_keeps_default_quietly(self):
+        import builtins
+        real_import = builtins.__import__
+
+        def no_menu(name, *args, **kwargs):
+            if name == 'cis.menu' and args[2] and 'get_role_menu' in args[2]:
+                raise ImportError('old cis')
+            return real_import(name, *args, **kwargs)
+        with _no_cis(), mock.patch('builtins.__import__', side_effect=no_menu), \
+                self.assertNoLogs(portal_text.log.name, 'ERROR'):
+            self.assertEqual(portal_text.page_heading('highschool_admin', 'future_sections', 'D'), 'D')
+        with mock.patch('builtins.__import__', side_effect=no_menu):
+            self.assertEqual(pages.active_menu_item('highschool_admin'), 'section_requests')
+
+
 class CisHelperTests(SimpleTestCase):
+
+    def test_converted_old_menu_label_is_not_a_rename(self):
+        heading = mock.Mock(return_value='Course Projections')
+        with mock.patch.object(portal_text, '_cis_helper',
+                               side_effect={'page_heading': heading}.get):
+            self.assertEqual(portal_text.page_heading('ce', 'future_sections', 'Course Requests'),
+                             'Course Requests')
+
     """With cis.portal_text.page_heading/page_blurb, those are used."""
 
     def test_delegates(self):
