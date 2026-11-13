@@ -3,6 +3,13 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.13.1
+
+- **Course Information highlights its sidebar item** (#13): the active item is `future_sections` (registry) or `section_requests` (cis before the registry).
+- **Headings follow renamed menu items** (#12): Course Information (over the `page_name` setting), the faculty Section Requests list and CE Course Requests. Old-menu labels carried over by a converted layout are not a rename.
+- **Each portal shows its own Course Information text**: instructors used to get the HS admin's. Faculty Section Requests shows `section_requests_blurb`.
+- Uses cis's shared `cis.portal_text.page_heading` / `page_blurb` (cis v0.2.10a) when present; no migrations.
+
 ## 2026.13.0
 
 ### Security (security re-review) — behaviour change for custom tenant JS
