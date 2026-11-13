@@ -28,6 +28,28 @@ from ..utils import get_fs_config, get_user_context
 INTRO_BLURB_KEYS = ('future_sections_blurb', 'section_requests_blurb')
 
 
+# The menu item this page lights up. The cis menu registry names it
+# 'future_sections' for both portals (#13); a cis from before the registry
+# keeps the settings-driven menu, where it was 'section_requests'.
+MENU_ITEM_NAMES = ('future_sections', 'section_requests')
+
+
+def active_menu_item(role):
+    """The name this page's item has in ``role``'s menu ('future_sections' if unsure)."""
+    try:
+        from cis.menu import get_role_menu
+        items = list(get_role_menu(role, visible_only=False) or ())
+    except Exception:
+        return MENU_ITEM_NAMES[0]
+    names = set()
+    while items:
+        item = items.pop()
+        if isinstance(item, dict):
+            names.add(item.get('name'))
+            items.extend(item.get('sub_menu') or ())
+    return next((n for n in MENU_ITEM_NAMES if n in names), MENU_ITEM_NAMES[0])
+
+
 def hs_admin_intro(request):
     """The HS admin Course Information intro text, or '' when none is saved."""
     try:
@@ -76,13 +98,13 @@ class FutureSectionsPageView(View):
         # Role-specific configuration
         if context['is_admin']:
             from cis.menu import draw_menu, HS_ADMIN_MENU
-            menu = draw_menu(HS_ADMIN_MENU, 'section_requests', '', 'highschool_admin')
+            menu = draw_menu(HS_ADMIN_MENU, active_menu_item('highschool_admin'), '', 'highschool_admin')
             portal_key = 'highschool_admin'
             base_template = 'highschool_admin/base_hsadmin.html'
             url_namespace = 'future_sections_highschool_admin'
         else:
             from cis.menu import draw_menu, INSTRUCTOR_MENU
-            menu = draw_menu(INSTRUCTOR_MENU, 'section_requests', '', 'instructor')
+            menu = draw_menu(INSTRUCTOR_MENU, active_menu_item('instructor'), '', 'instructor')
             portal_key = 'instructor'
             base_template = 'instructor/base_instructor.html'
             url_namespace = 'future_sections_instructor'
