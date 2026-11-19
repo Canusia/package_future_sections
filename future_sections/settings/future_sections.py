@@ -1,4 +1,5 @@
 import datetime
+import html as html_lib
 import json
 
 from django import forms
@@ -8,6 +9,7 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.templatetags.static import static
 from django.urls import reverse_lazy
+from django.utils.html import escape, strip_tags
 from django.shortcuts import (
     render
 )
@@ -948,6 +950,22 @@ class future_sections(forms.Form):
             name for name in schema_fields
             if name not in TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS
         ]
+        def help_text_cell(prefix, name, default_help):
+            # Empty input = use the default (shown as the placeholder);
+            # "None" saves an explicit "" so the default is cleared.
+            placeholder = escape(html_lib.unescape(strip_tags(str(default_help or ''))))
+            return (
+                '<td>'
+                f'<input type="text" class="form-control form-control-sm {prefix}-help" '
+                f'data-field="{name}" placeholder="{placeholder}">'
+                '<div class="custom-control custom-checkbox small mt-1">'
+                f'<input type="checkbox" class="custom-control-input {prefix}-help-none" '
+                f'id="{prefix}-help-none-{name}" data-field="{name}">'
+                f'<label class="custom-control-label" for="{prefix}-help-none-{name}">'
+                'No help text</label></div>'
+                '</td>'
+            )
+
         rows_html = ""
         for name in teaching_fields:
             meta = TeachingSectionFieldSchema.get_field_meta(name)
@@ -968,6 +986,7 @@ class future_sections(forms.Form):
                 f'<input type="text" class="form-control form-control-sm tfc-label" '
                 f'data-field="{name}" placeholder="{default_label}">'
                 '</td>'
+                + help_text_cell('tfc', name, meta.get('default_help_text', '')) +
                 '<td>'
                 f'<input type="number" readonly '
                 f'class="form-control form-control-sm tfc-weight" '
@@ -996,6 +1015,7 @@ class future_sections(forms.Form):
             '<th class="text-center" style="width:80px">Visible</th>'
             '<th class="text-center" style="width:80px">Required</th>'
             '<th style="width:250px">Custom Label</th>'
+            '<th style="width:250px">Help Text</th>'
             '<th style="width:80px">Weight</th>'
             '</tr></thead>'
             '<tbody>'
@@ -1006,6 +1026,7 @@ class future_sections(forms.Form):
             '<td class="text-center"><input type="checkbox" checked disabled></td>'
             '<td><input type="text" class="form-control form-control-sm" disabled '
             'placeholder="Term"></td>'
+            '<td></td>'
             '<td><input type="number" class="form-control form-control-sm" disabled '
             'value="0"></td>'
             '</tr>'
@@ -1053,6 +1074,14 @@ class future_sections(forms.Form):
             ('teacher', 'Teacher'),
         ]
 
+        def add_teacher_default_help(name):
+            if name in TeacherCourseSectionForm.ADD_TEACHER_ONLY_FIELDS:
+                return TeachingSectionFieldSchema.get_field_meta(name).get(
+                    'default_help_text', '')
+            from ..forms import AddNewTeacherForm
+            field = AddNewTeacherForm.base_fields.get(name)
+            return getattr(field, 'help_text', '') or ''
+
         at_rows_html = ""
         for name, default_label in add_teacher_fields:
             at_rows_html += (
@@ -1071,6 +1100,7 @@ class future_sections(forms.Form):
                 f'<input type="text" class="form-control form-control-sm atfc-label" '
                 f'data-field="{name}" placeholder="{default_label}">'
                 '</td>'
+                + help_text_cell('atfc', name, add_teacher_default_help(name)) +
                 '<td>'
                 f'<input type="number" readonly '
                 f'class="form-control form-control-sm atfc-weight" '
@@ -1090,6 +1120,7 @@ class future_sections(forms.Form):
             '<th class="text-center" style="width:80px">Visible</th>'
             '<th class="text-center" style="width:80px">Required</th>'
             '<th style="width:250px">Custom Label</th>'
+            '<th style="width:250px">Help Text</th>'
             '<th style="width:80px">Weight</th>'
             '</tr></thead>'
             '<tbody>'
@@ -1103,6 +1134,7 @@ class future_sections(forms.Form):
                 '<td class="text-center"><input type="checkbox" checked disabled></td>'
                 f'<td><input type="text" class="form-control form-control-sm" disabled '
                 f'placeholder="{default_label}"></td>'
+                '<td></td>'
                 '<td><input type="number" class="form-control form-control-sm" disabled '
                 'value="0"></td>'
                 '</tr>'

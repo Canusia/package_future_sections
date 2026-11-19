@@ -319,7 +319,11 @@ class TeachingSectionFieldSchema(BaseModel):
         """
         meta = cls.get_field_meta(name)
         label = label_override or meta.get("default_label", name)
-        help_text = help_text_override or meta.get("default_help_text", "")
+        # An explicit "" clears the default help text; None (no override
+        # saved) falls back to it.
+        help_text = (
+            help_text_override if help_text_override is not None
+            else meta.get("default_help_text", ""))
         field_type = meta.get("field_type", "string")
         widget_type = meta.get("widget_type", "text")
 

@@ -102,6 +102,58 @@ function applySavedFieldOrder($ui, weights, inputClass) {
         .forEach(function (r) { $body.append(r.el); });
 }
 
+// Help text overrides (help_texts in the form config). A missing key means
+// "use the field's default help text"; an explicit "" means "show none".
+// The "No help text" checkbox is how CE saves that "".
+function populateHelpTexts($ui, prefix, helpTexts) {
+    $ui.find('.' + prefix + '-help').each(function () {
+        var field = $(this).data('field');
+        if (!helpTexts.hasOwnProperty(field)) return;
+        if (helpTexts[field] === '') {
+            $ui.find('.' + prefix + '-help-none[data-field="' + field + '"]')
+                .prop('checked', true);
+            $(this).prop('disabled', true);
+        } else {
+            $(this).val(helpTexts[field]);
+        }
+    });
+}
+
+function collectHelpTexts($ui, prefix, original) {
+    // Start from the saved values and only rewrite fields CE touched, so a
+    // save never alters text the UI can't show faithfully (e.g. multi-line
+    // HTML: a text input drops newlines) or keys it doesn't render (term,
+    // syllabus).
+    var result = {};
+    if (original && typeof original === 'object' && !Array.isArray(original)) {
+        Object.keys(original).forEach(function (k) { result[k] = original[k]; });
+    }
+    $ui.find('.' + prefix + '-help').each(function () {
+        var $input = $(this);
+        var field = $input.data('field');
+        var $none = $ui.find('.' + prefix + '-help-none[data-field="' + field + '"]');
+        if (!$input.data('help-dirty') && !$none.data('help-dirty')) return;
+        var val = $input.val().trim();
+        if ($none.is(':checked')) result[field] = '';
+        else if (val) result[field] = val;
+        else delete result[field];
+    });
+    return result;
+}
+
+function bindHelpTextInputs($ui, prefix, sync) {
+    $ui.on('change', '.' + prefix + '-help-none', function () {
+        $(this).data('help-dirty', true);
+        $ui.find('.' + prefix + '-help[data-field="' + $(this).data('field') + '"]')
+            .prop('disabled', $(this).is(':checked'));
+        sync();
+    });
+    $ui.on('input', '.' + prefix + '-help', function () {
+        $(this).data('help-dirty', true);
+        sync();
+    });
+}
+
 function initTeachingFormConfig() {
     var $hidden = $('input[name="teaching_form_config"]');
     if (!$hidden.length) return;
@@ -147,6 +199,7 @@ function initTeachingFormConfig() {
     });
 
     applySavedFieldOrder($ui, weights, 'tfc-weight');
+    populateHelpTexts($ui, 'tfc', config.help_texts || {});
 
     $('#tfc-show-syllabus').prop('checked', showSyllabus);
     $('#tfc-display-template').val(displayTemplate);
@@ -195,10 +248,8 @@ function initTeachingFormConfig() {
         if (Object.keys(newLabels).length > 0) newConfig.labels = newLabels;
         if (Object.keys(newWeights).length > 0) newConfig.weights = newWeights;
 
-        // Preserve help_texts from original config (not exposed in UI)
-        if (config.help_texts && Object.keys(config.help_texts).length > 0) {
-            newConfig.help_texts = config.help_texts;
-        }
+        var newHelpTexts = collectHelpTexts($ui, 'tfc', config.help_texts);
+        if (Object.keys(newHelpTexts).length > 0) newConfig.help_texts = newHelpTexts;
 
         var template = $('#tfc-display-template').val().trim();
         if (template) newConfig.display_template = template;
@@ -226,6 +277,7 @@ function initTeachingFormConfig() {
 
     $ui.on('change', '#tfc-show-syllabus', syncToHidden);
     $ui.on('input', '.tfc-label, .tfc-weight, #tfc-display-template', syncToHidden);
+    bindHelpTextInputs($ui, 'tfc', syncToHidden);
 
     // field_weights.js renumbers weight inputs on drop by assigning
     // input.value directly (no 'input' event), so re-serialize after a drag
@@ -280,6 +332,7 @@ function initAddTeacherFormConfig() {
     });
 
     applySavedFieldOrder($ui, weights, 'atfc-weight');
+    populateHelpTexts($ui, 'atfc', config.help_texts || {});
 
     // Sync UI state to hidden JSON field
     function syncToHidden() {
@@ -326,10 +379,8 @@ function initAddTeacherFormConfig() {
         if (Object.keys(newLabels).length > 0) newConfig.labels = newLabels;
         if (Object.keys(newWeights).length > 0) newConfig.weights = newWeights;
 
-        // Preserve help_texts from original config (not exposed in UI)
-        if (config.help_texts && Object.keys(config.help_texts).length > 0) {
-            newConfig.help_texts = config.help_texts;
-        }
+        var newHelpTexts = collectHelpTexts($ui, 'atfc', config.help_texts);
+        if (Object.keys(newHelpTexts).length > 0) newConfig.help_texts = newHelpTexts;
 
         $hidden.val(JSON.stringify(newConfig));
     }
@@ -353,6 +404,7 @@ function initAddTeacherFormConfig() {
     });
 
     $ui.on('input', '.atfc-label, .atfc-weight', syncToHidden);
+    bindHelpTextInputs($ui, 'atfc', syncToHidden);
 
     // field_weights.js renumbers weight inputs on drop by assigning
     // input.value directly (no 'input' event), so re-serialize after a drag

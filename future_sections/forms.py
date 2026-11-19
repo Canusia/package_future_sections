@@ -409,7 +409,9 @@ class TeacherCourseSectionForm(forms.Form):
                 field_attr = form_labels.get(field_name, {})
                 if field_attr.get('label'):
                     field.label = mark_safe(field_attr.get('label', ''))
-                if field_attr.get('help_text'):
+                # help_texts (the settings UI, #14) wins over the legacy text.
+                if (field_attr.get('help_text')
+                        and field_name not in custom_help_texts):
                     field.help_text = mark_safe(field_attr.get('help_text', ''))
 
         # Handle syllabus visibility
@@ -848,7 +850,8 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                     required=visible and field_name in at_required,
                     label_override=mark_safe(label) if label else None,
                     help_text_override=(
-                        mark_safe(help_text) if help_text else None),
+                        mark_safe(help_text)
+                        if help_text is not None else None),
                     **({'choices': choices} if visible else {}),
                 ))
 
@@ -872,7 +875,8 @@ class AddNewTeacherForm(TeacherCourseSectionForm):
                     required=visible and field_name in at_required,
                     label_override=mark_safe(label) if label else None,
                     help_text_override=(
-                        mark_safe(help_text) if help_text else None),
+                        mark_safe(help_text)
+                        if help_text is not None else None),
                 ))
 
         # Campus dropdown. The course list is scoped to a campus: the

@@ -3,6 +3,14 @@
 Releases are tagged `vYYYY.MAJOR.MINOR` on `Canusia/package_future_sections` and consumed by
 each tenant through the `git+https://…@<tag>` pin in `webapp/requirements.txt`.
 
+## 2026.14.0
+
+- **Edit or clear field help text** (#14): the Teaching Form Fields and Add Teacher Form Fields cards have a Help Text column. Text replaces the default, **No help text** hides it, empty keeps the default (shown as the placeholder).
+- An explicit `""` in `help_texts` now means "no help text" (it used to fall back to the default); a missing key still means the default.
+- A field's `help_texts` entry now wins over legacy `form_field_messages` help text.
+- Saving the settings page only rewrites help texts CE changed; other stored values are kept as-is.
+- Upgrade: `collectstatic` (settings.js changed). No migrations.
+
 ## 2026.13.1
 
 - **Course Information highlights its sidebar item** (#13): the active item is `future_sections` (registry) or `section_requests` (cis before the registry).
